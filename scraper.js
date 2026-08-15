@@ -1,13 +1,17 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
 
+let isScrapingTrending = false;
+let isScrapingBreaking = false;
+
 async function scrapeTrending() {
   console.log("🔍 Scraping signal.bz...");
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+  let browser = null;
 
   try {
-    await page.goto("https://www.signal.bz", { waitUntil: "networkidle", timeout: 30000 });
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto("https://www.signal.bz", { waitUntil: "domcontentloaded", timeout: 30000 });
 
     // Wait for content to load
     await page.waitForTimeout(3000);
@@ -20,8 +24,6 @@ async function scrapeTrending() {
         .map(item => item.innerText.trim())
         .filter(text => text.length > 0);
     });
-
-    await browser.close();
 
     if (keywords.length > 0) {
       const data = {
@@ -37,17 +39,21 @@ async function scrapeTrending() {
 
   } catch (err) {
     console.error("❌ Scraping error:", err.message);
-    await browser.close();
+  } finally {
+    if (browser) {
+      await browser.close().catch(e => console.error("Error closing trending browser:", e.message));
+    }
   }
 }
 
 async function scrapeBreakingNews() {
   console.log("📰 Scraping breaking news...");
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+  let browser = null;
 
   try {
-    await page.goto("https://awesome-ui.netlify.app/", { waitUntil: "networkidle", timeout: 30000 });
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto("https://awesome-ui.netlify.app/", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
 
     const news = await page.evaluate(() => {
@@ -57,8 +63,6 @@ async function scrapeBreakingNews() {
         .map(item => item.innerText.replace(/<[^>]*>/g, "").trim())
         .filter(text => text.length > 0);
     });
-
-    await browser.close();
 
     if (news.length > 0) {
       const data = {
@@ -73,17 +77,59 @@ async function scrapeBreakingNews() {
 
   } catch (err) {
     console.error("❌ Breaking news error:", err.message);
-    await browser.close();
+  } finally {
+    if (browser) {
+      await browser.close().catch(e => console.error("Error closing breaking news browser:", e.message));
+    }
   }
 }
 
-// Run immediately on start
-scrapeTrending();
-scrapeBreakingNews();
+async function safeScrapeTrending() {
+  if (isScrapingTrending) {
+    console.log("⏳ Trending scrape already in progress, skipping iteration.");
+    return;
+  }
+  isScrapingTrending = true;
+  try {
+    await scrapeTrending();
+  } finally {
+    isScrapingTrending = false;
+  }
+}
 
-// Run every 10 minutes
-setInterval(scrapeTrending, 10 * 60 * 1000);
-setInterval(scrapeBreakingNews, 1 * 60 * 1000);
+async function safeScrapeBreakingNews() {
+  if (isScrapingBreaking) {
+    console.log("⏳ Breaking news scrape already in progress, skipping iteration.");
+    return;
+  }
+  isScrapingBreaking = true;
+  try {
+    await scrapeBreakingNews();
+  } finally {
+    isScrapingBreaking = false;
+  }
+}
 
-console.log("⏰ Scraper running every 10 minutes...");
-console.log("📰 Breaking news scraper: every 1 minute");
+function startScraperScheduler() {
+  // Run immediately on start
+  safeScrapeTrending();
+  safeScrapeBreakingNews();
+
+  // Run trending every 10 minutes, breaking news every 3 minutes
+  setInterval(safeScrapeTrending, 10 * 60 * 1000);
+  setInterval(safeScrapeBreakingNews, 3 * 60 * 1000);
+
+  console.log("⏰ Scraper running: Trending every 10 minutes, Breaking news every 3 minutes");
+}
+
+if (require.main === module) {
+  startScraperScheduler();
+}
+
+module.exports = {
+  scrapeTrending,
+  scrapeBreakingNews,
+  safeScrapeTrending,
+  safeScrapeBreakingNews,
+  startScraperScheduler,
+};

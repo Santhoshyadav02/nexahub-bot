@@ -5,7 +5,7 @@
     "buildCommand": "npm i && npx playwright install chromium --with-deps"
   },
   "deploy": {
-    "startCommand": "node scraper.js & node index.js",
+    "startCommand": "node index.js",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
