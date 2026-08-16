@@ -84,28 +84,675 @@ async function translateText(text, targetLang = "en") {
 // 📢 CHANNEL LISTS
 // ============================
 const CHANNELS = {
-  ai: [
-    { name: "🎬 DASS-891 [The most special day in life - that's the wedding]", user: "fancha07" },
-    { name: "🎬 ADN-409 Unparalleled woman control, super staying power, intense insemination and intercourse by stepfather", user: "sesedeCB" },
-    { name: "🎬 ADN-762 For you, I...the sweaty young wife looking for excuses to cheat on her", user: "fanchaku8" },
-    { name: "🎬 CAWD-259 Uncensored Chinese", user: "yuziyuzi111" },
+  "ai": [
+    {
+      "name": "🎬 DASS-891 [The most special day in life - that's the wedding]",
+      "user": "fancha07"
+    },
+    {
+      "name": "🎬 ADN-409 Unparalleled woman control, super staying power, intense insemination and intercourse by stepfather",
+      "user": "sesedeCB"
+    },
+    {
+      "name": "🎬 ADN-762 For you, I...the sweaty young wife looking for excuses to cheat on her",
+      "user": "fanchaku8"
+    },
+    {
+      "name": "🎬 CAWD-259 Uncensored Chinese",
+      "user": "yuziyuzi111"
+    }
   ],
-  bitcoin: [
-    { name: "🎬 🌟Bunny Garden🔞Rin-chan🌟 The incredibly accurate Bunny Garu Rin cosplay is so hot! In the cowgirl position ", user: "zzkbraxk" },
-    { name: "🎬 Tide x Cosplay x Tide Squirting Rapid-Fire Sex Rin Yoda", user: "LaiCai123688" },
-    { name: "🎬 Tide Gushing Rapid-Fire Sex Rin Yoda with Panties", user: "wuxisk112/245" },
-    { name: "🎬 Tide Rapid-fire Cumshot Sex Rin Yoda with Panties and Photos", user: "quanzhou99990000/221" },
+  "bitcoin": [
+    {
+      "name": "🎬 🌟Bunny Garden🔞Rin-chan🌟 The incredibly accurate Bunny Garu Rin cosplay is so hot! In the cowgirl position",
+      "user": "zzkbraxk"
+    },
+    {
+      "name": "🎬 Tide x Cosplay x Tide Squirting Rapid-Fire Sex Rin Yoda",
+      "user": "LaiCai123688"
+    },
+    {
+      "name": "🎬 Tide Gushing Rapid-Fire Sex Rin Yoda with Panties",
+      "user": "wuxisk112/245"
+    },
+    {
+      "name": "🎬 Tide Rapid-fire Cumshot Sex Rin Yoda with Panties and Photos",
+      "user": "quanzhou99990000/221"
+    }
   ],
-  tesla: [
-    { name: "🎬 极品奶油风网红，电子魅魔女友，前凸后翘性感身材，一对巨乳摇摇欲坠，情趣丝袜淫荡肥臀，高清写真诱惑十足！", user: "edxrfvtgb111/2319" },
-    { name: "🎬 抖音少妇微信定制福利视频，高颜值反差婊，性感情趣丝袜淫荡诱惑，各种剧情足交挑逗，年轻的妈妈勾引骚狗儿子，果然戴眼镜的才是最骚的~", user: "youshengyueju1/65938" },
-    { name: "🎬 高颜值抖音博主，脸足同框私密定制，极品美女御姐黑丝、裸足，美脚诱惑，抹油搓脚心诱惑榨精，这么漂亮的美女帮哥哥打飞机，足交，绝对의 视觉盛宴！", user: "postiingNew03/118" },
-    { name: "🎬 足控福音！微博百万粉丝玉足女神，单人定制美脚诱惑资源，白里透红的食品级玉足，三寸金莲小脚丫令人垂涎三尺，真想含住脚趾猛吸一口~", user: "postiingNew03/124" },
-    { name: "🎬 这才是抖音的正确打开方式！吃瓜网友视角VS土豪裸聊视角，以为是一本正经的女主播，没想到幻龙骑乘骚得一笔，红底高跟裤里丝，这谁顶得住啊！", user: "postiingNew03/130" },
+  "tesla": [
+    {
+      "name": "🎬 极品奶油风网红，电子魅魔女友，前凸后翘性感身材，一对巨乳摇摇欲坠，情趣丝袜淫荡肥臀，高清写真诱惑十足！",
+      "user": "edxrfvtgb111/2319"
+    },
+    {
+      "name": "🎬 抖音少妇微信定制福利视频，高颜值反差婊，性感情趣丝袜淫荡诱惑，各种剧情足交挑逗，年轻的妈妈勾引骚狗儿子，果然戴眼镜的才是最骚的~",
+      "user": "youshengyueju1/65938"
+    },
+    {
+      "name": "🎬 高颜值抖音博主，脸足同框私密定制，极品美女御姐黑丝、裸足，美脚诱惑，抹油搓脚心诱惑榨精，这么漂亮的美女帮哥哥打飞机，足交，绝对의 视觉盛宴！",
+      "user": "postiingNew03/118"
+    },
+    {
+      "name": "🎬 足控福音！微博百万粉丝玉足女神，单人定制美脚诱惑资源，白里透红的食品级玉足，三寸金莲小脚丫令人垂涎三尺，真想含住脚趾 financially...",
+      "user": "postiingNew03/124"
+    },
+    {
+      "name": "🎬 这才是抖音的正确打开方式！吃瓜网友视角VS土豪裸聊视角，以为是一本正经的女主播，没想到幻龙骑乘骚得一笔，红底高跟裤里丝，这谁顶得住啊！",
+      "user": "postiingNew03/130"
+    }
   ],
-  openai: [
-    { name: "🌐 Test-04", user: "postiingNew", members: "620K" },
+  "openai": [
+    {
+      "name": "🌐 Test-04",
+      "user": "postiingNew",
+      "members": "620K"
+    }
   ],
+  "meriolchan": [
+    {
+      "name": "🎬 🌸 Meriolchan — estghdx/2147",
+      "user": "estghdx/2147"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — weme_lmz/42040",
+      "user": "weme_lmz/42040"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — mitaotv168/1407",
+      "user": "mitaotv168/1407"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — tianwailaike6397/956",
+      "user": "tianwailaike6397/956"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — mospdfjdv/1136",
+      "user": "mospdfjdv/1136"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — SC18M/376",
+      "user": "SC18M/376"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — nieyuanswomen997/2156",
+      "user": "nieyuanswomen997/2156"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — fuli366/34012",
+      "user": "fuli366/34012"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — txavse/4368",
+      "user": "txavse/4368"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — dcrenqi85/45",
+      "user": "dcrenqi85/45"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — Cos_8/3504",
+      "user": "Cos_8/3504"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — sfwanghonga/1163",
+      "user": "sfwanghonga/1163"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — kanmimangrensheng7451/686",
+      "user": "kanmimangrensheng7451/686"
+    },
+    {
+      "name": "🎬 🌸 Meriolchan — bigmanXXOO/1898",
+      "user": "bigmanXXOO/1898"
+    }
+  ],
+  "isa": [
+    {
+      "name": "🎬 ⭐ Isa — anrsadn2k1p",
+      "user": "anrsadn2k1p"
+    },
+    {
+      "name": "🎬 ⭐ Isa — dnygb/14249",
+      "user": "dnygb/14249"
+    },
+    {
+      "name": "🎬 ⭐ Isa — BTCnewsvip02/2580",
+      "user": "BTCnewsvip02/2580"
+    },
+    {
+      "name": "🎬 ⭐ Isa — omspjx/37812",
+      "user": "omspjx/37812"
+    },
+    {
+      "name": "🎬 ⭐ Isa — ShowMusicTime/1381218",
+      "user": "ShowMusicTime/1381218"
+    },
+    {
+      "name": "🎬 ⭐ Isa — ctbrecorderd/11795",
+      "user": "ctbrecorderd/11795"
+    },
+    {
+      "name": "🎬 ⭐ Isa — vayi6/1570",
+      "user": "vayi6/1570"
+    },
+    {
+      "name": "🎬 ⭐ Isa — OMYJS06/2691",
+      "user": "OMYJS06/2691"
+    },
+    {
+      "name": "🎬 ⭐ Isa — kakakov/13868",
+      "user": "kakakov/13868"
+    },
+    {
+      "name": "🎬 ⭐ Isa — QiKan2026/7218",
+      "user": "QiKan2026/7218"
+    },
+    {
+      "name": "🎬 ⭐ Isa — xiuche696969/7136",
+      "user": "xiuche696969/7136"
+    },
+    {
+      "name": "🎬 ⭐ Isa — DNYzccg/15977",
+      "user": "DNYzccg/15977"
+    },
+    {
+      "name": "🎬 ⭐ Isa — jlgm168/454",
+      "user": "jlgm168/454"
+    },
+    {
+      "name": "🎬 ⭐ Isa — tgccc/1186",
+      "user": "tgccc/1186"
+    },
+    {
+      "name": "🎬 ⭐ Isa — XLABdxb/7611",
+      "user": "XLABdxb/7611"
+    }
+  ],
+  "hypnotic_eyes": [
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — TGbiaomei1/2053",
+      "user": "TGbiaomei1/2053"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — HaiJiaoVlgo/4297",
+      "user": "HaiJiaoVlgo/4297"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — ASC2256/907",
+      "user": "ASC2256/907"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — tuite910/1458",
+      "user": "tuite910/1458"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — qwert9527_z/2172",
+      "user": "qwert9527_z/2172"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — AIAVHH/660",
+      "user": "AIAVHH/660"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — aizykls/527",
+      "user": "aizykls/527"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — meinf6/319",
+      "user": "meinf6/319"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — xgduanjuai/324",
+      "user": "xgduanjuai/324"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — yellownovel/671",
+      "user": "yellownovel/671"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — JQXS91/414",
+      "user": "JQXS91/414"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — hhdabb/279",
+      "user": "hhdabb/279"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — xiaoshuo_lt/204",
+      "user": "xiaoshuo_lt/204"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — zbhshjjd11/33096",
+      "user": "zbhshjjd11/33096"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — taoliabc37629/1552",
+      "user": "taoliabc37629/1552"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — gghjghvnbvjlm4/1432",
+      "user": "gghjghvnbvjlm4/1432"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — BMBBBY/1360",
+      "user": "BMBBBY/1360"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — porncloud004/390",
+      "user": "porncloud004/390"
+    },
+    {
+      "name": "🎬 👁️ Hypnotic Eyes — twtrailers/7889",
+      "user": "twtrailers/7889"
+    }
+  ],
+  "sun_yezi": [
+    {
+      "name": "🎬 ☀️ Sun Yezi — lmxpd/1994",
+      "user": "lmxpd/1994"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — HOTA015/4356",
+      "user": "HOTA015/4356"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — cctv_madou/4621",
+      "user": "cctv_madou/4621"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — gayboyvideo00/3883",
+      "user": "gayboyvideo00/3883"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — luoli905/467",
+      "user": "luoli905/467"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — fancha103/5291",
+      "user": "fancha103/5291"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — zhubo6688/59779",
+      "user": "zhubo6688/59779"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — haijiao133/1973",
+      "user": "haijiao133/1973"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — ir_cosplay/2047",
+      "user": "ir_cosplay/2047"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — mz6mz6/4504",
+      "user": "mz6mz6/4504"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — chiguaxd/2636",
+      "user": "chiguaxd/2636"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — redianqingbaoshe/3243",
+      "user": "redianqingbaoshe/3243"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — SanYaQZ888/18",
+      "user": "SanYaQZ888/18"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — suisui1256/212",
+      "user": "suisui1256/212"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — fljisj/7062",
+      "user": "fljisj/7062"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — cgt55555/1480",
+      "user": "cgt55555/1480"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — fcmgtgbg3/3171",
+      "user": "fcmgtgbg3/3171"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — hao123CNN/870100",
+      "user": "hao123CNN/870100"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — chiguadage/12194",
+      "user": "chiguadage/12194"
+    },
+    {
+      "name": "🎬 ☀️ Sun Yezi — hlcg001/947",
+      "user": "hlcg001/947"
+    }
+  ],
+  "odetta": [
+    {
+      "name": "🎬 💃 Odetta — haozixun/66425",
+      "user": "haozixun/66425"
+    },
+    {
+      "name": "🎬 💃 Odetta — PureWaterSpirit2nd/4822",
+      "user": "PureWaterSpirit2nd/4822"
+    },
+    {
+      "name": "🎬 💃 Odetta — css0221/552",
+      "user": "css0221/552"
+    },
+    {
+      "name": "🎬 💃 Odetta — moli_R18/18060",
+      "user": "moli_R18/18060"
+    },
+    {
+      "name": "🎬 💃 Odetta — gghhuuh5668/7672",
+      "user": "gghhuuh5668/7672"
+    },
+    {
+      "name": "🎬 💃 Odetta — SLFMJ/65702",
+      "user": "SLFMJ/65702"
+    },
+    {
+      "name": "🎬 💃 Odetta — Genshinsetu/19188",
+      "user": "Genshinsetu/19188"
+    },
+    {
+      "name": "🎬 💃 Odetta — hacgr18/5279",
+      "user": "hacgr18/5279"
+    },
+    {
+      "name": "🎬 💃 Odetta — DYPD_3/5736",
+      "user": "DYPD_3/5736"
+    },
+    {
+      "name": "🎬 💃 Odetta — WANJSW/3612",
+      "user": "WANJSW/3612"
+    },
+    {
+      "name": "🎬 💃 Odetta — TBBDY/13787",
+      "user": "TBBDY/13787"
+    },
+    {
+      "name": "🎬 💃 Odetta — kuakenetpan/3060",
+      "user": "kuakenetpan/3060"
+    },
+    {
+      "name": "🎬 💃 Odetta — seedhub_pro/2297",
+      "user": "seedhub_pro/2297"
+    },
+    {
+      "name": "🎬 💃 Odetta — djfxkk/20690",
+      "user": "djfxkk/20690"
+    },
+    {
+      "name": "🎬 💃 Odetta — doubancom/321111",
+      "user": "doubancom/321111"
+    },
+    {
+      "name": "🎬 💃 Odetta — Kaiyan/3591",
+      "user": "Kaiyan/3591"
+    },
+    {
+      "name": "🎬 💃 Odetta — cctv0/477",
+      "user": "cctv0/477"
+    },
+    {
+      "name": "🎬 💃 Odetta — SLFMJ4661/43420",
+      "user": "SLFMJ4661/43420"
+    },
+    {
+      "name": "🎬 💃 Odetta — hyR18/17001",
+      "user": "hyR18/17001"
+    },
+    {
+      "name": "🎬 💃 Odetta — koubaowang388/1746",
+      "user": "koubaowang388/1746"
+    },
+    {
+      "name": "🎬 💃 Odetta — omei08/7457",
+      "user": "omei08/7457"
+    },
+    {
+      "name": "🎬 💃 Odetta — vailovevv/3217",
+      "user": "vailovevv/3217"
+    },
+    {
+      "name": "🎬 💃 Odetta — rk898/11410",
+      "user": "rk898/11410"
+    }
+  ],
+  "socialite": [
+    {
+      "name": "🎬 👑 Socialite — cqwhzb",
+      "user": "cqwhzb"
+    },
+    {
+      "name": "🎬 👑 Socialite — mingyuan55",
+      "user": "mingyuan55"
+    },
+    {
+      "name": "🎬 👑 Socialite — maqtan_time",
+      "user": "maqtan_time"
+    },
+    {
+      "name": "🎬 👑 Socialite — NDkXFH",
+      "user": "NDkXFH"
+    },
+    {
+      "name": "🎬 👑 Socialite — taotaojiang2",
+      "user": "taotaojiang2"
+    },
+    {
+      "name": "🎬 👑 Socialite — fhxyspa",
+      "user": "fhxyspa"
+    },
+    {
+      "name": "🎬 👑 Socialite — pkkjmg/2647",
+      "user": "pkkjmg/2647"
+    },
+    {
+      "name": "🎬 👑 Socialite — pofdjhvnid/2488",
+      "user": "pofdjhvnid/2488"
+    },
+    {
+      "name": "🎬 👑 Socialite — nffl5/288",
+      "user": "nffl5/288"
+    },
+    {
+      "name": "🎬 👑 Socialite — dqhi85v5_2/903",
+      "user": "dqhi85v5_2/903"
+    },
+    {
+      "name": "🎬 👑 Socialite — MoJingR_S1/5140",
+      "user": "MoJingR_S1/5140"
+    },
+    {
+      "name": "🎬 👑 Socialite — otrketoer/2906",
+      "user": "otrketoer/2906"
+    },
+    {
+      "name": "🎬 👑 Socialite — goddnessaichannelzeta/2571",
+      "user": "goddnessaichannelzeta/2571"
+    },
+    {
+      "name": "🎬 👑 Socialite — Alangtuijjan121/4453",
+      "user": "Alangtuijjan121/4453"
+    },
+    {
+      "name": "🎬 👑 Socialite — rednote_ob/369",
+      "user": "rednote_ob/369"
+    },
+    {
+      "name": "🎬 👑 Socialite — En715/2569",
+      "user": "En715/2569"
+    },
+    {
+      "name": "🎬 👑 Socialite — papasqlm/15616",
+      "user": "papasqlm/15616"
+    },
+    {
+      "name": "🎬 👑 Socialite — lmrqfcjx/2969",
+      "user": "lmrqfcjx/2969"
+    },
+    {
+      "name": "🎬 👑 Socialite — gghjghvnbvjlm4/1916",
+      "user": "gghjghvnbvjlm4/1916"
+    },
+    {
+      "name": "🎬 👑 Socialite — hrxxoo31/8897",
+      "user": "hrxxoo31/8897"
+    },
+    {
+      "name": "🎬 👑 Socialite — tian_kong00/3944",
+      "user": "tian_kong00/3944"
+    }
+  ],
+  "nine_gates": [
+    {
+      "name": "🎬 ⛩️ Nine Gates — HanTang8/11215",
+      "user": "HanTang8/11215"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — bdwpzhpd/19654",
+      "user": "bdwpzhpd/19654"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — yingshi9999/806",
+      "user": "yingshi9999/806"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — yunpanx/136643",
+      "user": "yunpanx/136643"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — tgzhuiju/6147",
+      "user": "tgzhuiju/6147"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — cctv1/48192",
+      "user": "cctv1/48192"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — game8500/5578",
+      "user": "game8500/5578"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — yp123pan/3190",
+      "user": "yp123pan/3190"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — BaiduCloudDiskchat/275141",
+      "user": "BaiduCloudDiskchat/275141"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — cctv0/48192",
+      "user": "cctv0/48192"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — XBL0420/815",
+      "user": "XBL0420/815"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — dsju123/13325",
+      "user": "dsju123/13325"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — dxxbdxxb/709",
+      "user": "dxxbdxxb/709"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — pan_guangya/1721",
+      "user": "pan_guangya/1721"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — viph66666/1413",
+      "user": "viph66666/1413"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — fuhao35700/159",
+      "user": "fuhao35700/159"
+    },
+    {
+      "name": "🎬 ⛩️ Nine Gates — Remux4KFilm/31608",
+      "user": "Remux4KFilm/31608"
+    }
+  ],
+  "ssaimi": [
+    {
+      "name": "🎬 ✨ Ssaimi — daoten/3211",
+      "user": "daoten/3211"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — stbb66/2450",
+      "user": "stbb66/2450"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — m1m9w/5851",
+      "user": "m1m9w/5851"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — fjl15/4961",
+      "user": "fjl15/4961"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — wangxi1818/3420",
+      "user": "wangxi1818/3420"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — pa8884/72055",
+      "user": "pa8884/72055"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — comicamg/5305",
+      "user": "comicamg/5305"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — haijiaomei/11153",
+      "user": "haijiaomei/11153"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — laochijialubo/4227",
+      "user": "laochijialubo/4227"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — flj657/3778",
+      "user": "flj657/3778"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — gyzst/4026",
+      "user": "gyzst/4026"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — blac315/18689",
+      "user": "blac315/18689"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — m1m9w3324/1321",
+      "user": "m1m9w3324/1321"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — YS011B/10674",
+      "user": "YS011B/10674"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — duolaxiazi1/4507",
+      "user": "duolaxiazi1/4507"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — chengseyouxuan/932",
+      "user": "chengseyouxuan/932"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — stpfgp/9848",
+      "user": "stpfgp/9848"
+    },
+    {
+      "name": "🎬 ✨ Ssaimi — AA404AV/2396",
+      "user": "AA404AV/2396"
+    }
+  ]
 };
 
 // ============================
@@ -505,6 +1152,22 @@ function getMainKeyboard() {
         { text: "🎯 Perverted Woman", callback_data: "topic:ai" },
         { text: "💎 BeautyFilterRendering", callback_data: "topic:bitcoin" },
       ],
+      [
+        { text: "🌸 Meriolchan", callback_data: "topic:meriolchan" },
+        { text: "⭐ Isa", callback_data: "topic:isa" },
+      ],
+      [
+        { text: "👁️ Hypnotic Eyes", callback_data: "topic:hypnotic_eyes" },
+        { text: "☀️ Sun Yezi", callback_data: "topic:sun_yezi" },
+      ],
+      [
+        { text: "💃 Odetta", callback_data: "topic:odetta" },
+        { text: "👑 Socialite", callback_data: "topic:socialite" },
+      ],
+      [
+        { text: "⛩️ Nine Gates", callback_data: "topic:nine_gates" },
+        { text: "✨ Ssaimi", callback_data: "topic:ssaimi" },
+      ],
     ],
   };
 }
@@ -676,8 +1339,9 @@ async function getTrendingKeyboard() {
     }
   }
   
-  rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
+  rows.push([{ text: "🔥 HOT TOPICS", callback_data: "none" }]);
   rows.push(...mainKeys);
+  rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
 
   return { inline_keyboard: rows };
 }
@@ -744,10 +1408,18 @@ function formatChannelList(channels, topicName) {
 }
 
 const TOPIC_NAMES = {
-  ai: " Test-01",
-  bitcoin: " Test-02",
+  ai: "🎯 Perverted Woman",
+  bitcoin: "💎 BeautyFilterRendering",
   tesla: " Test-03",
   openai: "🌐 Test-04",
+  meriolchan: "🌸 Meriolchan",
+  isa: "⭐ Isa",
+  hypnotic_eyes: "👁️ Hypnotic Eyes",
+  sun_yezi: "☀️ Sun Yezi",
+  odetta: "💃 Odetta",
+  socialite: "👑 Socialite",
+  nine_gates: "⛩️ Nine Gates",
+  ssaimi: "✨ Ssaimi",
 };
 
 // ============================
