@@ -1645,11 +1645,11 @@ const CATEGORIES = {
       { name: "🎮 Play Games — @MTXFXS", url: "https://t.me/MTXFXS?start=xbiso" },
       { name: "🎮 Play Games — @huangyou_A", url: "https://t.me/huangyou_A?start=xbiso" },
       { name: "🎮 Play Games — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" },
-      { name: "🎮 Play Games — @cosplaytele2", url: "https://t.me/cosplaytele2?start=xbiso" },
-      { name: "🎮 Play Games — @TT95333", url: "https://t.me/TT95333?start=xbiso" },
-      { name: "🎮 Play Games — @BTCnewsvip02", url: "https://t.me/BTCnewsvip02?start=xbiso" },
-      { name: "🎮 Play Games — @bgtfp", url: "https://t.me/bgtfp?start=xbiso" },
-      { name: "🎮 Play Games — @rgggg", url: "https://t.me/rgggg?start=xbiso" }
+      { name: "🎮 Play Games — @newgames", url: "https://t.me/newgames" },
+      { name: "🎮 Play Games — @GameMartzOfficial", url: "https://t.me/GameMartzOfficial" },
+      { name: "🎮 Play Games — @TGGames_official", url: "https://t.me/TGGames_official" },
+      { name: "🎮 Play Games — @thenotgames", url: "https://t.me/thenotgames" },
+      { name: "🎮 Play Games — @FreeGamesNews", url: "https://t.me/FreeGamesNews" }
     ]
   },
   ai_tools: {
@@ -1665,13 +1665,13 @@ const CATEGORIES = {
       { name: "🤖 AI — @inshdjk", url: "https://t.me/inshdjk?start=xbiso" },
       { name: "🤖 AI — @DNSPODT", url: "https://t.me/DNSPODT?start=xbiso" },
       { name: "🤖 AI — @clbfxs", url: "https://t.me/clbfxs?start=xbiso" },
-      { name: "🤖 AI — @woaicja", url: "https://t.me/woaicja?start=xbiso" },
-      { name: "🤖 AI — @piracy6", url: "https://t.me/piracy6?start=xbiso" },
       { name: "🤖 AI — @yumengai", url: "https://t.me/yumengai?start=xbiso" },
       { name: "🤖 AI — @ph_dcgroup", url: "https://t.me/ph_dcgroup?start=xbiso" },
-      { name: "🤖 AI — @GodlyNews1", url: "https://t.me/GodlyNews1?start=xbiso" },
-      { name: "🤖 AI — @me888888888888", url: "https://t.me/me888888888888?start=xbiso" },
-      { name: "🤖 AI — @FinanceNewsDaily", url: "https://t.me/FinanceNewsDaily?start=xbiso" }
+      { name: "🤖 AI — @aipost", url: "https://t.me/aipost" },
+      { name: "🤖 AI — @Artificial_intelligence_in", url: "https://t.me/Artificial_intelligence_in" },
+      { name: "🤖 AI — @DeepLearning_ai", url: "https://t.me/DeepLearning_ai" },
+      { name: "🤖 AI — @DataScienceM", url: "https://t.me/DataScienceM" },
+      { name: "🤖 AI — @ai_news_world", url: "https://t.me/ai_news_world" }
     ]
   },
   stories: {
@@ -1690,11 +1690,11 @@ const CATEGORIES = {
       { name: "📚 Short Stories — @BookLogChannel", url: "https://t.me/BookLogChannel?start=xbiso" },
       { name: "📚 Short Stories — @novel_174", url: "https://t.me/novel_174?start=xbiso" },
       { name: "📚 Short Stories — @ysxs8", url: "https://t.me/ysxs8?start=xbiso" },
-      { name: "📚 Short Stories — @Flymirai", url: "https://t.me/Flymirai?start=xbiso" },
-      { name: "📚 Short Stories — @SQXiaoShuo", url: "https://t.me/SQXiaoShuo?start=xbiso" },
-      { name: "📚 Short Stories — @douban_read", url: "https://t.me/douban_read?start=xbiso" },
-      { name: "📚 Short Stories — @qsxiaoshuo", url: "https://t.me/qsxiaoshuo?start=xbiso" },
-      { name: "📚 Short Stories — @JGBOOK", url: "https://t.me/JGBOOK?start=xbiso" }
+      { name: "📚 Short Stories — @shortstoriesmm", url: "https://t.me/shortstoriesmm" },
+      { name: "📚 Short Stories — @tellshorttales", url: "https://t.me/tellshorttales" },
+      { name: "📚 Short Stories — @english_storyBook", url: "https://t.me/english_storyBook" },
+      { name: "📚 Short Stories — @book_lists", url: "https://t.me/book_lists" },
+      { name: "📚 Short Stories — @booksmania", url: "https://t.me/booksmania" }
     ]
   },
   papers: {
@@ -1712,11 +1712,11 @@ const CATEGORIES = {
       { name: "🔬 Scientific Paper — @hkfwq111", url: "https://t.me/hkfwq111?start=xbiso" },
       { name: "🔬 Scientific Paper — @LCGFX", url: "https://t.me/LCGFX?start=xbiso" },
       { name: "🔬 Scientific Paper — @xiaoshuwu", url: "https://t.me/xiaoshuwu?start=xbiso" },
-      { name: "🔬 Scientific Paper — @jiufangyum", url: "https://t.me/jiufangyum?start=xbiso" },
-      { name: "🔬 Scientific Paper — @DuyaoSS", url: "https://t.me/DuyaoSS?start=xbiso" },
-      { name: "🔬 Scientific Paper — @aibuwan8", url: "https://t.me/aibuwan8?start=xbiso" },
-      { name: "🔬 Scientific Paper — @GieGie777", url: "https://t.me/GieGie777?start=xbiso" },
-      { name: "🔬 Scientific Paper — @The_Lord_Rings", url: "https://t.me/The_Lord_Rings?start=xbiso" }
+      { name: "🔬 Scientific Paper — @science", url: "https://t.me/science" },
+      { name: "🔬 Scientific Paper — @scientific", url: "https://t.me/scientific" },
+      { name: "🔬 Scientific Paper — @science_talk", url: "https://t.me/science_talk" },
+      { name: "🔬 Scientific Paper — @research_publications", url: "https://t.me/research_publications" },
+      { name: "🔬 Scientific Paper — @assignmentandthesis", url: "https://t.me/assignmentandthesis" }
     ]
   },
   opening_up: {
@@ -1732,12 +1732,12 @@ const CATEGORIES = {
       { name: "🔓 Opening Up — @PMVMOI", url: "https://t.me/PMVMOI?start=xbiso" },
       { name: "🔓 Opening Up — @FC2PPVcom", url: "https://t.me/FC2PPVcom?start=xbiso" },
       { name: "🔓 Opening Up — @asmreggaudios", url: "https://t.me/asmreggaudios?start=xbiso" },
-      { name: "🔓 Opening Up — @qwflyxpd", url: "https://t.me/qwflyxpd?start=xbiso" },
       { name: "🔓 Opening Up — @asmr_one_chan", url: "https://t.me/asmr_one_chan?start=xbiso" },
-      { name: "🔓 Opening Up — @freeasmrshare", url: "https://t.me/freeasmrshare?start=xbiso" },
-      { name: "🔓 Opening Up — @jifenshuom", url: "https://t.me/jifenshuom?start=xbiso" },
-      { name: "🔓 Opening Up — @kpppluping", url: "https://t.me/kpppluping?start=xbiso" },
-      { name: "🔓 Opening Up — @jishanxian", url: "https://t.me/jishanxian?start=xbiso" }
+      { name: "🔓 Opening Up — @ASMREmily", url: "https://t.me/ASMREmily" },
+      { name: "🔓 Opening Up — @asmrselena", url: "https://t.me/asmrselena" },
+      { name: "🔓 Opening Up — @videosasmr", url: "https://t.me/videosasmr" },
+      { name: "🔓 Opening Up — @ASMR_Relaxing_Sound", url: "https://t.me/ASMR_Relaxing_Sound" },
+      { name: "🔓 Opening Up — @relaxwithasmr", url: "https://t.me/relaxwithasmr" }
     ]
   },
   food_source: {
@@ -1758,11 +1758,11 @@ const CATEGORIES = {
       { name: "🍴 Source of Food — @Gay123TV", url: "https://t.me/Gay123TV?start=xbiso" },
       { name: "🍴 Source of Food — @Aliyun_4K_Movies", url: "https://t.me/Aliyun_4K_Movies?start=xbiso" },
       { name: "🍴 Source of Food — @ZYFLS66", url: "https://t.me/ZYFLS66?start=xbiso" },
-      { name: "🍴 Source of Food — @qiuyuezt", url: "https://t.me/qiuyuezt?start=xbiso" },
-      { name: "🍴 Source of Food — @dianzinvyou111", url: "https://t.me/dianzinvyou111?start=xbiso" },
-      { name: "🍴 Source of Food — @bhg1232", url: "https://t.me/bhg1232?start=xbiso" },
-      { name: "🍴 Source of Food — @MTXFXS", url: "https://t.me/MTXFXS?start=xbiso" },
-      { name: "🍴 Source of Food — @DYSJ88", url: "https://t.me/DYSJ88?start=xbiso" }
+      { name: "🍴 Source of Food — @culinaryD", url: "https://t.me/culinaryD" },
+      { name: "🍴 Source of Food — @cookingandcooking", url: "https://t.me/cookingandcooking" },
+      { name: "🍴 Source of Food — @cookingdish", url: "https://t.me/cookingdish" },
+      { name: "🍴 Source of Food — @thevideorecipes", url: "https://t.me/thevideorecipes" },
+      { name: "🍴 Source of Food — @JiyasKitchenIndianVegFood", url: "https://t.me/JiyasKitchenIndianVegFood" }
     ]
   },
   finance: {
@@ -1780,11 +1780,11 @@ const CATEGORIES = {
       { name: "💰 Financial Investment — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" },
       { name: "💰 Financial Investment — @xinwenrd", url: "https://t.me/xinwenrd?start=xbiso" },
       { name: "💰 Financial Investment — @shuzibaike", url: "https://t.me/shuzibaike?start=xbiso" },
-      { name: "💰 Financial Investment — @dashubi", url: "https://t.me/dashubi?start=xbiso" },
-      { name: "💰 Financial Investment — @dddyu1z", url: "https://t.me/dddyu1z?start=xbiso" },
-      { name: "💰 Financial Investment — @ZQJPZ", url: "https://t.me/ZQJPZ?start=xbiso" },
-      { name: "💰 Financial Investment — @fenchacaij", url: "https://t.me/fenchacaij?start=xbiso" },
-      { name: "💰 Financial Investment — @AB15996", url: "https://t.me/AB15996?start=xbiso" }
+      { name: "💰 Financial Investment — @finance", url: "https://t.me/finance" },
+      { name: "💰 Financial Investment — @crypto_finance", url: "https://t.me/crypto_finance" },
+      { name: "💰 Financial Investment — @stockstudy", url: "https://t.me/stockstudy" },
+      { name: "💰 Financial Investment — @financially_free_in", url: "https://t.me/financially_free_in" },
+      { name: "💰 Financial Investment — @token", url: "https://t.me/token" }
     ]
   },
   adult: {
