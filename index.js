@@ -1325,12 +1325,17 @@ function makeSearchCallbackData(keyword) {
 
 async function getTrendingKeyboard() {
   const featuredRows = getFeaturedKeyboard();
-  const breaking = getBreakingNews();
   const mainKeys = getMainKeyboard().inline_keyboard;
-  
+  const breaking = getBreakingNews();
+  const trendingKw = getTrendingKeywords();
+
+  // 1. Existing 8 topics (Featured Cards)
   const rows = [...featuredRows];
 
-  // Breaking news at bottom (after featured cards)
+  // 2. New 8 topics (from Book2_deduplicated.xlsx)
+  rows.push(...mainKeys);
+
+  // 3. Breaking News
   if (breaking.length > 0) {
     rows.push([{ text: "📰 BREAKING NEWS", callback_data: "none" }]);
     for (const news of breaking) {
@@ -1338,10 +1343,22 @@ async function getTrendingKeyboard() {
       rows.push([{ text: `📰 ${displayNews}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
     }
   }
-  
-  rows.push([{ text: "🔥 HOT TOPICS", callback_data: "none" }]);
-  rows.push(...mainKeys);
+
+  // 4. Refresh Trending button
   rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
+
+  // 5. Trending search buttons
+  if (trendingKw.length > 0) {
+    for (let i = 0; i < Math.min(trendingKw.length, 6); i += 2) {
+      const kw1 = trendingKw[i];
+      const kw2 = trendingKw[i + 1];
+      const row = [{ text: `🔥 ${kw1}`, callback_data: makeSearchCallbackData(kw1) }];
+      if (kw2) {
+        row.push({ text: `🔥 ${kw2}`, callback_data: makeSearchCallbackData(kw2) });
+      }
+      rows.push(row);
+    }
+  }
 
   return { inline_keyboard: rows };
 }
