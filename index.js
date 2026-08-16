@@ -1147,13 +1147,13 @@ function getFeaturedChannels(cardId) {
   return Object.values(channelMap);
 }
 
-async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = null) {
-  const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
-  const cardName = cardInfo ? cardInfo.name : `Card ${cardId}`;
-  const posts = getFeaturedPosts(cardId);
 
-  if (!posts || posts.length === 0) {
-    const emptyText = `🔥 <b>${escapeHTML(cardName)}</b>\n\nNo posts found for this category.`;
+// ============================================================
+// 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (ALL 20 TOPICS + 4 CATEGORIES)
+// ============================================================
+async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
+  if (!items || items.length === 0) {
+    const emptyText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\nNo posts found for this topic.`;
     const emptyOpts = {
       parse_mode: "HTML",
       reply_markup: {
@@ -1170,86 +1170,23 @@ async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = nul
   }
 
   const itemsPerPage = 10;
-  const totalPages = Math.ceil(posts.length / itemsPerPage);
+  const totalPages = Math.ceil(items.length / itemsPerPage);
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const pagePosts = posts.slice(startIndex, startIndex + itemsPerPage);
+  const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
 
-  // ============================================================
-  // PROTOTYPE ONLY: 🔥 Teng Teng Cai (Card ID 6) Hyperlink List View
-  // ============================================================
-  if (cardId === 6) {
-    const linkLines = pagePosts.map((p, index) => {
-      const itemNumber = startIndex + index + 1;
-      let displayTitle = String(p.title || "").trim();
-      if (!displayTitle) {
-        displayTitle = "Teng Teng Cai — Video";
-      }
-
-      let icon = "";
-      if (displayTitle.includes("▶") || displayTitle.includes("🎬") || displayTitle.includes("🖼️") || displayTitle.includes("📄") || displayTitle.includes("📹") || displayTitle.includes("🔘")) {
-        icon = "";
-      } else if (p.url && p.url.includes("img")) {
-        icon = "🖼️ ";
-      } else if (displayTitle.startsWith("[")) {
-        icon = "▶️ ";
-      } else {
-        icon = "🎬 ";
-      }
-
-      const fullTitle = `${icon}${displayTitle}`.trim();
-      const escapedTitle = escapeHTML(fullTitle);
-      const safeUrl = escapeHTML(p.url);
-
-      return `${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`;
-    });
-
-    let messageText = `🔥🔥 <b>${escapeHTML(cardName)}</b>\n\n`;
-    messageText += `Below are the channels and videos related to this topic. Click any link to open.\n`;
-    messageText += `───────────────────\n`;
-    messageText += `🔗 <b>CHANNEL/VIDEO LINKS</b>\n\n`;
-    messageText += linkLines.join("\n\n");
-    if (totalPages > 1) {
-      messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
-    }
-    messageText += `\n\nℹ️ <i>Note: Click any link above to open the channel/video in Telegram.</i>`;
-
-    const navRow = [];
-    if (currentPage > 1) {
-      navRow.push({ text: "⬅️ Previous", callback_data: `featured_page:${cardId}:${currentPage - 1}` });
-    }
-    if (currentPage < totalPages) {
-      navRow.push({ text: "Next ➡️", callback_data: `featured_page:${cardId}:${currentPage + 1}` });
+  const linkLines = pageItems.map((p, index) => {
+    const itemNumber = startIndex + index + 1;
+    let displayTitle = String(p.title || p.name || "").trim();
+    if (!displayTitle) {
+      displayTitle = "Telegram Resource";
     }
 
-    const inline_keyboard = [];
-    if (navRow.length > 0) {
-      inline_keyboard.push(navRow);
-    }
-    inline_keyboard.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
-
-    const messageOptions = {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: { inline_keyboard },
-    };
-
-    if (messageId) {
-      return await editMessageTextSafe(chatId, messageId, messageText, messageOptions);
-    } else {
-      return await sendMessageSafe(chatId, messageText, messageOptions);
-    }
-  }
-
-  const rows = pagePosts.map(p => {
-    let displayTitle = String(p.title || "").trim();
     let icon = "";
-
-    // Check if title already contains media icon or starts with bracket
     if (displayTitle.includes("▶") || displayTitle.includes("🎬") || displayTitle.includes("🖼️") || displayTitle.includes("📄") || displayTitle.includes("📹") || displayTitle.includes("🔘")) {
       icon = "";
-    } else if (p.url.includes("img") || displayTitle.toLowerCase().includes("photo")) {
+    } else if (p.url && p.url.includes("img")) {
       icon = "🖼️ ";
     } else if (displayTitle.startsWith("[")) {
       icon = "▶️ ";
@@ -1258,29 +1195,41 @@ async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = nul
     }
 
     const fullTitle = `${icon}${displayTitle}`.trim();
-    const titleText = truncateUTF8(fullTitle, 55);
-    return [{ text: titleText, url: p.url }];
+    const escapedTitle = escapeHTML(fullTitle);
+    const itemUrl = p.url || (p.user ? `https://t.me/${p.user}` : "");
+    const safeUrl = escapeHTML(itemUrl);
+
+    return `${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`;
   });
 
-  // Pagination row if totalPages > 1
+  let messageText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\n`;
+  messageText += `Below are the channels and videos related to this topic. Click any link to open.\n`;
+  messageText += `───────────────────\n`;
+  messageText += `🔗 <b>CHANNEL/VIDEO LINKS</b>\n\n`;
+  messageText += linkLines.join("\n\n");
   if (totalPages > 1) {
-    const navRow = [];
-    if (currentPage > 1) {
-      navRow.push({ text: "◀ Previous", callback_data: `featured_page:${cardId}:${currentPage - 1}` });
-    }
-    navRow.push({ text: `Page ${currentPage}/${totalPages}`, callback_data: "none" });
-    if (currentPage < totalPages) {
-      navRow.push({ text: "Next ▶", callback_data: `featured_page:${cardId}:${currentPage + 1}` });
-    }
-    rows.push(navRow);
+    messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
+  }
+  messageText += `\n\nℹ️ <i>Note: Click any link above to open the channel/video in Telegram.</i>`;
+
+  const navRow = [];
+  if (currentPage > 1) {
+    navRow.push({ text: "⬅️ Previous", callback_data: `${callbackPrefix}:${currentPage - 1}` });
+  }
+  if (currentPage < totalPages) {
+    navRow.push({ text: "Next ➡️", callback_data: `${callbackPrefix}:${currentPage + 1}` });
   }
 
-  rows.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+  const inline_keyboard = [];
+  if (navRow.length > 0) {
+    inline_keyboard.push(navRow);
+  }
+  inline_keyboard.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
 
-  const messageText = `🔥 <b>${escapeHTML(cardName)}</b>\n\nFound <b>${posts.length}</b> post(s):`;
   const messageOptions = {
     parse_mode: "HTML",
-    reply_markup: { inline_keyboard: rows },
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard },
   };
 
   if (messageId) {
@@ -1288,6 +1237,25 @@ async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = nul
   } else {
     return await sendMessageSafe(chatId, messageText, messageOptions);
   }
+}
+
+async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = null) {
+  const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
+  const cardName = cardInfo ? cardInfo.name : `Card ${cardId}`;
+  const posts = getFeaturedPosts(cardId);
+  return await renderHyperlinkListPostView(chatId, cardName, posts, page, `featured_page:${cardId}`, messageId);
+}
+
+async function renderCategoryResources(chatId, catKey, page = 1, messageId = null) {
+  const category = CATEGORIES[catKey];
+  if (!category) return;
+  return await renderHyperlinkListPostView(chatId, category.title, category.items, page, `cat_page:${catKey}`, messageId);
+}
+
+async function renderTopicPosts(chatId, topicKey, page = 1, messageId = null) {
+  const channels = CHANNELS[topicKey] || [];
+  const displayTopicName = TOPIC_NAMES[topicKey] || topicKey;
+  return await renderHyperlinkListPostView(chatId, displayTopicName, channels, page, `topic_page:${topicKey}`, messageId);
 }
 
 async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1, messageId = null) {
