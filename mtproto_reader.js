@@ -1,6 +1,6 @@
-require("D:\\Automation\\hiruboy\\node_modules\\dotenv").config({ path: "D:\\Automation\\hiruboy\\.env" });
-const { TelegramClient, Api } = require("D:\\Automation\\hiruboy\\node_modules\\telegram");
-const { StringSession } = require("D:\\Automation\\hiruboy\\node_modules\\telegram\\sessions");
+require("dotenv").config();
+const { TelegramClient, Api } = require("telegram");
+const { StringSession } = require("telegram/sessions");
 
 const sourceRegistry = require("./source_registry");
 

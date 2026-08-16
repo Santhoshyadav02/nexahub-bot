@@ -1,7 +1,7 @@
 require("dotenv").config();
-const { TelegramClient } = require("D:\\Automation\\hiruboy\\node_modules\\telegram");
-const { StringSession } = require("D:\\Automation\\hiruboy\\node_modules\\telegram\\sessions");
-const input = require("D:\\Automation\\hiruboy\\node_modules\\input");
+const { TelegramClient } = require("telegram");
+const { StringSession } = require("telegram/sessions");
+const input = require("input");
 
 const apiId = parseInt(process.env.TELEGRAM_API_ID, 10);
 const apiHash = process.env.TELEGRAM_API_HASH;
