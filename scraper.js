@@ -5,45 +5,59 @@ let isScrapingTrending = false;
 let isScrapingBreaking = false;
 
 async function scrapeTrending() {
-  console.log("🔍 Scraping signal.bz...");
-  let browser = null;
+  console.log("🔍 Scraping real-time trending keywords via HTTP...");
+  return new Promise((resolve) => {
+    const url = "https://trends.google.com/trending/rss?geo=US";
+    https.get(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/rss+xml, application/xml, text/xml, */*"
+      },
+      timeout: 8000
+    }, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        const itemMatches = data.match(/<title>([\s\S]*?)<\/title>/gi) || [];
+        const keywords = [];
+        for (const item of itemMatches) {
+          let clean = item
+            .replace(/<[^>]+>/g, "")
+            .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&#39;/g, "'")
+            .trim();
+          if (clean && clean !== "Daily Search Trends" && !keywords.includes(clean)) {
+            keywords.push(clean);
+          }
+          if (keywords.length >= 10) break;
+        }
 
-  try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto("https://www.signal.bz", { waitUntil: "domcontentloaded", timeout: 30000 });
-
-    // Wait for content to load
-    await page.waitForTimeout(3000);
-
-    // Use correct selector .rank-text
-    const keywords = await page.evaluate(() => {
-      const items = document.querySelectorAll(".rank-text");
-      return Array.from(items)
-        .slice(0, 10)
-        .map(item => item.innerText.trim())
-        .filter(text => text.length > 0);
+        if (keywords.length > 0) {
+          const payload = {
+            updatedAt: new Date().toISOString(),
+            keywords: keywords
+          };
+          fs.writeFileSync("trending.json", JSON.stringify(payload, null, 2), "utf8");
+          console.log(`✅ Saved ${keywords.length} trending keywords to trending.json:`);
+          keywords.forEach((kw, i) => console.log(`   ${i + 1}. ${kw}`));
+        } else {
+          console.log("⚠️ No trending keywords parsed!");
+        }
+        resolve();
+      });
+    }).on("error", (err) => {
+      console.error("❌ Trending HTTP error:", err.message);
+      resolve();
+    }).on("timeout", function() {
+      this.destroy();
+      console.error("❌ Trending HTTP timeout");
+      resolve();
     });
-
-    if (keywords.length > 0) {
-      const data = {
-        updatedAt: new Date().toISOString(),
-        keywords: keywords,
-      };
-      fs.writeFileSync("trending.json", JSON.stringify(data, null, 2), "utf8");
-      console.log(`✅ Saved ${keywords.length} trending keywords:`);
-      keywords.forEach((kw, i) => console.log(`   ${i + 1}. ${kw}`));
-    } else {
-      console.log("⚠️ No keywords found! Keeping old data.");
-    }
-
-  } catch (err) {
-    console.error("❌ Scraping error:", err.message);
-  } finally {
-    if (browser) {
-      await browser.close().catch(e => console.error("Error closing trending browser:", e.message));
-    }
-  }
+  });
 }
 
 async function scrapeBreakingNews() {

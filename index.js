@@ -1320,7 +1320,7 @@ function getMainKeyboard() {
         { text: "🎲 Baccarat", callback_data: "featured:8" },
       ],
       [
-        { text: "🎯 Perverted", callback_data: "topic:ai" },
+        { text: "🔥 Perverted", callback_data: "topic:ai" },
         { text: "💎 BeautyFilter", callback_data: "topic:bitcoin" },
         { text: "🌸 Meriolchan", callback_data: "topic:meriolchan" },
         { text: "⭐ Isa", callback_data: "topic:isa" },
@@ -1328,13 +1328,13 @@ function getMainKeyboard() {
       [
         { text: "👁️ Hypnotic Eyes", callback_data: "topic:hypnotic_eyes" },
         { text: "☀️ Sun Yezi", callback_data: "topic:sun_yezi" },
-        { text: "💃 Odetta", callback_data: "topic:odetta" },
+        { text: "🔥 Odetta", callback_data: "topic:odetta" },
         { text: "👑 Socialite", callback_data: "topic:socialite" },
       ],
       [
         { text: "⛩️ Nine Gates", callback_data: "topic:nine_gates" },
         { text: "✨ Ssaimi", callback_data: "topic:ssaimi" },
-        { text: "🐉 Dragon Rest.", callback_data: "topic:dragon_restaurant" },
+        { text: "🔥 Dragon Rest.", callback_data: "topic:dragon_restaurant" },
         { text: "📣 Shoko Shouko", callback_data: "topic:shoko_shouko" },
       ],
     ],
@@ -1428,7 +1428,7 @@ function getTrendingKeywords() {
   } catch (err) {
     console.error("Error reading trending.json:", err.message);
   }
-  return ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5"];
+  return [];
 }
 
 function getBreakingNews() {
