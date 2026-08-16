@@ -1184,7 +1184,7 @@ function getFeaturedChannels(cardId) {
 // ============================================================
 async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
   if (!items || items.length === 0) {
-    const emptyText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\nNo related content available in managed source channels yet.`;
+    const emptyText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\nNo posts available in this channel yet.`;
     const emptyOpts = {
       parse_mode: "HTML",
       reply_markup: {
@@ -1374,9 +1374,9 @@ async function renderCategoryResources(chatId, catKey, page = 1, messageId = nul
 }
 
 async function renderTopicPosts(chatId, topicKey, page = 1, messageId = null) {
-  const channels = CHANNELS[topicKey] || [];
+  const posts = sourceRegistry.getPostsForKeyword(topicKey);
   const displayTopicName = TOPIC_NAMES[topicKey] || topicKey;
-  return await renderHyperlinkListPostView(chatId, displayTopicName, channels, page, `topic_page:${topicKey}`, messageId);
+  return await renderHyperlinkListPostView(chatId, displayTopicName, posts, page, `topic_page:${topicKey}`, messageId);
 }
 
 async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1, messageId = null) {
@@ -1459,150 +1459,22 @@ async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1
   }
 }
 
-async function getMainKeyboard() {
-  // 1. CARDS 1–10: Live Korean Trending Searches (Google Trends KR translated to English)
-  const krKeywords = getTrendingKeywords();
-  const card1to10Buttons = [];
-  
-  for (let i = 0; i < 10; i++) {
-    const rawKw = krKeywords[i] || `Trend ${i + 1}`;
-    const displayKw = await translateText(rawKw, "en");
-    let safeDisplay = displayKw.trim();
-    if (safeDisplay.length > 20) {
-      safeDisplay = safeDisplay.substring(0, 18) + "..";
-    }
-    card1to10Buttons.push({
-      text: `🔥 ${safeDisplay}`,
-      callback_data: makeSearchCallbackData(rawKw)
-    });
+function truncateUTF8(str, maxBytes) {
+  if (!str) return "";
+  const buf = Buffer.from(String(str), "utf8");
+  if (buf.length <= maxBytes) {
+    return str;
   }
-
-  // 2. CARDS 11–20: OUR 10 MANAGED TELEGRAM CHANNELS (Fixed Channel Mapping)
-  const targetSources = sourceRegistry.getAllSources(); // Fixed order: Romantic Vibe, Dating, Romance, Crotch, Mosa, etc.
-  const card11to20Buttons = [];
-
-  for (let i = 0; i < 10; i++) {
-    const source = targetSources[i];
-    let label = "";
-    let callbackData = "";
-
-    if (source) {
-      // Get latest post specifically for this managed channel
-      const channelPosts = sourceRegistry.getPostsForKeyword(source.keyword);
-      const latestPost = channelPosts[0] || null;
-
-      if (latestPost) {
-        let cleanTitle = latestPost.title.replace(/^[▶️🎬🖼️\s]+/, '').replace(/^\[[^\]]+\]\s*/, '').trim();
-        if (!cleanTitle) cleanTitle = source.name;
-        if (cleanTitle.length > 20) {
-          cleanTitle = cleanTitle.substring(0, 18) + "..";
-        }
-        label = `▶️ ${cleanTitle}`;
-      } else {
-        let srcName = source.name;
-        if (srcName.length > 20) {
-          srcName = srcName.substring(0, 18) + "..";
-        }
-        label = `▶️ ${srcName}`;
-      }
-      callbackData = `topic:${source.keyword}`;
-    } else {
-      label = `▶️ Channel ${i + 1}`;
-      callbackData = `menu`;
-    }
-
-    card11to20Buttons.push({
-      text: label,
-      callback_data: callbackData
-    });
+  let sliceLen = maxBytes;
+  while (sliceLen > 0 && (buf[sliceLen] & 0xc0) === 0x80) {
+    sliceLen--;
   }
-
-  // Assemble into 5 rows x 4 columns grid (Cards 1–20)
-  const allButtons = [...card1to10Buttons, ...card11to20Buttons];
-  const gridRows = [];
-  for (let i = 0; i < allButtons.length; i += 4) {
-    gridRows.push(allButtons.slice(i, i + 4));
-  }
-
-  return { inline_keyboard: gridRows };
+  return buf.slice(0, sliceLen).toString("utf8");
 }
 
-function searchResources(query) {
-  if (!query || typeof query !== "string") return [];
-  const rawQuery = query.trim().toLowerCase();
-  if (!rawQuery) return [];
-
-  const compactQuery = rawQuery.replace(/[\s\-_]+/g, "");
-  const tokens = rawQuery.split(/[\s\-_]+/).filter(t => t.length > 0);
-
-  const matchedItems = [];
-
-  for (const [catKey, items] of Object.entries(CHANNELS)) {
-    if (!Array.isArray(items)) continue;
-
-    for (const item of items) {
-      if (!item || !item.name) continue;
-
-      const nameLower = item.name.toLowerCase();
-      const userLower = (item.user || "").toLowerCase();
-      const catLower = catKey.toLowerCase();
-      const nameCompact = nameLower.replace(/[\s\-_]+/g, "");
-      const userCompact = userLower.replace(/[\s\-_]+/g, "");
-
-      let score = 0;
-
-      // 1. Exact phrase or code match (Highest priority)
-      if (nameLower.includes(rawQuery) || (compactQuery.length > 1 && nameCompact.includes(compactQuery))) {
-        score += 100;
-      }
-      if (userLower.includes(rawQuery) || (compactQuery.length > 1 && userCompact.includes(compactQuery))) {
-        score += 90;
-      }
-
-      // 2. Token relevance matching in name
-      for (const t of tokens) {
-        const compactToken = t.replace(/[\s\-_]+/g, "");
-        if (nameLower.includes(t)) {
-          score += 30;
-        } else if (compactToken.length > 1 && nameCompact.includes(compactToken)) {
-          score += 25;
-        }
-      }
-
-      // 3. Category matching
-      if (catLower.includes(rawQuery) || tokens.some(t => catLower.includes(t))) {
-        score += 15;
-      }
-
-      // 4. Token relevance matching in user field
-      for (const t of tokens) {
-        if (userLower.includes(t)) {
-          score += 10;
-        }
-      }
-
-      if (score > 0) {
-        matchedItems.push({
-          name: item.name,
-          user: item.user,
-          category: catKey,
-          score: score,
-        });
-      }
-    }
-  }
-
-  // Deduplicate by user URL if duplicate items exist across categories, keeping highest score
-  const uniqueMap = new Map();
-  for (const item of matchedItems) {
-    const existing = uniqueMap.get(item.user);
-    if (!existing || item.score > existing.score) {
-      uniqueMap.set(item.user, item);
-    }
-  }
-
-  // Sort by score descending
-  return Array.from(uniqueMap.values()).sort((a, b) => b.score - a.score);
+function makeSearchCallbackData(keyword) {
+  const safeKw = truncateUTF8(keyword, 57);
+  return `search:${safeKw}`;
 }
 
 function getTrendingKeywords() {
@@ -1629,75 +1501,83 @@ function getBreakingNews() {
   return [];
 }
 
-// ============================
-// 🌟 FEATURED RESOURCES (TOP 8 CARDS)
-// ============================
-const FEATURED_RESOURCES = [
-  { id: 1, name: "🔥 Huangguo Short Dramas" },
-  { id: 2, name: "⭐ Li Meng" },
-  { id: 3, name: "🎤 Dong Qing" },
-  { id: 4, name: "👁️ Hypnotic Divine Eye" },
-  { id: 5, name: "🖤 pinkchyu" },
-  { id: 6, name: "🔥 Teng Teng Cai" },
-  { id: 7, name: "⚽ World Cup" },
-  { id: 8, name: "🎲 Baccarat / Dice / Gaming" }
+const TARGET_CHANNELS = [
+  "Romantic Vibe",
+  "Dating",
+  "Romance",
+  "Crotch",
+  "Mosa",
+  "Bunny Girl Cosplay Date",
+  "Lustful Hostess",
+  "Concubine",
+  "Saki Mizumi",
+  "A Muse"
 ];
 
-function getFeaturedKeyboard() {
-  const rows = [];
-  for (let i = 0; i < FEATURED_RESOURCES.length; i += 2) {
-    const r1 = FEATURED_RESOURCES[i];
-    const r2 = FEATURED_RESOURCES[i + 1];
-
-    const row = [
-      { text: `${r1.name}`, callback_data: `featured:${r1.id}` }
-    ];
-    if (r2) {
-      row.push({ text: `${r2.name}`, callback_data: `featured:${r2.id}` });
+async function getMainKeyboard() {
+  // 1. CARDS 1–10: Live Korean Trending Searches (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
+  const krKeywords = getTrendingKeywords();
+  const card1to10Buttons = [];
+  
+  for (let i = 0; i < 10; i++) {
+    const rawKw = krKeywords[i] || `Trend ${i + 1}`;
+    const displayKw = await translateText(rawKw, "en");
+    let safeDisplay = displayKw.trim();
+    if (safeDisplay.length > 20) {
+      safeDisplay = safeDisplay.substring(0, 18) + "..";
     }
-    rows.push(row);
+    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
+    card1to10Buttons.push({
+      text: `🔥 ${safeDisplay}`,
+      callback_data: `topic:${channelKeyword}` // Direct fixed channel connection (NO keyword searching)
+    });
   }
-  return rows;
-}
 
-function truncateUTF8(str, maxBytes) {
-  if (!str) return "";
-  const buf = Buffer.from(String(str), "utf8");
-  if (buf.length <= maxBytes) {
-    return str;
-  }
-  let sliceLen = maxBytes;
-  while (sliceLen > 0 && (buf[sliceLen] & 0xc0) === 0x80) {
-    sliceLen--;
-  }
-  return buf.slice(0, sliceLen).toString("utf8");
-}
+  // 2. CARDS 11–20: OUR 10 MANAGED TELEGRAM CHANNELS (Fixed Channel Mapping -> Latest Post / Channel Name)
+  const card11to20Buttons = [];
 
-function makeSearchCallbackData(keyword) {
-  const safeKw = truncateUTF8(keyword, 57);
-  return `search:${safeKw}`;
+  for (let i = 0; i < 10; i++) {
+    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
+    const channelPosts = sourceRegistry.getPostsForKeyword(channelKeyword);
+    const latestPost = channelPosts[0] || null;
+
+    let label = "";
+    if (latestPost) {
+      let cleanTitle = latestPost.title.replace(/^[▶️🎬🖼️\s]+/, '').replace(/^\[[^\]]+\]\s*/, '').trim();
+      if (!cleanTitle) cleanTitle = channelKeyword;
+      if (cleanTitle.length > 20) {
+        cleanTitle = cleanTitle.substring(0, 18) + "..";
+      }
+      label = `▶️ ${cleanTitle}`;
+    } else {
+      let srcName = channelKeyword;
+      if (srcName.length > 20) {
+        srcName = srcName.substring(0, 18) + "..";
+      }
+      label = `▶️ ${srcName}`;
+    }
+
+    card11to20Buttons.push({
+      text: label,
+      callback_data: `topic:${channelKeyword}`
+    });
+  }
+
+  // Assemble into 5 rows x 4 columns grid (Cards 1–20)
+  const allButtons = [...card1to10Buttons, ...card11to20Buttons];
+  const gridRows = [];
+  for (let i = 0; i < allButtons.length; i += 4) {
+    gridRows.push(allButtons.slice(i, i + 4));
+  }
+
+  return { inline_keyboard: gridRows };
 }
 
 async function getTrendingKeyboard() {
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
-  const breaking = getBreakingNews();
-
-  // 1. All 20 Hot Topics (4 buttons per row grid)
   const rows = [...mainKeys];
 
-  // 2. Breaking News (if any)
-  if (breaking.length > 0) {
-    rows.push([{ text: "📰 BREAKING NEWS", callback_data: "none" }]);
-    for (const news of breaking) {
-      const displayNews = await translateText(news, "en");
-      rows.push([{ text: `📰 ${displayNews}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
-    }
-  }
-
-  // 3. Refresh Trending button (full width)
-  rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
-
-  // 4. 8 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
+  // 8 Permanent Category Buttons (2 per row)
   rows.push([
     { text: "🎮 Play Games", callback_data: "cat:games" },
     { text: "🤖 AI", callback_data: "cat:ai_tools" }
@@ -2248,10 +2128,9 @@ if (isMainModule) {
 
 module.exports = {
   renderSearchResults,
-  searchResources,
+  renderTopicPosts,
   CHANNELS,
   CATEGORIES,
-  FEATURED_RESOURCES,
   truncateUTF8,
   makeSearchCallbackData,
   escapeHTML,
@@ -2260,10 +2139,6 @@ module.exports = {
   getTrendingKeyboard,
   getPersistentKeyboard,
   getPersistentNavigationKeyboard,
-  getFeaturedPosts,
-  getFeaturedChannels,
-  renderFeaturedCardPosts,
-  renderFeaturedChannelPosts,
   clearUserHistory,
   videoFileIdCache,
   saveVideoCache,
