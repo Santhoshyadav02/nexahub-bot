@@ -1176,6 +1176,72 @@ async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = nul
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pagePosts = posts.slice(startIndex, startIndex + itemsPerPage);
 
+  // ============================================================
+  // PROTOTYPE ONLY: 🔥 Teng Teng Cai (Card ID 6) Hyperlink List View
+  // ============================================================
+  if (cardId === 6) {
+    const linkLines = pagePosts.map((p, index) => {
+      const itemNumber = startIndex + index + 1;
+      let displayTitle = String(p.title || "").trim();
+      if (!displayTitle) {
+        displayTitle = "Teng Teng Cai — Video";
+      }
+
+      let icon = "";
+      if (displayTitle.includes("▶") || displayTitle.includes("🎬") || displayTitle.includes("🖼️") || displayTitle.includes("📄") || displayTitle.includes("📹") || displayTitle.includes("🔘")) {
+        icon = "";
+      } else if (p.url && p.url.includes("img")) {
+        icon = "🖼️ ";
+      } else if (displayTitle.startsWith("[")) {
+        icon = "▶️ ";
+      } else {
+        icon = "🎬 ";
+      }
+
+      const fullTitle = `${icon}${displayTitle}`.trim();
+      const escapedTitle = escapeHTML(fullTitle);
+      const safeUrl = escapeHTML(p.url);
+
+      return `${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`;
+    });
+
+    let messageText = `🔥🔥 <b>${escapeHTML(cardName)}</b>\n\n`;
+    messageText += `Below are the channels and videos related to this topic. Click any link to open.\n`;
+    messageText += `───────────────────\n`;
+    messageText += `🔗 <b>CHANNEL/VIDEO LINKS</b>\n\n`;
+    messageText += linkLines.join("\n\n");
+    if (totalPages > 1) {
+      messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
+    }
+    messageText += `\n\nℹ️ <i>Note: Click any link above to open the channel/video in Telegram.</i>`;
+
+    const navRow = [];
+    if (currentPage > 1) {
+      navRow.push({ text: "⬅️ Previous", callback_data: `featured_page:${cardId}:${currentPage - 1}` });
+    }
+    if (currentPage < totalPages) {
+      navRow.push({ text: "Next ➡️", callback_data: `featured_page:${cardId}:${currentPage + 1}` });
+    }
+
+    const inline_keyboard = [];
+    if (navRow.length > 0) {
+      inline_keyboard.push(navRow);
+    }
+    inline_keyboard.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+
+    const messageOptions = {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard },
+    };
+
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, messageText, messageOptions);
+    } else {
+      return await sendMessageSafe(chatId, messageText, messageOptions);
+    }
+  }
+
   const rows = pagePosts.map(p => {
     let displayTitle = String(p.title || "").trim();
     let icon = "";
