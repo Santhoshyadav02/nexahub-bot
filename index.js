@@ -6,6 +6,7 @@ try {
 
 const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
+const https = require("https");
 const { startScraperScheduler } = require("./scraper");
 
 // ============================
@@ -18,7 +19,8 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+const isMainModule = require.main === module;
+const bot = new TelegramBot(TOKEN, { polling: isMainModule });
 
 bot.on("polling_error", (error) => {
   console.error("⚠️ Telegram Bot Polling Error:", error.code || "", error.message || error);
@@ -30,25 +32,74 @@ bot.on("polling_error", (error) => {
 const WELCOME_IMAGE = "https://raw.githubusercontent.com/hiruboyz/news-bot/main/Magnifying%20wealth%20with%20vibrant%20colors.png";
 
 // ============================
+// 🌐 DYNAMIC TRANSLATION HELPER
+// ============================
+const translationCache = new Map();
+
+async function translateText(text, targetLang = "en") {
+  if (!text || typeof text !== "string") {
+    return text || "";
+  }
+
+  const cacheKey = `${targetLang}:${text}`;
+  if (translationCache.has(cacheKey)) {
+    return translationCache.get(cacheKey);
+  }
+
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+    const translated = await new Promise((resolve) => {
+      const req = https.get(url, { timeout: 3000 }, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed && parsed[0] && parsed[0][0] && parsed[0][0][0]) {
+              const fullText = parsed[0].map((item) => item[0]).filter(Boolean).join("");
+              resolve(fullText);
+            } else {
+              resolve(text);
+            }
+          } catch (e) {
+            resolve(text);
+          }
+        });
+      });
+      req.on("error", () => resolve(text));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(text);
+      });
+    });
+
+    translationCache.set(cacheKey, translated);
+    return translated;
+  } catch (err) {
+    return text;
+  }
+}
+
+// ============================
 // 📢 CHANNEL LISTS
 // ============================
 const CHANNELS = {
   ai: [
-    { name: "🎬 DASS-891 [The most special day in life - that's the wedding]", user: "posting_02/89" },
-    { name: "🎬 ADN-409 Unparalleled woman control, super staying power, intense insemination and intercourse by stepfather", user: "posting_02/91" },
-    { name: "🎬 ADN-762 For you, I...the sweaty young wife looking for excuses to cheat on her", user: "posting_02/93" },
-    { name: "🎬 CAWD-259 Uncensored Chinese", user: "posting_02/98" },
+    { name: "🎬 DASS-891 [The most special day in life - that's the wedding]", user: "fancha07" },
+    { name: "🎬 ADN-409 Unparalleled woman control, super staying power, intense insemination and intercourse by stepfather", user: "sesedeCB" },
+    { name: "🎬 ADN-762 For you, I...the sweaty young wife looking for excuses to cheat on her", user: "fanchaku8" },
+    { name: "🎬 CAWD-259 Uncensored Chinese", user: "yuziyuzi111" },
   ],
   bitcoin: [
-    { name: "🎬 🌟Bunny Garden🔞Rin-chan🌟 The incredibly accurate Bunny Garu Rin cosplay is so hot! In the cowgirl position ", user: "posting01/262" },
-    { name: "🎬 Tide x Cosplay x Tide Squirting Rapid-Fire Sex Rin Yoda", user: "posting01/295" },
-    { name: "🎬 Tide Gushing Rapid-Fire Sex Rin Yoda with Panties", user: "posting01/307" },
-    { name: "🎬 Tide Rapid-fire Cumshot Sex Rin Yoda with Panties and Photos", user: "posting01/311" },
+    { name: "🎬 🌟Bunny Garden🔞Rin-chan🌟 The incredibly accurate Bunny Garu Rin cosplay is so hot! In the cowgirl position ", user: "zzkbraxk" },
+    { name: "🎬 Tide x Cosplay x Tide Squirting Rapid-Fire Sex Rin Yoda", user: "LaiCai123688" },
+    { name: "🎬 Tide Gushing Rapid-Fire Sex Rin Yoda with Panties", user: "wuxisk112/245" },
+    { name: "🎬 Tide Rapid-fire Cumshot Sex Rin Yoda with Panties and Photos", user: "quanzhou99990000/221" },
   ],
   tesla: [
-    { name: "🎬 极品奶油风网红，电子魅魔女友，前凸后翘性感身材，一对巨乳摇摇欲坠，情趣丝袜淫荡肥臀，高清写真诱惑十足！", user: "postiingNew03/106" },
-    { name: "🎬 抖音少妇微信定制福利视频，高颜值反差婊，性感情趣丝袜淫荡诱惑，各种剧情足交挑逗，年轻的妈妈勾引骚狗儿子，果然戴眼镜的才是最骚的~", user: "postiingNew03/112" },
-    { name: "🎬 高颜值抖音博主，脸足同框私密定制，极品美女御姐黑丝、裸足，美脚诱惑，抹油搓脚心诱惑榨精，这么漂亮的美女帮哥哥打飞机，足交，绝对的视觉盛宴！", user: "postiingNew03/118" },
+    { name: "🎬 极品奶油风网红，电子魅魔女友，前凸后翘性感身材，一对巨乳摇摇欲坠，情趣丝袜淫荡肥臀，高清写真诱惑十足！", user: "edxrfvtgb111/2319" },
+    { name: "🎬 抖音少妇微信定制福利视频，高颜值反差婊，性感情趣丝袜淫荡诱惑，各种剧情足交挑逗，年轻的妈妈勾引骚狗儿子，果然戴眼镜的才是最骚的~", user: "youshengyueju1/65938" },
+    { name: "🎬 高颜值抖音博主，脸足同框私密定制，极品美女御姐黑丝、裸足，美脚诱惑，抹油搓脚心诱惑榨精，这么漂亮的美女帮哥哥打飞机，足交，绝对의 视觉盛宴！", user: "postiingNew03/118" },
     { name: "🎬 足控福音！微博百万粉丝玉足女神，单人定制美脚诱惑资源，白里透红的食品级玉足，三寸金莲小脚丫令人垂涎三尺，真想含住脚趾猛吸一口~", user: "postiingNew03/124" },
     { name: "🎬 这才是抖音的正确打开方式！吃瓜网友视角VS土豪裸聊视角，以为是一本正经的女主播，没想到幻龙骑乘骚得一笔，红底高跟裤里丝，这谁顶得住啊！", user: "postiingNew03/130" },
   ],
@@ -56,6 +107,111 @@ const CHANNELS = {
     { name: "🌐 Test-04", user: "postiingNew", members: "620K" },
   ],
 };
+
+// ============================
+// 📹 VIDEO FILE_ID CACHE & HISTORY TRACKING
+// ============================
+const VIDEO_CACHE_FILE = "video_cache.json";
+let videoFileIdCache = {};
+const userMessageHistory = new Map();
+
+function loadVideoCache() {
+  try {
+    if (fs.existsSync(VIDEO_CACHE_FILE)) {
+      videoFileIdCache = JSON.parse(fs.readFileSync(VIDEO_CACHE_FILE, "utf8"));
+    }
+  } catch (err) {
+    console.error("Error reading video_cache.json:", err.message);
+    videoFileIdCache = {};
+  }
+}
+
+function saveVideoCache(resId, fileId) {
+  try {
+    videoFileIdCache[String(resId)] = fileId;
+    fs.writeFileSync(VIDEO_CACHE_FILE, JSON.stringify(videoFileIdCache, null, 2), "utf8");
+  } catch (err) {
+    console.error("Error writing video_cache.json:", err.message);
+  }
+}
+
+function getCachedFileId(resId) {
+  return videoFileIdCache[String(resId)] || null;
+}
+
+loadVideoCache();
+
+function trackMessage(chatId, messageId) {
+  if (!chatId || !messageId) return;
+  if (!userMessageHistory.has(chatId)) {
+    userMessageHistory.set(chatId, new Set());
+  }
+  userMessageHistory.get(chatId).add(messageId);
+}
+
+async function clearUserHistory(chatId) {
+  if (!userMessageHistory.has(chatId)) return 0;
+  const msgIds = Array.from(userMessageHistory.get(chatId));
+  let deletedCount = 0;
+  for (const msgId of msgIds) {
+    try {
+      await bot.deleteMessage(chatId, msgId);
+      deletedCount++;
+    } catch (e) {
+      // Ignore if already deleted or > 48h
+    }
+  }
+  userMessageHistory.delete(chatId);
+  return deletedCount;
+}
+
+// ============================
+// 📜 USER SEARCH HISTORY TRACKING
+// ============================
+const userSearchHistoryMap = new Map();
+
+function recordUserSearch(chatId, query) {
+  if (!chatId || !query || typeof query !== "string") return;
+  const cleanQuery = query.trim();
+  if (!cleanQuery || cleanQuery.startsWith("/")) return;
+
+  if (!userSearchHistoryMap.has(chatId)) {
+    userSearchHistoryMap.set(chatId, []);
+  }
+  const history = userSearchHistoryMap.get(chatId);
+  const filtered = history.filter(q => q.toLowerCase() !== cleanQuery.toLowerCase());
+  filtered.unshift(cleanQuery);
+  if (filtered.length > 5) filtered.length = 5;
+  userSearchHistoryMap.set(chatId, filtered);
+}
+
+function getUserSearchHistory(chatId) {
+  return userSearchHistoryMap.get(chatId) || [];
+}
+
+function clearUserSearchHistory(chatId) {
+  userSearchHistoryMap.delete(chatId);
+}
+
+// ============================
+// ⌨️ PERSISTENT NAVIGATION KEYBOARD
+// ============================
+function getPersistentNavigationKeyboard() {
+  return {
+    keyboard: [
+      [
+        { text: "🏠 Home" },
+        { text: "ℹ️ About" },
+        { text: "🗑️ History" }
+      ]
+    ],
+    resize_keyboard: true,
+    persistent: true,
+    is_persistent: true
+  };
+}
+
+const getPersistentKeyboard = getPersistentNavigationKeyboard;
 
 // ============================
 // 🔧 HELPER FUNCTIONS & API WRAPPERS
@@ -71,7 +227,9 @@ function escapeHTML(str) {
 
 async function sendMessageSafe(chatId, text, options = {}) {
   try {
-    return await bot.sendMessage(chatId, text, options);
+    const res = await bot.sendMessage(chatId, text, options);
+    if (res && res.message_id) trackMessage(chatId, res.message_id);
+    return res;
   } catch (err) {
     console.error(`❌ Error sending message to chat ${chatId}:`, err.message);
   }
@@ -79,7 +237,9 @@ async function sendMessageSafe(chatId, text, options = {}) {
 
 async function sendPhotoSafe(chatId, photo, options = {}) {
   try {
-    return await bot.sendPhoto(chatId, photo, options);
+    const res = await bot.sendPhoto(chatId, photo, options);
+    if (res && res.message_id) trackMessage(chatId, res.message_id);
+    return res;
   } catch (err) {
     console.error(`❌ Error sending photo to chat ${chatId}:`, err.message);
   }
@@ -93,12 +253,257 @@ async function answerCallbackQuerySafe(queryId, options = {}) {
   }
 }
 
+async function editMessageTextSafe(chatId, messageId, text, options = {}) {
+  try {
+    const opts = {
+      chat_id: chatId,
+      message_id: messageId,
+      ...options
+    };
+    return await bot.editMessageText(text, opts);
+  } catch (err) {
+    if (err.message && err.message.includes("message is not modified")) {
+      return true;
+    }
+    console.warn(`⚠️ Error editing message ${messageId} in chat ${chatId}:`, err.message);
+    return await sendMessageSafe(chatId, text, options);
+  }
+}
+
+// ============================
+// 📹 DATASET FEATURED POSTS RESOLVER & RENDERER
+// ============================
+let FEATURED_DATASET = {};
+try {
+  if (fs.existsSync("featured_dataset.json")) {
+    FEATURED_DATASET = JSON.parse(fs.readFileSync("featured_dataset.json", "utf8"));
+  }
+} catch (err) {
+  console.error("Error reading featured_dataset.json:", err.message);
+}
+
+function getFeaturedPosts(cardId) {
+  const cardData = FEATURED_DATASET[String(cardId)];
+  if (!cardData || !Array.isArray(cardData.posts)) {
+    return [];
+  }
+  return cardData.posts;
+}
+
+function extractChannelInfo(url, title) {
+  if (!url || typeof url !== "string") {
+    return { key: "unknown", name: "Unknown Channel", type: "other" };
+  }
+
+  // Private invite link t.me/+hash
+  if (url.includes("/+") || url.includes("joinchat")) {
+    const inviteHash = url.split("/+")[1] ? url.split("/+")[1].split("?")[0] : "private";
+    return {
+      key: `invite_${inviteHash}`,
+      name: `🔒 Private Group (+${inviteHash.slice(0, 8)}...)`,
+      type: "private"
+    };
+  }
+
+  // Standard username t.me/username/123 or t.me/username
+  const match = url.match(/t\.me\/([^/?#]+)(?:\/(\d+))?/);
+  if (match) {
+    const username = match[1];
+    return {
+      key: `user_${username.toLowerCase()}`,
+      name: `@${username}`,
+      username: username,
+      type: "channel"
+    };
+  }
+
+  return { key: "other", name: "Other Resource", type: "other" };
+}
+
+function getFeaturedChannels(cardId) {
+  const posts = getFeaturedPosts(cardId);
+  if (!posts || posts.length === 0) return [];
+
+  const channelMap = {};
+  posts.forEach(post => {
+    const ch = extractChannelInfo(post.url, post.title);
+    if (!channelMap[ch.key]) {
+      channelMap[ch.key] = {
+        key: ch.key,
+        name: ch.name,
+        type: ch.type,
+        posts: []
+      };
+    }
+    channelMap[ch.key].posts.push(post);
+  });
+
+  return Object.values(channelMap);
+}
+
+async function renderFeaturedCardPosts(chatId, cardId, page = 1, messageId = null) {
+  const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
+  const cardName = cardInfo ? cardInfo.name : `Card ${cardId}`;
+  const posts = getFeaturedPosts(cardId);
+
+  if (!posts || posts.length === 0) {
+    const emptyText = `🔥 <b>${escapeHTML(cardName)}</b>\n\nNo posts found for this category.`;
+    const emptyOpts = {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
+        ]
+      }
+    };
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, emptyText, emptyOpts);
+    } else {
+      return await sendMessageSafe(chatId, emptyText, emptyOpts);
+    }
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(posts.length / itemsPerPage);
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const pagePosts = posts.slice(startIndex, startIndex + itemsPerPage);
+
+  const rows = pagePosts.map(p => {
+    let displayTitle = String(p.title || "").trim();
+    let icon = "";
+
+    // Check if title already contains media icon or starts with bracket
+    if (displayTitle.includes("▶") || displayTitle.includes("🎬") || displayTitle.includes("🖼️") || displayTitle.includes("📄") || displayTitle.includes("📹") || displayTitle.includes("🔘")) {
+      icon = "";
+    } else if (p.url.includes("img") || displayTitle.toLowerCase().includes("photo")) {
+      icon = "🖼️ ";
+    } else if (displayTitle.startsWith("[")) {
+      icon = "▶️ ";
+    } else {
+      icon = "🎬 ";
+    }
+
+    const fullTitle = `${icon}${displayTitle}`.trim();
+    const titleText = truncateUTF8(fullTitle, 55);
+    return [{ text: titleText, url: p.url }];
+  });
+
+  // Pagination row if totalPages > 1
+  if (totalPages > 1) {
+    const navRow = [];
+    if (currentPage > 1) {
+      navRow.push({ text: "◀ Previous", callback_data: `featured_page:${cardId}:${currentPage - 1}` });
+    }
+    navRow.push({ text: `Page ${currentPage}/${totalPages}`, callback_data: "none" });
+    if (currentPage < totalPages) {
+      navRow.push({ text: "Next ▶", callback_data: `featured_page:${cardId}:${currentPage + 1}` });
+    }
+    rows.push(navRow);
+  }
+
+  rows.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+
+  const messageText = `🔥 <b>${escapeHTML(cardName)}</b>\n\nFound <b>${posts.length}</b> post(s):`;
+  const messageOptions = {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: rows },
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, messageText, messageOptions);
+  } else {
+    return await sendMessageSafe(chatId, messageText, messageOptions);
+  }
+}
+
+async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1, messageId = null) {
+  const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
+  const channels = getFeaturedChannels(cardId);
+  const channel = channels[channelIndex];
+
+  if (!channel || !channel.posts || channel.posts.length === 0) {
+    const text = `📺 <b>Channel Not Found</b>\n\nNo posts available.`;
+    const opts = {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "◀ Back to Channels", callback_data: `featured:${cardId}:1` }],
+          [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
+        ]
+      }
+    };
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, text, opts);
+    } else {
+      return await sendMessageSafe(chatId, text, opts);
+    }
+  }
+
+  const posts = channel.posts;
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(posts.length / itemsPerPage);
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const pagePosts = posts.slice(startIndex, startIndex + itemsPerPage);
+
+  const channelUrl = channel.username
+    ? `https://t.me/${channel.username}`
+    : (channel.posts[0] ? channel.posts[0].url.split("/").slice(0, 4).join("/") : null);
+
+  const rows = pagePosts.map(p => {
+    const titleText = truncateUTF8(p.title, 55);
+    let icon = "🎬";
+    if (p.url.includes("img") || p.title.toLowerCase().includes("photo") || p.title.includes("🖼️")) {
+      icon = "🖼️";
+    } else if (p.title.includes("▶️") || p.title.toLowerCase().includes("video")) {
+      icon = "▶️";
+    }
+    return [{ text: `${icon} ${titleText}`, url: p.url }];
+  });
+
+  // Pagination row if totalPages > 1
+  if (totalPages > 1) {
+    const navRow = [];
+    if (currentPage > 1) {
+      navRow.push({ text: "◀ Previous", callback_data: `featured_ch:${cardId}:${channelIndex}:${currentPage - 1}` });
+    }
+    navRow.push({ text: `Page ${currentPage}/${totalPages}`, callback_data: "none" });
+    if (currentPage < totalPages) {
+      navRow.push({ text: "Next ▶", callback_data: `featured_ch:${cardId}:${channelIndex}:${currentPage + 1}` });
+    }
+    rows.push(navRow);
+  }
+
+  // Open Channel button if valid channelUrl exists
+  if (channelUrl) {
+    rows.push([{ text: `🔗 Open ${channel.name} Channel`, url: channelUrl }]);
+  }
+
+  rows.push([
+    { text: "◀ Back to Channels", callback_data: `featured:${cardId}:1` },
+    { text: "🏠 Back to Main Menu", callback_data: "menu" }
+  ]);
+  const opts = {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: rows },
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, text, opts);
+  } else {
+    return await sendMessageSafe(chatId, text, opts);
+  }
+}
+
 function getMainKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "Perverted Woman", callback_data: "topic:ai" },
-        { text: "BeautyFilterRendering", callback_data: "topic:bitcoin" },
+        { text: "🎯 Perverted Woman", callback_data: "topic:ai" },
+        { text: "💎 BeautyFilterRendering", callback_data: "topic:bitcoin" },
       ],
     ],
   };
@@ -206,6 +611,37 @@ function getBreakingNews() {
   return [];
 }
 
+// ============================
+// 🌟 FEATURED RESOURCES (TOP 8 CARDS)
+// ============================
+const FEATURED_RESOURCES = [
+  { id: 1, name: "🔥 Huangguo Short Dramas" },
+  { id: 2, name: "⭐ Li Meng" },
+  { id: 3, name: "🎤 Dong Qing" },
+  { id: 4, name: "👁️ Hypnotic Divine Eye" },
+  { id: 5, name: "🖤 pinkchyu" },
+  { id: 6, name: "🔥 Teng Teng Cai" },
+  { id: 7, name: "⚽ World Cup" },
+  { id: 8, name: "🎲 Baccarat / Dice / Gaming" }
+];
+
+function getFeaturedKeyboard() {
+  const rows = [];
+  for (let i = 0; i < FEATURED_RESOURCES.length; i += 2) {
+    const r1 = FEATURED_RESOURCES[i];
+    const r2 = FEATURED_RESOURCES[i + 1];
+
+    const row = [
+      { text: `${r1.name}`, callback_data: `featured:${r1.id}` }
+    ];
+    if (r2) {
+      row.push({ text: `${r2.name}`, callback_data: `featured:${r2.id}` });
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
 function truncateUTF8(str, maxBytes) {
   if (!str) return "";
   const buf = Buffer.from(String(str), "utf8");
@@ -224,63 +660,77 @@ function makeSearchCallbackData(keyword) {
   return `search:${safeKw}`;
 }
 
-function getTrendingKeyboard() {
-  const keywords = getTrendingKeywords();
+async function getTrendingKeyboard() {
+  const featuredRows = getFeaturedKeyboard();
   const breaking = getBreakingNews();
-  const rows = [];
+  const mainKeys = getMainKeyboard().inline_keyboard;
+  
+  const rows = [...featuredRows];
 
-  for (let i = 0; i < keywords.length; i += 2) {
-    const row = [
-      { text: `${i + 1}. ${keywords[i]}`, callback_data: makeSearchCallbackData(keywords[i]) },
-    ];
-    if (keywords[i + 1]) {
-      row.push({
-        text: `${i + 2}. ${keywords[i + 1]}`,
-        callback_data: makeSearchCallbackData(keywords[i + 1]),
-      });
-    }
-    rows.push(row);
-  }
-
-  // Breaking news at bottom (after trending)
+  // Breaking news at bottom (after featured cards)
   if (breaking.length > 0) {
-    rows.push([{ text: "🔴 Breaking News", callback_data: "none" }]);
-    breaking.forEach((news) => {
-      rows.push([{ text: `📰 ${news}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
-    });
+    rows.push([{ text: "📰 BREAKING NEWS", callback_data: "none" }]);
+    for (const news of breaking) {
+      const displayNews = await translateText(news, "en");
+      rows.push([{ text: `📰 ${displayNews}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
+    }
   }
   
-  rows.push([{ text: "🔄 Refresh Trending", callback_data: "refresh_trending" }]);
+  rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
+  rows.push(...mainKeys);
+
   return { inline_keyboard: rows };
 }
 
-async function renderSearchResults(chatId, query) {
+async function renderSearchResults(chatId, query, messageId = null) {
+  recordUserSearch(chatId, query);
   const results = searchResources(query);
+  const displayQuery = await translateText(query, "en");
+
+  if (!messageId) {
+    await sendMessageSafe(chatId,
+      `🔍 <b>Searching:</b> <code>"${escapeHTML(displayQuery)}"</code>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: getPersistentNavigationKeyboard()
+      }
+    );
+  }
+
   if (results.length > 0) {
     const rows = results.map(ch => ([
       { text: `${ch.name}`, url: `https://t.me/${ch.user}` }
     ]));
     rows.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
 
-    return await sendMessageSafe(chatId,
-      `🔍 <b>Search Results for:</b> <code>"${escapeHTML(query)}"</code>\n\nFound <b>${results.length}</b> resource(s):`,
-      {
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: rows },
-      }
-    );
+    const text = `🔍 <b>Search Results for:</b> <code>"${escapeHTML(displayQuery)}"</code>\n\nFound <b>${results.length}</b> resource(s):`;
+    const opts = {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: rows },
+    };
+
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, text, opts);
+    } else {
+      return await sendMessageSafe(chatId, text, opts);
+    }
   } else {
-    return await sendMessageSafe(chatId,
-      `🔍 <b>No resources found for:</b> <code>"${escapeHTML(query)}"</code>\n\nTry searching with different keywords or explore hot topics below 👇`,
-      {
-        parse_mode: "HTML",
-        reply_markup: getMainKeyboard(),
-      }
-    );
+    const trendingKeys = await getTrendingKeyboard();
+    const text = `🔍 <b>No resources found for:</b> <code>"${escapeHTML(displayQuery)}"</code>\n\nTry searching with different keywords or explore hot topics below 👇`;
+    const opts = {
+      parse_mode: "HTML",
+      reply_markup: trendingKeys,
+    };
+
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, text, opts);
+    } else {
+      return await sendMessageSafe(chatId, text, opts);
+    }
   }
 }
 
-function getChannelButtons(channels, topic) {
+function getChannelButtons(channels) {
   const rows = channels.map(ch => ([
     { text: `${ch.name}`, url: `https://t.me/${ch.user}` }
   ]));
@@ -289,7 +739,8 @@ function getChannelButtons(channels, topic) {
 }
 
 function formatChannelList(channels, topicName) {
-  return `📢 <b>${escapeHTML(topicName)}</b>\n\n👇 Tap any post below:`;
+  const displayTopicName = TOPIC_NAMES[topicName] || topicName;
+  return `📢 <b>${escapeHTML(displayTopicName)}</b>\n\n👇 Tap any post below:`;
 }
 
 const TOPIC_NAMES = {
@@ -314,19 +765,16 @@ bot.onText(/\/start/, async (msg) => {
         `🔍This is a Telegram resource search engine. Send keywords to find groups, channels, videos, and music.\n\n` +
         `👇 Tap any topic to see the best channels!`,
       parse_mode: "HTML",
+      reply_markup: getPersistentNavigationKeyboard()
     });
 
     // Topic buttons + Trending combined
     await new Promise(r => setTimeout(r, 800));
     
-    const mainKeys = getMainKeyboard().inline_keyboard;
-    const trendingKeys = getTrendingKeyboard().inline_keyboard;
-    const combinedKeyboard = {
-      inline_keyboard: [...trendingKeys, ...mainKeys]
-    };
+    const combinedKeyboard = await getTrendingKeyboard();
 
     await sendMessageSafe(chatId,
-      `🔥 <b>Hot Topics</b>\n\nChoose a topic to explore channels 👇`,
+      `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`,
       {
         parse_mode: "HTML",
         reply_markup: combinedKeyboard,
@@ -366,86 +814,227 @@ bot.onText(/\/19guide/, async (msg) => {
 });
 
 // ============================
+// 🔒 PER-USER CONCURRENCY LOCK
+// ============================
+const activeUserLocks = new Set();
+
+function acquireUserLock(chatId) {
+  const key = String(chatId);
+  if (activeUserLocks.has(key)) {
+    return false;
+  }
+  activeUserLocks.add(key);
+  return true;
+}
+
+function releaseUserLock(chatId) {
+  const key = String(chatId);
+  activeUserLocks.delete(key);
+}
+
+// ============================
 // 🔘 BUTTON CALLBACKS
 // ============================
 bot.on("callback_query", async (query) => {
   try {
     const chatId = query.message.chat.id;
     const data = query.data;
-    await answerCallbackQuerySafe(query.id);
 
-    if (data.startsWith("search:")) {
+    const messageId = query.message ? query.message.message_id : null;
+
+    if (data.startsWith("featured_page:")) {
+      const parts = data.split(":");
+      const cardId = parseInt(parts[1], 10);
+      const page = parseInt(parts[2], 10);
+      await renderFeaturedCardPosts(chatId, cardId, page, messageId);
+    } else if (data.startsWith("featured_ch:")) {
+      const parts = data.split(":");
+      const cardId = parseInt(parts[1], 10);
+      const chIndex = parseInt(parts[2], 10);
+      const page = parseInt(parts[3] || "1", 10);
+      await renderFeaturedChannelPosts(chatId, cardId, chIndex, page, messageId);
+    } else if (data.startsWith("featured:")) {
+      const parts = data.split(":");
+      const cardId = parseInt(parts[1], 10);
+      const page = parseInt(parts[2] || "1", 10);
+      await renderFeaturedCardPosts(chatId, cardId, page, messageId);
+    } else if (data.startsWith("search:")) {
       const keyword = data.replace("search:", "");
-      await renderSearchResults(chatId, keyword);
+      await renderSearchResults(chatId, keyword, messageId);
     } else if (data.startsWith("topic:")) {
       const topic = data.replace("topic:", "");
       const channels = CHANNELS[topic] || [];
-      const topicName = TOPIC_NAMES[topic] || topic;
-
-      await sendMessageSafe(chatId,
-        formatChannelList(channels, topicName),
-        {
-          parse_mode: "HTML",
-          reply_markup: getChannelButtons(channels, topic),
-        }
-      );
-    } else if (data === "refresh_trending") {
-      const trendingKeys = getTrendingKeyboard().inline_keyboard;
-      trendingKeys.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
-      await sendMessageSafe(chatId,
-        `🔥 <b>Real-time Trending</b>\n\nTap any keyword to search 👇`,
-        {
-          parse_mode: "HTML",
-          reply_markup: { inline_keyboard: trendingKeys },
-        }
-      );
-    } else if (data === "menu") {
-      const mainKeys = getMainKeyboard().inline_keyboard;
-      const trendingKeys = getTrendingKeyboard().inline_keyboard;
-      const combinedKeyboard = {
-        inline_keyboard: [...trendingKeys, ...mainKeys]
+      const text = formatChannelList(channels, topic);
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: getChannelButtons(channels),
       };
-
-      await sendMessageSafe(chatId,
-        `🔥 <b>Hot Topics</b>\n\nChoose a topic to explore channels 👇`,
-        {
-          parse_mode: "HTML",
-          reply_markup: combinedKeyboard,
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
+    } else if (data === "refresh_trending") {
+      const combinedKeyboard = await getTrendingKeyboard();
+      const text = `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`;
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: combinedKeyboard,
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
+    } else if (data === "menu") {
+      const combinedKeyboard = await getTrendingKeyboard();
+      const text = `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`;
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: combinedKeyboard,
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
+    } else if (data === "confirm_clear_history") {
+        if (query.message && query.message.message_id) {
+          trackMessage(chatId, query.message.message_id);
         }
-      );
-    }
+        clearUserSearchHistory(chatId);
+        await clearUserHistory(chatId);
+
+        const combinedKeyboard = await getTrendingKeyboard();
+        await sendMessageSafe(chatId,
+          `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`,
+          {
+            parse_mode: "HTML",
+            reply_markup: combinedKeyboard,
+          }
+        );
+        await sendMessageSafe(chatId,
+          `✨ <b>Fresh session started!</b>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: getPersistentNavigationKeyboard()
+          }
+        );
+      } else if (data === "cancel_clear_history") {
+        if (query.message && query.message.message_id) {
+          try {
+            await bot.deleteMessage(chatId, query.message.message_id);
+          } catch (e) {}
+        }
+        await sendMessageSafe(chatId,
+          `❌ History clearing cancelled.`,
+          {
+            parse_mode: "HTML",
+            reply_markup: getPersistentNavigationKeyboard()
+          }
+        );
+      }
   } catch (err) {
     console.error("❌ Error handling callback_query:", err.message);
   }
 });
 
 // ============================
-// 💬 FREE TEXT SEARCH
+// 💬 MESSAGES & NAVIGATION KEYBOARD
 // ============================
 bot.on("message", async (msg) => {
   try {
     const chatId = msg.chat.id;
     const text = msg.text;
-    if (!text || text.startsWith("/")) return;
+    if (msg.message_id) trackMessage(chatId, msg.message_id);
+    if (!text) return;
+
+    if (text === "🏠 Home") {
+      const combinedKeyboard = await getTrendingKeyboard();
+
+      await sendMessageSafe(chatId,
+        `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`,
+        {
+          parse_mode: "HTML",
+          reply_markup: combinedKeyboard,
+        }
+      );
+      return;
+    }
+
+    if (text === "ℹ️ About") {
+      const aboutText =
+        `ℹ️ <b>About NexaHub</b>\n\n` +
+        `NexaHub is a fast, intelligent Telegram resource search engine.\n\n` +
+        `• Send any keyword to search groups, channels, and videos.\n` +
+        `• Explore Hot Topics, Trending searches, and Breaking News.\n` +
+        `• Access featured media & direct channel links instantly.`;
+
+      await sendMessageSafe(chatId, aboutText, {
+        parse_mode: "HTML",
+        reply_markup: getPersistentNavigationKeyboard()
+      });
+      return;
+    }
+
+    if (text === "🗑️ History" || text === "🗑️ Clear History") {
+      const confirmText =
+        `⚠️ <b>Clear Chat History?</b>\n\n` +
+        `This will remove the recent NexaHub messages from this conversation and start a fresh session.\n\n` +
+        `Are you sure?`;
+
+      await sendMessageSafe(chatId, confirmText, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ Yes, Clear", callback_data: "confirm_clear_history" },
+              { text: "❌ Cancel", callback_data: "cancel_clear_history" }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+
+    if (text.startsWith("/")) return;
 
     await renderSearchResults(chatId, text);
   } catch (err) {
-    console.error("❌ Error handling message search:", err.message);
+    console.error("❌ Error handling message:", err.message);
   }
 });
 
 // ============================
 // 🚀 SINGLE-PROCESS INIT
 // ============================
-startScraperScheduler();
-
-console.log("✅ NewsSearch Main Bot is running...");
-console.log("🔗 Channels shown directly in main bot!");
+if (isMainModule) {
+  startScraperScheduler();
+  console.log("✅ NewsSearch Main Bot is running...");
+  console.log("🔗 Channels shown directly in main bot!");
+}
 
 module.exports = {
   searchResources,
   CHANNELS,
+  FEATURED_RESOURCES,
   truncateUTF8,
   makeSearchCallbackData,
   escapeHTML,
+  translateText,
+  getMainKeyboard,
+  getTrendingKeyboard,
+  getPersistentKeyboard,
+  getPersistentNavigationKeyboard,
+  getFeaturedPosts,
+  getFeaturedChannels,
+  renderFeaturedCardPosts,
+  renderFeaturedChannelPosts,
+  clearUserHistory,
+  videoFileIdCache,
+  saveVideoCache,
+  getCachedFileId,
+  acquireUserLock,
+  releaseUserLock,
 };
+
