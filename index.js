@@ -8,6 +8,10 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 const https = require("https");
 const { startScraperScheduler } = require("./scraper");
+const sourceRegistry = require("./source_registry");
+
+
+
 
 // ============================
 // 🤖 MAIN BOT TOKEN & INIT
@@ -24,6 +28,27 @@ const bot = new TelegramBot(TOKEN, { polling: isMainModule });
 
 bot.on("polling_error", (error) => {
   console.error("⚠️ Telegram Bot Polling Error:", error.code || "", error.message || error);
+});
+
+// ============================
+// 📡 REAL-TIME TELEGRAM SOURCE CHANNEL POST LISTENERS
+// ============================
+bot.on("channel_post", async (msg) => {
+  try {
+    console.log(`📡 [channel_post] Received from chat ID ${msg.chat.id} (${msg.chat.title || 'Channel'}) message ID ${msg.message_id}`);
+    sourceRegistry.processChannelPost(msg);
+  } catch (err) {
+    console.error("❌ Error processing channel_post:", err.message);
+  }
+});
+
+bot.on("edited_channel_post", async (msg) => {
+  try {
+    console.log(`📡 [edited_channel_post] Received from chat ID ${msg.chat.id} message ID ${msg.message_id}`);
+    sourceRegistry.processChannelPost(msg);
+  } catch (err) {
+    console.error("❌ Error processing edited_channel_post:", err.message);
+  }
 });
 
 // ============================
@@ -1149,7 +1174,7 @@ function getFeaturedChannels(cardId) {
 
 
 // ============================================================
-// 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (ALL 20 TOPICS + 4 CATEGORIES)
+// 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (WITH 2-STEP DETAIL NAVIGATION)
 // ============================================================
 async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
   if (!items || items.length === 0) {
@@ -1203,14 +1228,32 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   });
 
   let messageText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\n`;
-  messageText += `Below are the channels and videos related to this topic. Click any link to open.\n`;
+  messageText += `Below are the channels and videos related to this topic. Click any link to open or select a details button below.\n`;
   messageText += `───────────────────\n`;
   messageText += `🔗 <b>CHANNEL/VIDEO LINKS</b>\n\n`;
   messageText += linkLines.join("\n\n");
   if (totalPages > 1) {
     messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
   }
-  messageText += `\n\nℹ️ <i>Note: Click any link above to open the channel/video in Telegram.</i>`;
+  messageText += `\n\nℹ️ <i>Note: Click any link above to open directly, or tap a Detail number below.</i>`;
+
+  // Generate Detail View selection buttons for the page items (e.g. 5 per row)
+  const detailButtons = [];
+  let currentDetailRow = [];
+  pageItems.forEach((p, idx) => {
+    const itemNumber = startIndex + idx + 1;
+    currentDetailRow.push({
+      text: `🔎 ${itemNumber}`,
+      callback_data: `det:${callbackPrefix}:${startIndex + idx}:${currentPage}`
+    });
+    if (currentDetailRow.length === 5) {
+      detailButtons.push(currentDetailRow);
+      currentDetailRow = [];
+    }
+  });
+  if (currentDetailRow.length > 0) {
+    detailButtons.push(currentDetailRow);
+  }
 
   const navRow = [];
   if (currentPage > 1) {
@@ -1221,6 +1264,9 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const inline_keyboard = [];
+  if (detailButtons.length > 0) {
+    inline_keyboard.push(...detailButtons);
+  }
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
@@ -1236,6 +1282,75 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     return await editMessageTextSafe(chatId, messageId, messageText, messageOptions);
   } else {
     return await sendMessageSafe(chatId, messageText, messageOptions);
+  }
+}
+
+async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1, messageId = null) {
+  let items = [];
+  let title = "Resource Detail";
+
+  if (callbackPrefix.startsWith("featured_page:")) {
+    const cardId = parseInt(callbackPrefix.split(":")[1], 10);
+    const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
+    title = cardInfo ? cardInfo.name : `Card ${cardId}`;
+    items = getFeaturedPosts(cardId);
+  } else if (callbackPrefix.startsWith("cat_page:")) {
+    const catKey = callbackPrefix.split(":")[1];
+    const category = CATEGORIES[catKey];
+    title = category ? category.title : catKey;
+    items = category ? category.items : [];
+  } else if (callbackPrefix.startsWith("topic_page:")) {
+    const topicKey = callbackPrefix.split(":")[1];
+    items = CHANNELS[topicKey] || [];
+    title = TOPIC_NAMES[topicKey] || topicKey;
+  }
+
+  const item = items[itemIndex];
+  if (!item) {
+    return await sendMessageSafe(chatId, "⚠️ Item detail not found.", {
+      reply_markup: { inline_keyboard: [[{ text: "🏠 Back to Main Menu", callback_data: "menu" }]] }
+    });
+  }
+
+  let displayTitle = String(item.title || item.name || "Telegram Content").trim();
+  let itemUrl = item.telegram_url || item.url || (item.user ? `https://t.me/${item.user}` : "");
+  let channelName = item.channel_name || item.user || title;
+  let mediaType = item.media_type ? item.media_type.toUpperCase() : "VIDEO/CHANNEL";
+  let duration = item.duration ? `
+<b>Duration:</b> ${item.duration}` : "";
+  let views = item.views ? `
+<b>Views:</b> ${item.views}` : "";
+  let caption = item.caption ? `
+
+<b>Description:</b>
+${escapeHTML(item.caption)}` : "";
+
+  let detailText = `📌 <b>${escapeHTML(displayTitle)}</b>
+
+`;
+  detailText += `<b>Channel:</b> ${escapeHTML(channelName)}
+`;
+  detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}
+
+`;
+  detailText += `ℹ️ <i>Click the button below to open this post/channel in Telegram.</i>`;
+
+  const inline_keyboard = [
+    [{ text: "🔗 Open in Telegram", url: itemUrl }],
+    [{ text: "◀ Back to List", callback_data: `${callbackPrefix}:${page}` }],
+    [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
+  ];
+
+  const opts = {
+    parse_mode: "HTML",
+    disable_web_page_preview: false,
+    reply_markup: { inline_keyboard }
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, detailText, opts);
+  } else {
+    return await sendMessageSafe(chatId, detailText, opts);
   }
 }
 
@@ -1931,7 +2046,19 @@ bot.on("callback_query", async (query) => {
 
     const messageId = query.message ? query.message.message_id : null;
 
-    if (data.startsWith("featured_page:")) {
+    if (data.startsWith("det:")) {
+      // det:<callbackPrefix>:<itemIndex>:<page>
+      const firstColon = data.indexOf(":");
+      const secondColon = data.indexOf(":", firstColon + 1);
+      const lastColon = data.lastIndexOf(":");
+      const callbackPrefix = data.substring(firstColon + 1, lastColon - (lastColon > secondColon ? (data.length - lastColon) : 0));
+      // Split by colon: det, prefixType, key, itemIdx, page
+      const parts = data.split(":");
+      const page = parseInt(parts.pop(), 10) || 1;
+      const itemIdx = parseInt(parts.pop(), 10) || 0;
+      const prefix = parts.slice(1).join(":");
+      await renderItemDetailPage(chatId, prefix, itemIdx, page, messageId);
+    } else if (data.startsWith("featured_page:")) {
       const parts = data.split(":");
       const cardId = parseInt(parts[1], 10);
       const page = parseInt(parts[2], 10);

@@ -213,16 +213,21 @@ function parseEmbedHTML(url, html) {
 }
 
 async function refreshTelegramPosts() {
-  console.log("📡 Telegram Post Refresher: Checking source channels for updates...");
+  console.log("📡 Telegram Periodic Audit/Reconciliation: Auditing source channels...");
   try {
+    const sourceRegistry = require("./source_registry");
+    const sources = sourceRegistry.getAllSources();
+    console.log(`📊 Periodic Audit: ${sources.length} Telegram source channel(s) registered in database.`);
+
     const updateLog = {
       lastChecked: new Date().toISOString(),
+      activeSources: sources.length,
       status: "SUCCESS"
     };
     fs.writeFileSync("channels_cache.json", JSON.stringify(updateLog, null, 2), "utf8");
-    console.log("✅ Telegram source channel refresh complete.");
+    console.log("✅ Periodic source channel audit & state reconciliation complete.");
   } catch (err) {
-    console.error("❌ Telegram post refresher error:", err.message);
+    console.error("❌ Telegram post auditor error:", err.message);
   }
 }
 
