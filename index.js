@@ -1545,7 +1545,7 @@ async function getTrendingKeyboard() {
   // 3. Refresh Trending button (full width)
   rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
 
-  // 4. 4 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
+  // 4. 8 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
   rows.push([
     { text: "🎮 Play Games", callback_data: "cat:games" },
     { text: "🤖 AI", callback_data: "cat:ai_tools" }
@@ -1553,6 +1553,14 @@ async function getTrendingKeyboard() {
   rows.push([
     { text: "📚 Short Stories", callback_data: "cat:stories" },
     { text: "🔬 Scientific Paper", callback_data: "cat:papers" }
+  ]);
+  rows.push([
+    { text: "🔓 Opening Up", callback_data: "cat:opening_up" },
+    { text: "🍴 Source of Food", callback_data: "cat:food_source" }
+  ]);
+  rows.push([
+    { text: "💰 Financial Investment", callback_data: "cat:finance" },
+    { text: "🔞 Adult Content", callback_data: "cat:adult" }
   ]);
 
   return { inline_keyboard: rows };
@@ -1709,6 +1717,102 @@ const CATEGORIES = {
       { name: "🔬 Scientific Paper — @aibuwan8", url: "https://t.me/aibuwan8?start=xbiso" },
       { name: "🔬 Scientific Paper — @GieGie777", url: "https://t.me/GieGie777?start=xbiso" },
       { name: "🔬 Scientific Paper — @The_Lord_Rings", url: "https://t.me/The_Lord_Rings?start=xbiso" }
+    ]
+  },
+  opening_up: {
+    title: "🔓 Opening Up",
+    items: [
+      { name: "🔓 Opening Up — @QianMogc_asmr1", url: "https://t.me/QianMogc_asmr1?start=xbiso" },
+      { name: "🔓 Opening Up — @R_E_STUDIO", url: "https://t.me/R_E_STUDIO?start=xbiso" },
+      { name: "🔓 Opening Up — @jingluoasmr", url: "https://t.me/jingluoasmr?start=xbiso" },
+      { name: "🔓 Opening Up — @ASMRLNGC", url: "https://t.me/ASMRLNGC?start=xbiso" },
+      { name: "🔓 Opening Up — @huach12", url: "https://t.me/huach12?start=xbiso" },
+      { name: "🔓 Opening Up — @PMV8888", url: "https://t.me/PMV8888?start=xbiso" },
+      { name: "🔓 Opening Up — @OUEMEI", url: "https://t.me/OUEMEI?start=xbiso" },
+      { name: "🔓 Opening Up — @PMVMOI", url: "https://t.me/PMVMOI?start=xbiso" },
+      { name: "🔓 Opening Up — @FC2PPVcom", url: "https://t.me/FC2PPVcom?start=xbiso" },
+      { name: "🔓 Opening Up — @asmreggaudios", url: "https://t.me/asmreggaudios?start=xbiso" },
+      { name: "🔓 Opening Up — @qwflyxpd", url: "https://t.me/qwflyxpd?start=xbiso" },
+      { name: "🔓 Opening Up — @asmr_one_chan", url: "https://t.me/asmr_one_chan?start=xbiso" },
+      { name: "🔓 Opening Up — @freeasmrshare", url: "https://t.me/freeasmrshare?start=xbiso" },
+      { name: "🔓 Opening Up — @jifenshuom", url: "https://t.me/jifenshuom?start=xbiso" },
+      { name: "🔓 Opening Up — @kpppluping", url: "https://t.me/kpppluping?start=xbiso" },
+      { name: "🔓 Opening Up — @jishanxian", url: "https://t.me/jishanxian?start=xbiso" }
+    ]
+  },
+  food_source: {
+    title: "🍴 Source of Food",
+    items: [
+      { name: "🍴 Source of Food — @zhenmeiyisi", url: "https://t.me/zhenmeiyisi?start=xbiso" },
+      { name: "🍴 Source of Food — @NudefilmsTV", url: "https://t.me/NudefilmsTV?start=xbiso" },
+      { name: "🍴 Source of Food — @gchtdpymfljrg", url: "https://t.me/gchtdpymfljrg?start=xbiso" },
+      { name: "🍴 Source of Food — @av0000000001", url: "https://t.me/av0000000001?start=xbiso" },
+      { name: "🍴 Source of Food — @AV_cao", url: "https://t.me/AV_cao?start=xbiso" },
+      { name: "🍴 Source of Food — @wumingzhidao123", url: "https://t.me/wumingzhidao123?start=xbiso" },
+      { name: "🍴 Source of Food — @FC2PPV4K", url: "https://t.me/FC2PPV4K?start=xbiso" },
+      { name: "🍴 Source of Food — @fuqibacc", url: "https://t.me/fuqibacc?start=xbiso" },
+      { name: "🍴 Source of Food — @fulicangku0", url: "https://t.me/fulicangku0?start=xbiso" },
+      { name: "🍴 Source of Food — @cili8888", url: "https://t.me/cili8888?start=xbiso" },
+      { name: "🍴 Source of Food — @shunvguan4", url: "https://t.me/shunvguan4?start=xbiso" },
+      { name: "🍴 Source of Food — @mingxingtu5", url: "https://t.me/mingxingtu5?start=xbiso" },
+      { name: "🍴 Source of Food — @Gay123TV", url: "https://t.me/Gay123TV?start=xbiso" },
+      { name: "🍴 Source of Food — @Aliyun_4K_Movies", url: "https://t.me/Aliyun_4K_Movies?start=xbiso" },
+      { name: "🍴 Source of Food — @ZYFLS66", url: "https://t.me/ZYFLS66?start=xbiso" },
+      { name: "🍴 Source of Food — @qiuyuezt", url: "https://t.me/qiuyuezt?start=xbiso" },
+      { name: "🍴 Source of Food — @dianzinvyou111", url: "https://t.me/dianzinvyou111?start=xbiso" },
+      { name: "🍴 Source of Food — @bhg1232", url: "https://t.me/bhg1232?start=xbiso" },
+      { name: "🍴 Source of Food — @MTXFXS", url: "https://t.me/MTXFXS?start=xbiso" },
+      { name: "🍴 Source of Food — @DYSJ88", url: "https://t.me/DYSJ88?start=xbiso" }
+    ]
+  },
+  finance: {
+    title: "💰 Financial Investment",
+    items: [
+      { name: "💰 Financial Investment — @biquanqu", url: "https://t.me/biquanqu?start=xbiso" },
+      { name: "💰 Financial Investment — @China77", url: "https://t.me/China77?start=xbiso" },
+      { name: "💰 Financial Investment — @tonkeeper_news", url: "https://t.me/tonkeeper_news?start=xbiso" },
+      { name: "💰 Financial Investment — @toncoin", url: "https://t.me/toncoin?start=xbiso" },
+      { name: "💰 Financial Investment — @bbxx6666", url: "https://t.me/bbxx6666?start=xbiso" },
+      { name: "💰 Financial Investment — @sssvip4", url: "https://t.me/sssvip4?start=xbiso" },
+      { name: "💰 Financial Investment — @toncoin_es", url: "https://t.me/toncoin_es?start=xbiso" },
+      { name: "💰 Financial Investment — @bx600", url: "https://t.me/bx600?start=xbiso" },
+      { name: "💰 Financial Investment — @vhhhh", url: "https://t.me/vhhhh?start=xbiso" },
+      { name: "💰 Financial Investment — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" },
+      { name: "💰 Financial Investment — @xinwenrd", url: "https://t.me/xinwenrd?start=xbiso" },
+      { name: "💰 Financial Investment — @shuzibaike", url: "https://t.me/shuzibaike?start=xbiso" },
+      { name: "💰 Financial Investment — @dashubi", url: "https://t.me/dashubi?start=xbiso" },
+      { name: "💰 Financial Investment — @dddyu1z", url: "https://t.me/dddyu1z?start=xbiso" },
+      { name: "💰 Financial Investment — @ZQJPZ", url: "https://t.me/ZQJPZ?start=xbiso" },
+      { name: "💰 Financial Investment — @fenchacaij", url: "https://t.me/fenchacaij?start=xbiso" },
+      { name: "💰 Financial Investment — @AB15996", url: "https://t.me/AB15996?start=xbiso" }
+    ]
+  },
+  adult: {
+    title: "🔞 Adult Content",
+    items: [
+      { name: "🔞 Adult Content — @XOTANHUA", url: "https://t.me/XOTANHUA?start=xbiso" },
+      { name: "🔞 Adult Content — @diyisec", url: "https://t.me/diyisec?start=xbiso" },
+      { name: "🔞 Adult Content — @SGPAVCN", url: "https://t.me/SGPAVCN?start=xbiso" },
+      { name: "🔞 Adult Content — @flapxz3", url: "https://t.me/flapxz3?start=xbiso" },
+      { name: "🔞 Adult Content — @biaojie128", url: "https://t.me/biaojie128?start=xbiso" },
+      { name: "🔞 Adult Content — @dongman98", url: "https://t.me/dongman98?start=xbiso" },
+      { name: "🔞 Adult Content — @v131312", url: "https://t.me/v131312?start=xbiso" },
+      { name: "🔞 Adult Content — @tunjing66666", url: "https://t.me/tunjing66666?start=xbiso" },
+      { name: "🔞 Adult Content — @minixue", url: "https://t.me/minixue?start=xbiso" },
+      { name: "🔞 Adult Content — @baiyisizu", url: "https://t.me/baiyisizu?start=xbiso" },
+      { name: "🔞 Adult Content — @daydayACG", url: "https://t.me/daydayACG?start=xbiso" },
+      { name: "🔞 Adult Content — @OFOSSS", url: "https://t.me/OFOSSS?start=xbiso" },
+      { name: "🔞 Adult Content — @happylibrary", url: "https://t.me/happylibrary?start=xbiso" },
+      { name: "🔞 Adult Content — @wumingzhidao123", url: "https://t.me/wumingzhidao123?start=xbiso" },
+      { name: "🔞 Adult Content — @avav131", url: "https://t.me/avav131?start=xbiso" },
+      { name: "🔞 Adult Content — @skkt888", url: "https://t.me/skkt888?start=xbiso" },
+      { name: "🔞 Adult Content — @r18cg", url: "https://t.me/r18cg?start=xbiso" },
+      { name: "🔞 Adult Content — @cosywdj", url: "https://t.me/cosywdj?start=xbiso" },
+      { name: "🔞 Adult Content — @cutexf1v1", url: "https://t.me/cutexf1v1?start=xbiso" },
+      { name: "🔞 Adult Content — @chigua1618", url: "https://t.me/chigua1618?start=xbiso" },
+      { name: "🔞 Adult Content — @ddddffxxr", url: "https://t.me/ddddffxxr?start=xbiso" },
+      { name: "🔞 Adult Content — @ahegobymt", url: "https://t.me/ahegobymt?start=xbiso" },
+      { name: "🔞 Adult Content — @AVDSTV", url: "https://t.me/AVDSTV?start=xbiso" }
     ]
   }
 };
@@ -2117,6 +2221,7 @@ if (isMainModule) {
 module.exports = {
   searchResources,
   CHANNELS,
+  CATEGORIES,
   FEATURED_RESOURCES,
   truncateUTF8,
   makeSearchCallbackData,
