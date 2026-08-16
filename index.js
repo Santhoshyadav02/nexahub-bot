@@ -752,6 +752,165 @@ const CHANNELS = {
       "name": "🎬 ✨ Ssaimi — AA404AV/2396",
       "user": "AA404AV/2396"
     }
+  ],
+  "dragon_restaurant": [
+    {
+      "name": "▶️ [Aug 13 at 11:33] DNYQWCG/234390",
+      "user": "DNYQWCG/234390",
+      "url": "https://t.me/DNYQWCG/234390"
+    },
+    {
+      "name": "▶️ [Aug 12 at 15:44] chigua_e/191253",
+      "user": "chigua_e/191253",
+      "url": "https://t.me/chigua_e/191253"
+    },
+    {
+      "name": "🎬 chiguagxzx/130251",
+      "user": "chiguagxzx/130251",
+      "url": "https://t.me/chiguagxzx/130251"
+    },
+    {
+      "name": "🎬 chiguazhongxin/111301",
+      "user": "chiguazhongxin/111301",
+      "url": "https://t.me/chiguazhongxin/111301"
+    },
+    {
+      "name": "▶️ [2:13] bgcgw/2761",
+      "user": "bgcgw/2761",
+      "url": "https://t.me/bgcgw/2761"
+    },
+    {
+      "name": "▶️ [Aug 13 at 11:40] dycgr/16888",
+      "user": "dycgr/16888",
+      "url": "https://t.me/dycgr/16888"
+    },
+    {
+      "name": "▶️ [Aug 12 at 10:00] chiguaou/190655",
+      "user": "chiguaou/190655",
+      "url": "https://t.me/chiguaou/190655"
+    },
+    {
+      "name": "▶️ [0:09] bgcgw1/2761",
+      "user": "bgcgw1/2761",
+      "url": "https://t.me/bgcgw1/2761"
+    },
+    {
+      "name": "▶️ [0:00] dianying4K/1347",
+      "user": "dianying4K/1347",
+      "url": "https://t.me/dianying4K/1347"
+    },
+    {
+      "name": "▶️ [0:22] yixian8/6201",
+      "user": "yixian8/6201",
+      "url": "https://t.me/yixian8/6201"
+    },
+    {
+      "name": "▶️ [Aug 12 at 11:33] XLABdxb/8812",
+      "user": "XLABdxb/8812",
+      "url": "https://t.me/XLABdxb/8812"
+    },
+    {
+      "name": "▶️ [Dec 15, 2025 at 08:04] ithome_full/517679",
+      "user": "ithome_full/517679",
+      "url": "https://t.me/ithome_full/517679"
+    },
+    {
+      "name": "▶️ [6:05] aadf034/1699",
+      "user": "aadf034/1699",
+      "url": "https://t.me/aadf034/1699"
+    },
+    {
+      "name": "▶️ [0:09] FundNewsDaily/2431",
+      "user": "FundNewsDaily/2431",
+      "url": "https://t.me/FundNewsDaily/2431"
+    },
+    {
+      "name": "▶️ [Aug 10 at 02:22] ScienceMagazineeee/3064",
+      "user": "ScienceMagazineeee/3064",
+      "url": "https://t.me/ScienceMagazineeee/3064"
+    },
+    {
+      "name": "▶️ [Aug 11 at 05:06] doudouhug/413",
+      "user": "doudouhug/413",
+      "url": "https://t.me/doudouhug/413"
+    }
+  ],
+  "shoko_shouko": [
+    {
+      "name": "🎬 lmxpd/1994",
+      "user": "lmxpd/1994",
+      "url": "https://t.me/lmxpd/1994"
+    },
+    {
+      "name": "▶️ [0:00] HOTA015/4356",
+      "user": "HOTA015/4356",
+      "url": "https://t.me/HOTA015/4356"
+    },
+    {
+      "name": "🎬 gayboyvideo00/3883",
+      "user": "gayboyvideo00/3883",
+      "url": "https://t.me/gayboyvideo00/3883"
+    },
+    {
+      "name": "🎬 cctv_madou/4621",
+      "user": "cctv_madou/4621",
+      "url": "https://t.me/cctv_madou/4621"
+    },
+    {
+      "name": "🎬 fancha103/5291",
+      "user": "fancha103/5291",
+      "url": "https://t.me/fancha103/5291"
+    },
+    {
+      "name": "🎬 zhubo6688/59779",
+      "user": "zhubo6688/59779",
+      "url": "https://t.me/zhubo6688/59779"
+    },
+    {
+      "name": "🎬 ir_cosplay/2047",
+      "user": "ir_cosplay/2047",
+      "url": "https://t.me/ir_cosplay/2047"
+    },
+    {
+      "name": "▶️ [0:21] mz6mz6/4504",
+      "user": "mz6mz6/4504",
+      "url": "https://t.me/mz6mz6/4504"
+    },
+    {
+      "name": "▶️ [May 14 at 11:31] SanYaQZ888/18",
+      "user": "SanYaQZ888/18",
+      "url": "https://t.me/SanYaQZ888/18"
+    },
+    {
+      "name": "▶️ [May 5 at 09:51] chiguaxd/2636",
+      "user": "chiguaxd/2636",
+      "url": "https://t.me/chiguaxd/2636"
+    },
+    {
+      "name": "▶️ [Jun 16 at 01:30] boafwh/88",
+      "user": "boafwh/88",
+      "url": "https://t.me/boafwh/88"
+    },
+    {
+      "name": "🎬 CYnbSVSD/3915",
+      "user": "CYnbSVSD/3915",
+      "url": "https://t.me/CYnbSVSD/3915"
+    },
+    {
+      "name": "▶️ [May 5 at 15:06] heiliaobaoguanshe/1483",
+      "user": "heiliaobaoguanshe/1483",
+      "url": "https://t.me/heiliaobaoguanshe/1483"
+    },
+    {
+      "name": "▶️ [May 7 at 01:31] chiguadage/12194",
+      "user": "chiguadage/12194",
+      "url": "https://t.me/chiguadage/12194"
+    },
+    {
+      "name": "🎬 fcmgtgbg3/3171",
+      "user": "fcmgtgbg3/3171",
+      "url": "https://t.me/fcmgtgbg3/3171"
+    }
   ]
 };
 
@@ -1149,24 +1308,34 @@ function getMainKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "🎯 Perverted Woman", callback_data: "topic:ai" },
-        { text: "💎 BeautyFilterRendering", callback_data: "topic:bitcoin" },
+        { text: "🔥 Huangguo", callback_data: "featured:1" },
+        { text: "⭐ Li Meng", callback_data: "featured:2" },
+        { text: "🎤 Dong Qing", callback_data: "featured:3" },
+        { text: "👁️ Hypnotic", callback_data: "featured:4" },
       ],
       [
+        { text: "🖤 pinkchyu", callback_data: "featured:5" },
+        { text: "🔥 Teng Teng", callback_data: "featured:6" },
+        { text: "⚽ World Cup", callback_data: "featured:7" },
+        { text: "🎲 Baccarat", callback_data: "featured:8" },
+      ],
+      [
+        { text: "🎯 Perverted", callback_data: "topic:ai" },
+        { text: "💎 BeautyFilter", callback_data: "topic:bitcoin" },
         { text: "🌸 Meriolchan", callback_data: "topic:meriolchan" },
         { text: "⭐ Isa", callback_data: "topic:isa" },
       ],
       [
         { text: "👁️ Hypnotic Eyes", callback_data: "topic:hypnotic_eyes" },
         { text: "☀️ Sun Yezi", callback_data: "topic:sun_yezi" },
-      ],
-      [
         { text: "💃 Odetta", callback_data: "topic:odetta" },
         { text: "👑 Socialite", callback_data: "topic:socialite" },
       ],
       [
         { text: "⛩️ Nine Gates", callback_data: "topic:nine_gates" },
         { text: "✨ Ssaimi", callback_data: "topic:ssaimi" },
+        { text: "🐉 Dragon Rest.", callback_data: "topic:dragon_restaurant" },
+        { text: "📣 Shoko Shouko", callback_data: "topic:shoko_shouko" },
       ],
     ],
   };
@@ -1324,18 +1493,14 @@ function makeSearchCallbackData(keyword) {
 }
 
 async function getTrendingKeyboard() {
-  const featuredRows = getFeaturedKeyboard();
   const mainKeys = getMainKeyboard().inline_keyboard;
   const breaking = getBreakingNews();
   const trendingKw = getTrendingKeywords();
 
-  // 1. Existing 8 topics (Featured Cards)
-  const rows = [...featuredRows];
+  // 1. All 20 Hot Topics (4 buttons per row grid)
+  const rows = [...mainKeys];
 
-  // 2. New 8 topics (from Book2_deduplicated.xlsx)
-  rows.push(...mainKeys);
-
-  // 3. Breaking News
+  // 2. Breaking News (if any)
   if (breaking.length > 0) {
     rows.push([{ text: "📰 BREAKING NEWS", callback_data: "none" }]);
     for (const news of breaking) {
@@ -1344,10 +1509,10 @@ async function getTrendingKeyboard() {
     }
   }
 
-  // 4. Refresh Trending button
+  // 3. Refresh Trending button (full width)
   rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
 
-  // 5. Trending search buttons
+  // 4. Trending keyword search buttons (scraped from signal.bz)
   if (trendingKw.length > 0) {
     for (let i = 0; i < Math.min(trendingKw.length, 6); i += 2) {
       const kw1 = trendingKw[i];
@@ -1507,6 +1672,8 @@ const TOPIC_NAMES = {
   socialite: "👑 Socialite",
   nine_gates: "⛩️ Nine Gates",
   ssaimi: "✨ Ssaimi",
+  dragon_restaurant: "🐉 King Welcoming Dragon Restaurant",
+  shoko_shouko: "📣 Shoko Shouko",
 };
 
 // ============================
