@@ -1495,7 +1495,6 @@ function makeSearchCallbackData(keyword) {
 async function getTrendingKeyboard() {
   const mainKeys = getMainKeyboard().inline_keyboard;
   const breaking = getBreakingNews();
-  const trendingKw = getTrendingKeywords();
 
   // 1. All 20 Hot Topics (4 buttons per row grid)
   const rows = [...mainKeys];
@@ -1512,18 +1511,15 @@ async function getTrendingKeyboard() {
   // 3. Refresh Trending button (full width)
   rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
 
-  // 4. Trending keyword search buttons (scraped from signal.bz)
-  if (trendingKw.length > 0) {
-    for (let i = 0; i < Math.min(trendingKw.length, 6); i += 2) {
-      const kw1 = trendingKw[i];
-      const kw2 = trendingKw[i + 1];
-      const row = [{ text: `🔥 ${kw1}`, callback_data: makeSearchCallbackData(kw1) }];
-      if (kw2) {
-        row.push({ text: `🔥 ${kw2}`, callback_data: makeSearchCallbackData(kw2) });
-      }
-      rows.push(row);
-    }
-  }
+  // 4. 4 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
+  rows.push([
+    { text: "🎮 Play Games", callback_data: "cat:games" },
+    { text: "🤖 AI", callback_data: "cat:ai_tools" }
+  ]);
+  rows.push([
+    { text: "📚 Short Stories", callback_data: "cat:stories" },
+    { text: "🔬 Scientific Paper", callback_data: "cat:papers" }
+  ]);
 
   return { inline_keyboard: rows };
 }
@@ -1587,6 +1583,144 @@ function getChannelButtons(channels) {
 function formatChannelList(channels, topicName) {
   const displayTopicName = TOPIC_NAMES[topicName] || topicName;
   return `📢 <b>${escapeHTML(displayTopicName)}</b>\n\n👇 Tap any post below:`;
+}
+
+
+// ============================
+// 🎮 4 PERMANENT CATEGORY DATASETS & RENDERER
+// ============================
+const CATEGORIES = {
+  games: {
+    title: "🎮 Play Games",
+    items: [
+      { name: "🎮 Play Games — @swag912", url: "https://t.me/swag912?start=xbiso" },
+      { name: "🎮 Play Games — @xi_8888888", url: "https://t.me/xi_8888888?start=xbiso" },
+      { name: "🎮 Play Games — @lifanhuangyouxi", url: "https://t.me/lifanhuangyouxi?start=xbiso" },
+      { name: "🎮 Play Games — @zest110", url: "https://t.me/zest110?start=xbiso" },
+      { name: "🎮 Play Games — @Ebpay", url: "https://t.me/Ebpay?start=xbiso" },
+      { name: "🎮 Play Games — @dohnaduona", url: "https://t.me/dohnaduona?start=xbiso" },
+      { name: "🎮 Play Games — @farrslgrpg", url: "https://t.me/farrslgrpg?start=xbiso" },
+      { name: "🎮 Play Games — @MTXFXS", url: "https://t.me/MTXFXS?start=xbiso" },
+      { name: "🎮 Play Games — @huangyou_A", url: "https://t.me/huangyou_A?start=xbiso" },
+      { name: "🎮 Play Games — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" },
+      { name: "🎮 Play Games — @cosplaytele2", url: "https://t.me/cosplaytele2?start=xbiso" },
+      { name: "🎮 Play Games — @TT95333", url: "https://t.me/TT95333?start=xbiso" },
+      { name: "🎮 Play Games — @BTCnewsvip02", url: "https://t.me/BTCnewsvip02?start=xbiso" },
+      { name: "🎮 Play Games — @bgtfp", url: "https://t.me/bgtfp?start=xbiso" },
+      { name: "🎮 Play Games — @rgggg", url: "https://t.me/rgggg?start=xbiso" }
+    ]
+  },
+  ai_tools: {
+    title: "🤖 AI",
+    items: [
+      { name: "🤖 AI — @toncoin", url: "https://t.me/toncoin?start=xbiso" },
+      { name: "🤖 AI — @AIJueSeKa", url: "https://t.me/AIJueSeKa?start=xbiso" },
+      { name: "🤖 AI — @toncoin_es", url: "https://t.me/toncoin_es?start=xbiso" },
+      { name: "🤖 AI — @toncoin_cn", url: "https://t.me/toncoin_cn?start=xbiso" },
+      { name: "🤖 AI — @cabianduanjuheji", url: "https://t.me/cabianduanjuheji?start=xbiso" },
+      { name: "🤖 AI — @xiaoshuwu", url: "https://t.me/xiaoshuwu?start=xbiso" },
+      { name: "🤖 AI — @asmr_one_chan", url: "https://t.me/asmr_one_chan?start=xbiso" },
+      { name: "🤖 AI — @inshdjk", url: "https://t.me/inshdjk?start=xbiso" },
+      { name: "🤖 AI — @DNSPODT", url: "https://t.me/DNSPODT?start=xbiso" },
+      { name: "🤖 AI — @clbfxs", url: "https://t.me/clbfxs?start=xbiso" },
+      { name: "🤖 AI — @woaicja", url: "https://t.me/woaicja?start=xbiso" },
+      { name: "🤖 AI — @piracy6", url: "https://t.me/piracy6?start=xbiso" },
+      { name: "🤖 AI — @yumengai", url: "https://t.me/yumengai?start=xbiso" },
+      { name: "🤖 AI — @ph_dcgroup", url: "https://t.me/ph_dcgroup?start=xbiso" },
+      { name: "🤖 AI — @GodlyNews1", url: "https://t.me/GodlyNews1?start=xbiso" },
+      { name: "🤖 AI — @me888888888888", url: "https://t.me/me888888888888?start=xbiso" },
+      { name: "🤖 AI — @FinanceNewsDaily", url: "https://t.me/FinanceNewsDaily?start=xbiso" }
+    ]
+  },
+  stories: {
+    title: "📚 Short Stories",
+    items: [
+      { name: "📚 Short Stories — @happylibrary", url: "https://t.me/happylibrary?start=xbiso" },
+      { name: "📚 Short Stories — @WANJSW", url: "https://t.me/WANJSW?start=xbiso" },
+      { name: "📚 Short Stories — @JJSW125689", url: "https://t.me/JJSW125689?start=xbiso" },
+      { name: "📚 Short Stories — @JinPingMeiold", url: "https://t.me/JinPingMeiold?start=xbiso" },
+      { name: "📚 Short Stories — @JGshuoshu", url: "https://t.me/JGshuoshu?start=xbiso" },
+      { name: "📚 Short Stories — @sharebooks4you", url: "https://t.me/sharebooks4you?start=xbiso" },
+      { name: "📚 Short Stories — @soundxiaoshuo", url: "https://t.me/soundxiaoshuo?start=xbiso" },
+      { name: "📚 Short Stories — @yellownovel", url: "https://t.me/yellownovel?start=xbiso" },
+      { name: "📚 Short Stories — @gayui", url: "https://t.me/gayui?start=xbiso" },
+      { name: "📚 Short Stories — @GuyBuok", url: "https://t.me/GuyBuok?start=xbiso" },
+      { name: "📚 Short Stories — @BookLogChannel", url: "https://t.me/BookLogChannel?start=xbiso" },
+      { name: "📚 Short Stories — @novel_174", url: "https://t.me/novel_174?start=xbiso" },
+      { name: "📚 Short Stories — @ysxs8", url: "https://t.me/ysxs8?start=xbiso" },
+      { name: "📚 Short Stories — @Flymirai", url: "https://t.me/Flymirai?start=xbiso" },
+      { name: "📚 Short Stories — @SQXiaoShuo", url: "https://t.me/SQXiaoShuo?start=xbiso" },
+      { name: "📚 Short Stories — @douban_read", url: "https://t.me/douban_read?start=xbiso" },
+      { name: "📚 Short Stories — @qsxiaoshuo", url: "https://t.me/qsxiaoshuo?start=xbiso" },
+      { name: "📚 Short Stories — @JGBOOK", url: "https://t.me/JGBOOK?start=xbiso" }
+    ]
+  },
+  papers: {
+    title: "🔬 Scientific Paper",
+    items: [
+      { name: "🔬 Scientific Paper — @VPNqn", url: "https://t.me/VPNqn?start=xbiso" },
+      { name: "🔬 Scientific Paper — @xiaohuojianvpnvpn", url: "https://t.me/xiaohuojianvpnvpn?start=xbiso" },
+      { name: "🔬 Scientific Paper — @BJxinyu", url: "https://t.me/BJxinyu?start=xbiso" },
+      { name: "🔬 Scientific Paper — @fun_apk", url: "https://t.me/fun_apk?start=xbiso" },
+      { name: "🔬 Scientific Paper — @XQFXS", url: "https://t.me/XQFXS?start=xbiso" },
+      { name: "🔬 Scientific Paper — @PJAPKVPN", url: "https://t.me/PJAPKVPN?start=xbiso" },
+      { name: "🔬 Scientific Paper — @qiuyue2", url: "https://t.me/qiuyue2?start=xbiso" },
+      { name: "🔬 Scientific Paper — @pjrjzy", url: "https://t.me/pjrjzy?start=xbiso" },
+      { name: "🔬 Scientific Paper — @feiyangdigital", url: "https://t.me/feiyangdigital?start=xbiso" },
+      { name: "🔬 Scientific Paper — @hkfwq111", url: "https://t.me/hkfwq111?start=xbiso" },
+      { name: "🔬 Scientific Paper — @LCGFX", url: "https://t.me/LCGFX?start=xbiso" },
+      { name: "🔬 Scientific Paper — @xiaoshuwu", url: "https://t.me/xiaoshuwu?start=xbiso" },
+      { name: "🔬 Scientific Paper — @jiufangyum", url: "https://t.me/jiufangyum?start=xbiso" },
+      { name: "🔬 Scientific Paper — @DuyaoSS", url: "https://t.me/DuyaoSS?start=xbiso" },
+      { name: "🔬 Scientific Paper — @aibuwan8", url: "https://t.me/aibuwan8?start=xbiso" },
+      { name: "🔬 Scientific Paper — @GieGie777", url: "https://t.me/GieGie777?start=xbiso" },
+      { name: "🔬 Scientific Paper — @The_Lord_Rings", url: "https://t.me/The_Lord_Rings?start=xbiso" }
+    ]
+  }
+};
+
+async function renderCategoryResources(chatId, catKey, page = 1, messageId = null) {
+  const category = CATEGORIES[catKey];
+  if (!category) return;
+
+  const title = category.title;
+  const items = category.items;
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(items.length / itemsPerPage);
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
+
+  const rows = pageItems.map(item => [
+    { text: item.name, url: item.url }
+  ]);
+
+  if (totalPages > 1) {
+    const navRow = [];
+    if (currentPage > 1) {
+      navRow.push({ text: "◀ Previous", callback_data: `cat_page:${catKey}:${currentPage - 1}` });
+    }
+    navRow.push({ text: `Page ${currentPage}/${totalPages}`, callback_data: "none" });
+    if (currentPage < totalPages) {
+      navRow.push({ text: "Next ▶", callback_data: `cat_page:${catKey}:${currentPage + 1}` });
+    }
+    rows.push(navRow);
+  }
+
+  rows.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+
+  const messageText = `<b>${escapeHTML(title)}</b>\n\nFound <b>${items.length}</b> resource(s):`;
+  const messageOptions = {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: rows },
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, messageText, messageOptions);
+  } else {
+    return await sendMessageSafe(chatId, messageText, messageOptions);
+  }
 }
 
 async function renderTopicPosts(chatId, topicKey, page = 1, messageId = null) {
@@ -1787,6 +1921,15 @@ bot.on("callback_query", async (query) => {
     } else if (data.startsWith("search:")) {
       const keyword = data.replace("search:", "");
       await renderSearchResults(chatId, keyword, messageId);
+        } else if (data.startsWith("cat_page:")) {
+      const parts = data.split(":");
+      const catKey = parts[1];
+      const page = parseInt(parts[2], 10);
+      await renderCategoryResources(chatId, catKey, page, messageId);
+    } else if (data.startsWith("cat:")) {
+      const parts = data.split(":");
+      const catKey = parts[1];
+      await renderCategoryResources(chatId, catKey, 1, messageId);
     } else if (data.startsWith("topic_page:")) {
       const parts = data.split(":");
       const topicKey = parts[1];
