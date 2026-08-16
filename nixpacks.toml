@@ -1,5 +1,2 @@
-[providers.node]
-nodeVersion = "22"
-
 [phases.setup]
-nixPkgs = ["chromium", "glib", "nss", "nspr", "atk"]
+nixPkgs = ["...", "chromium", "glib", "nss", "nspr", "atk"]
