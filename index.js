@@ -1184,7 +1184,7 @@ function getFeaturedChannels(cardId) {
 // ============================================================
 async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
   if (!items || items.length === 0) {
-    const emptyText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\nNo posts found for this topic.`;
+    const emptyText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\nNo related content available in managed source channels yet.`;
     const emptyOpts = {
       parse_mode: "HTML",
       reply_markup: {
@@ -1718,52 +1718,20 @@ async function getTrendingKeyboard() {
   return { inline_keyboard: rows };
 }
 
-async function renderSearchResults(chatId, query, messageId = null) {
+async function renderSearchResults(chatId, query, page = 1, messageId = null) {
   recordUserSearch(chatId, query);
-  const results = searchResources(query);
   const displayQuery = await translateText(query, "en");
 
-  if (!messageId) {
-    await sendMessageSafe(chatId,
-      `🔍 <b>Searching:</b> <code>"${escapeHTML(displayQuery)}"</code>`,
-      {
-        parse_mode: "HTML",
-        reply_markup: getPersistentNavigationKeyboard()
-      }
-    );
+  // Search posts from our 10 managed Telegram channels
+  let posts = sourceRegistry.searchPosts(query);
+  if ((!posts || posts.length === 0) && displayQuery !== query) {
+    posts = sourceRegistry.searchPosts(displayQuery);
   }
 
-  if (results.length > 0) {
-    const rows = results.map(ch => ([
-      { text: `${ch.name}`, url: `https://t.me/${ch.user}` }
-    ]));
-    rows.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+  const titleHeader = `🔍 Live Trending Keyword: ${displayQuery}`;
+  const callbackPrefix = `search_page:${encodeURIComponent(query)}`;
 
-    const text = `🔍 <b>Search Results for:</b> <code>"${escapeHTML(displayQuery)}"</code>\n\nFound <b>${results.length}</b> resource(s):`;
-    const opts = {
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: rows },
-    };
-
-    if (messageId) {
-      return await editMessageTextSafe(chatId, messageId, text, opts);
-    } else {
-      return await sendMessageSafe(chatId, text, opts);
-    }
-  } else {
-    const trendingKeys = await getTrendingKeyboard();
-    const text = `🔍 <b>No resources found for:</b> <code>"${escapeHTML(displayQuery)}"</code>\n\nTry searching with different keywords or explore hot topics below 👇`;
-    const opts = {
-      parse_mode: "HTML",
-      reply_markup: trendingKeys,
-    };
-
-    if (messageId) {
-      return await editMessageTextSafe(chatId, messageId, text, opts);
-    } else {
-      return await sendMessageSafe(chatId, text, opts);
-    }
-  }
+  return await renderHyperlinkListPostView(chatId, titleHeader, posts, page, callbackPrefix, messageId);
 }
 
 function getChannelButtons(channels) {
@@ -2111,9 +2079,14 @@ bot.on("callback_query", async (query) => {
       const cardId = parseInt(parts[1], 10);
       const page = parseInt(parts[2] || "1", 10);
       await renderFeaturedCardPosts(chatId, cardId, page, messageId);
+    } else if (data.startsWith("search_page:")) {
+      const parts = data.split(":");
+      const query = decodeURIComponent(parts[1] || "");
+      const page = parseInt(parts[2] || "1", 10);
+      await renderSearchResults(chatId, query, page, messageId);
     } else if (data.startsWith("search:")) {
       const keyword = data.replace("search:", "");
-      await renderSearchResults(chatId, keyword, messageId);
+      await renderSearchResults(chatId, keyword, 1, messageId);
         } else if (data.startsWith("cat_page:")) {
       const parts = data.split(":");
       const catKey = parts[1];
@@ -2274,6 +2247,7 @@ if (isMainModule) {
 }
 
 module.exports = {
+  renderSearchResults,
   searchResources,
   CHANNELS,
   CATEGORIES,

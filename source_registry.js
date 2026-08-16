@@ -223,6 +223,24 @@ class SourceRegistry {
     return this.posts.filter(p => p.keyword.trim().toLowerCase() === kwLower || p.channel_name.trim().toLowerCase() === kwLower);
   }
 
+  searchPosts(query) {
+    if (!query || typeof query !== "string") return [];
+    const qLower = query.trim().toLowerCase();
+    if (!qLower) return [];
+
+    return this.posts.filter(p => {
+      const titleLower = (p.title || "").toLowerCase();
+      const captionLower = (p.caption || "").toLowerCase();
+      const kwLower = (p.keyword || "").toLowerCase();
+      const chanLower = (p.channel_name || "").toLowerCase();
+
+      return titleLower.includes(qLower) || 
+             captionLower.includes(qLower) || 
+             kwLower.includes(qLower) || 
+             chanLower.includes(qLower);
+    });
+  }
+
   getTopTrendingVideos(limit = 10) {
     const videoPosts = this.posts.filter(p => p.media_type === "video" || p.duration);
     if (videoPosts.length > 0) {
