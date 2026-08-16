@@ -10,7 +10,7 @@
   "keywords": [],
   "author": "",
   "engines": {
-    "node": "22.x"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
