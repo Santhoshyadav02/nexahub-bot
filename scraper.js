@@ -7,7 +7,7 @@ let isScrapingBreaking = false;
 async function scrapeTrending() {
   console.log("🔍 Scraping real-time trending keywords via HTTP...");
   return new Promise((resolve) => {
-    const url = "https://trends.google.com/trending/rss?geo=US";
+    const url = "https://trends.google.com/trending/rss?geo=KR";
     https.get(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

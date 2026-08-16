@@ -24,7 +24,13 @@ if (!TOKEN) {
 }
 
 const isMainModule = require.main === module;
-const bot = new TelegramBot(TOKEN, { polling: isMainModule });
+const bot = new TelegramBot(TOKEN, {
+  polling: isMainModule ? {
+    params: {
+      allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"]
+    }
+  } : false
+});
 
 bot.on("polling_error", (error) => {
   console.error("⚠️ Telegram Bot Polling Error:", error.code || "", error.message || error);
@@ -1453,41 +1459,72 @@ async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1
   }
 }
 
-function getMainKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: "🔥 Huangguo", callback_data: "featured:1" },
-        { text: "⭐ Li Meng", callback_data: "featured:2" },
-        { text: "🎤 Dong Qing", callback_data: "featured:3" },
-        { text: "👁️ Hypnotic", callback_data: "featured:4" },
-      ],
-      [
-        { text: "🖤 pinkchyu", callback_data: "featured:5" },
-        { text: "🔥 Teng Teng", callback_data: "featured:6" },
-        { text: "⚽ World Cup", callback_data: "featured:7" },
-        { text: "🎲 Baccarat", callback_data: "featured:8" },
-      ],
-      [
-        { text: "🔥 Perverted", callback_data: "topic:ai" },
-        { text: "💎 BeautyFilter", callback_data: "topic:bitcoin" },
-        { text: "🌸 Meriolchan", callback_data: "topic:meriolchan" },
-        { text: "⭐ Isa", callback_data: "topic:isa" },
-      ],
-      [
-        { text: "👁️ Hypnotic Eyes", callback_data: "topic:hypnotic_eyes" },
-        { text: "☀️ Sun Yezi", callback_data: "topic:sun_yezi" },
-        { text: "🔥 Odetta", callback_data: "topic:odetta" },
-        { text: "👑 Socialite", callback_data: "topic:socialite" },
-      ],
-      [
-        { text: "⛩️ Nine Gates", callback_data: "topic:nine_gates" },
-        { text: "✨ Ssaimi", callback_data: "topic:ssaimi" },
-        { text: "🔥 Dragon Rest.", callback_data: "topic:dragon_restaurant" },
-        { text: "📣 Shoko Shouko", callback_data: "topic:shoko_shouko" },
-      ],
-    ],
-  };
+async function getMainKeyboard() {
+  // 1. CARDS 1–10: Live Korean Trending Searches (Google Trends KR translated to English)
+  const krKeywords = getTrendingKeywords();
+  const card1to10Buttons = [];
+  
+  for (let i = 0; i < 10; i++) {
+    const rawKw = krKeywords[i] || `Trend ${i + 1}`;
+    const displayKw = await translateText(rawKw, "en");
+    let safeDisplay = displayKw.trim();
+    if (safeDisplay.length > 20) {
+      safeDisplay = safeDisplay.substring(0, 18) + "..";
+    }
+    card1to10Buttons.push({
+      text: `🔥 ${safeDisplay}`,
+      callback_data: makeSearchCallbackData(rawKw)
+    });
+  }
+
+  // 2. CARDS 11–20: OUR 10 MANAGED TELEGRAM CHANNELS (Fixed Channel Mapping)
+  const targetSources = sourceRegistry.getAllSources(); // Fixed order: Romantic Vibe, Dating, Romance, Crotch, Mosa, etc.
+  const card11to20Buttons = [];
+
+  for (let i = 0; i < 10; i++) {
+    const source = targetSources[i];
+    let label = "";
+    let callbackData = "";
+
+    if (source) {
+      // Get latest post specifically for this managed channel
+      const channelPosts = sourceRegistry.getPostsForKeyword(source.keyword);
+      const latestPost = channelPosts[0] || null;
+
+      if (latestPost) {
+        let cleanTitle = latestPost.title.replace(/^[▶️🎬🖼️\s]+/, '').replace(/^\[[^\]]+\]\s*/, '').trim();
+        if (!cleanTitle) cleanTitle = source.name;
+        if (cleanTitle.length > 20) {
+          cleanTitle = cleanTitle.substring(0, 18) + "..";
+        }
+        label = `▶️ ${cleanTitle}`;
+      } else {
+        let srcName = source.name;
+        if (srcName.length > 20) {
+          srcName = srcName.substring(0, 18) + "..";
+        }
+        label = `▶️ ${srcName}`;
+      }
+      callbackData = `topic:${source.keyword}`;
+    } else {
+      label = `▶️ Channel ${i + 1}`;
+      callbackData = `menu`;
+    }
+
+    card11to20Buttons.push({
+      text: label,
+      callback_data: callbackData
+    });
+  }
+
+  // Assemble into 5 rows x 4 columns grid (Cards 1–20)
+  const allButtons = [...card1to10Buttons, ...card11to20Buttons];
+  const gridRows = [];
+  for (let i = 0; i < allButtons.length; i += 4) {
+    gridRows.push(allButtons.slice(i, i + 4));
+  }
+
+  return { inline_keyboard: gridRows };
 }
 
 function searchResources(query) {
@@ -1642,7 +1679,7 @@ function makeSearchCallbackData(keyword) {
 }
 
 async function getTrendingKeyboard() {
-  const mainKeys = getMainKeyboard().inline_keyboard;
+  const mainKeys = (await getMainKeyboard()).inline_keyboard;
   const breaking = getBreakingNews();
 
   // 1. All 20 Hot Topics (4 buttons per row grid)

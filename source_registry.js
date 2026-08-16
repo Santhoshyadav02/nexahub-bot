@@ -223,6 +223,14 @@ class SourceRegistry {
     return this.posts.filter(p => p.keyword.trim().toLowerCase() === kwLower || p.channel_name.trim().toLowerCase() === kwLower);
   }
 
+  getTopTrendingVideos(limit = 10) {
+    const videoPosts = this.posts.filter(p => p.media_type === "video" || p.duration);
+    if (videoPosts.length > 0) {
+      return videoPosts.slice(0, limit);
+    }
+    return this.posts.slice(0, limit);
+  }
+
   getPostById(postId) {
     return this.posts.find(p => p.id === postId || p.unique_hash === postId);
   }
