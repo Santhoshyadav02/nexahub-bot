@@ -1184,7 +1184,7 @@ function getFeaturedChannels(cardId) {
 // ============================================================
 async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
   if (!items || items.length === 0) {
-    const emptyText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\nNo posts available in this channel yet.`;
+    const emptyText = `📺 <b>${escapeHTML(title)}</b>\n\nNo posts available in this channel yet.`;
     const emptyOpts = {
       parse_mode: "HTML",
       reply_markup: {
@@ -1200,7 +1200,7 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     }
   }
 
-  const itemsPerPage = 10;
+  const itemsPerPage = 7;
   const totalPages = Math.ceil(items.length / itemsPerPage);
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
@@ -1227,38 +1227,22 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const fullTitle = `${icon}${displayTitle}`.trim();
     const escapedTitle = escapeHTML(fullTitle);
-    const itemUrl = p.url || (p.user ? `https://t.me/${p.user}` : "");
+    
+    let itemUrl = p.telegram_url || p.url || "";
+    if (!itemUrl && p.chat_id && p.message_id) {
+      let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
+      itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
+    }
     const safeUrl = escapeHTML(itemUrl);
 
     return `${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`;
   });
 
-  let messageText = `🔥🔥 <b>${escapeHTML(title)}</b>\n\n`;
-  messageText += `Below are the channels and videos related to this topic. Click any link to open or select a details button below.\n`;
-  messageText += `───────────────────\n`;
-  messageText += `🔗 <b>CHANNEL/VIDEO LINKS</b>\n\n`;
+  let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
+  messageText += `Below are the latest videos from this channel.\n\n`;
   messageText += linkLines.join("\n\n");
   if (totalPages > 1) {
     messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
-  }
-  messageText += `\n\nℹ️ <i>Note: Click any link above to open directly, or tap a Detail number below.</i>`;
-
-  // Generate Detail View selection buttons for the page items (e.g. 5 per row)
-  const detailButtons = [];
-  let currentDetailRow = [];
-  pageItems.forEach((p, idx) => {
-    const itemNumber = startIndex + idx + 1;
-    currentDetailRow.push({
-      text: `🔎 ${itemNumber}`,
-      callback_data: `det:${callbackPrefix}:${startIndex + idx}:${currentPage}`
-    });
-    if (currentDetailRow.length === 5) {
-      detailButtons.push(currentDetailRow);
-      currentDetailRow = [];
-    }
-  });
-  if (currentDetailRow.length > 0) {
-    detailButtons.push(currentDetailRow);
   }
 
   const navRow = [];
@@ -1270,9 +1254,6 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const inline_keyboard = [];
-  if (detailButtons.length > 0) {
-    inline_keyboard.push(...detailButtons);
-  }
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
