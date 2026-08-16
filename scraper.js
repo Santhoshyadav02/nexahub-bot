@@ -47,41 +47,61 @@ async function scrapeTrending() {
 }
 
 async function scrapeBreakingNews() {
-  console.log("📰 Scraping breaking news...");
-  let browser = null;
+  console.log("📰 Scraping breaking news via HTTP RSS...");
+  return new Promise((resolve) => {
+    const newsUrl = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en";
+    https.get(newsUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      },
+      timeout: 8000
+    }, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        const itemMatches = data.match(/<item>([\s\S]*?)<\/item>/gi) || [];
+        const news = [];
+        for (const item of itemMatches) {
+          const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/i);
+          if (titleMatch) {
+            let clean = titleMatch[1]
+              .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+              .replace(/<[^>]+>/g, "")
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&#39;/g, "'")
+              .trim();
+            if (clean && !news.includes(clean)) {
+              news.push(clean);
+            }
+          }
+          if (news.length >= 5) break;
+        }
 
-  try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto("https://awesome-ui.netlify.app/", { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(3000);
-
-    const news = await page.evaluate(() => {
-      const items = document.querySelectorAll(".rank-sw .tit");
-      return Array.from(items)
-        .slice(0, 5)
-        .map(item => item.innerText.replace(/<[^>]*>/g, "").trim())
-        .filter(text => text.length > 0);
+        if (news.length > 0) {
+          const payload = {
+            updatedAt: new Date().toISOString(),
+            news: news
+          };
+          fs.writeFileSync("breaking.json", JSON.stringify(payload, null, 2), "utf8");
+          console.log(`✅ Saved ${news.length} breaking news items to breaking.json`);
+        } else {
+          console.log("⚠️ No breaking news items found!");
+        }
+        resolve();
+      });
+    }).on("error", (err) => {
+      console.error("❌ Breaking news HTTP error:", err.message);
+      resolve();
+    }).on("timeout", function() {
+      this.destroy();
+      console.error("❌ Breaking news HTTP timeout");
+      resolve();
     });
-
-    if (news.length > 0) {
-      const data = {
-        updatedAt: new Date().toISOString(),
-        news: news,
-      };
-      fs.writeFileSync("breaking.json", JSON.stringify(data, null, 2), "utf8");
-      console.log(`✅ Saved ${news.length} breaking news`);
-    } else {
-      console.log("⚠️ No breaking news found!");
-    }
-
-  } catch (err) {
-    console.error("❌ Breaking news error:", err.message);
-  } finally {
-    if (browser) {
-      await browser.close().catch(e => console.error("Error closing breaking news browser:", e.message));
-    }
-  }
+  });
 }
 
 async function safeScrapeTrending() {
