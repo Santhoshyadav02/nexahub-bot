@@ -1575,9 +1575,22 @@ async function getMainKeyboard() {
 
 async function getTrendingKeyboard() {
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
+  const breaking = getBreakingNews();
   const rows = [...mainKeys];
 
-  // 8 Permanent Category Buttons (2 per row)
+  // 1. Breaking News (if any)
+  if (breaking.length > 0) {
+    rows.push([{ text: "📰 BREAKING NEWS", callback_data: "none" }]);
+    for (const news of breaking) {
+      const displayNews = await translateText(news, "en");
+      rows.push([{ text: `📰 ${displayNews}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
+    }
+  }
+
+  // 2. Refresh Trending button (full width)
+  rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
+
+  // 3. 8 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
   rows.push([
     { text: "🎮 Play Games", callback_data: "cat:games" },
     { text: "🤖 AI", callback_data: "cat:ai_tools" }
