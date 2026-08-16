@@ -2072,65 +2072,6 @@ bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
     if (msg.message_id) trackMessage(chatId, msg.message_id);
-
-    // Admin Forward Sync Handler for Private Channels
-    if (msg.forward_from_chat && msg.forward_from_chat.type === "channel") {
-      const origChat = msg.forward_from_chat;
-      const origTitle = (origChat.title || "").trim();
-      const origChatId = String(origChat.id);
-      const origMsgId = msg.forward_from_message_id || msg.message_id;
-      const origDate = msg.forward_date || msg.date;
-
-      console.log(`📥 [Admin Sync Forward Received] From channel: "${origTitle}" (chat_id: ${origChatId}, msg_id: ${origMsgId})`);
-
-      // Match against our 10 managed target channels
-      const targetSources = sourceRegistry.getAllSources();
-      const matchedSource = targetSources.find(s => 
-        s.name.toLowerCase() === origTitle.toLowerCase() ||
-        s.keyword.toLowerCase() === origTitle.toLowerCase() ||
-        s.chat_id === origChatId
-      );
-
-      if (matchedSource) {
-        // Construct the ORIGINAL channel post object
-        const channelPostObj = {
-          message_id: origMsgId,
-          date: origDate,
-          chat: {
-            id: origChat.id,
-            title: origChat.title,
-            type: "channel"
-          },
-          text: msg.text,
-          caption: msg.caption,
-          video: msg.video,
-          photo: msg.photo,
-          document: msg.document,
-        };
-
-        const result = sourceRegistry.processChannelPost(channelPostObj);
-
-        await sendMessageSafe(chatId,
-          `✅ <b>FORWARD SYNC SUCCESSFUL!</b>\n\n` +
-          `• <b>Bound Channel:</b> ${escapeHTML(matchedSource.name)}\n` +
-          `• <b>Real Chat ID:</b> <code>${origChatId}</code>\n` +
-          `• <b>Original Message ID:</b> <code>${origMsgId}</code>\n` +
-          `• <b>Media Type:</b> <code>${result.post.media_type || 'text'}</code>\n` +
-          `• <b>Latest Title:</b> "${escapeHTML(result.post.title)}"\n\n` +
-          `Cards are now initialized with this post!`,
-          { parse_mode: "HTML" }
-        );
-        return;
-      } else {
-        await sendMessageSafe(chatId,
-          `⚠️ <b>Forward received from:</b> "${escapeHTML(origTitle)}"\n` +
-          `However, this channel title did not match any of our 10 managed target channels.`,
-          { parse_mode: "HTML" }
-        );
-        return;
-      }
-    }
-
     if (!text) return;
 
     if (text === "🏠 Home") {
@@ -2196,6 +2137,19 @@ if (isMainModule) {
   startScraperScheduler();
   console.log("✅ NewsSearch Main Bot is running...");
   console.log("🔗 Channels shown directly in main bot!");
+
+  // Perform ONE-TIME MTProto Startup Sync for all 10 managed private channels
+  if (process.env.TELEGRAM_SESSION_STRING) {
+    const MTProtoChannelReader = require("./mtproto_reader");
+    const reader = new MTProtoChannelReader();
+    console.log("📡 Initializing MTProto Startup Channel Sync...");
+    reader.syncAllChannels(10, true)
+      .then(results => {
+        const totalIngested = results.reduce((acc, r) => acc + (r.posts_found || 0), 0);
+        console.log(`✅ MTProto Startup Sync Complete! Synced ${results.length} channels (${totalIngested} total posts persisted).`);
+      })
+      .catch(err => console.error("⚠️ MTProto Startup Sync Error:", err.message));
+  }
 }
 
 module.exports = {

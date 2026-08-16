@@ -4,6 +4,8 @@ trending.json
 breaking.json
 user_preferences.json
 video_cache.json
+source_registry.json
+channels_cache.json
 
 
 

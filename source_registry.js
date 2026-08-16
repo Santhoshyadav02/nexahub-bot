@@ -106,23 +106,23 @@ class SourceRegistry {
     return newSource;
   }
 
-  bindChatIdToSource(chatId, channelTitle = "") {
+  bindChatIdToSource(chatId, channelTitle = "", targetKeyword = null) {
     const strChatId = String(chatId);
     let source = this.sources.find(s => String(s.chat_id) === strChatId);
     if (source) return source;
 
-    if (channelTitle) {
-      const titleLower = channelTitle.trim().toLowerCase();
-      source = this.sources.find(s => s.name.trim().toLowerCase() === titleLower || s.keyword.trim().toLowerCase() === titleLower);
+    if (targetKeyword) {
+      const targetKwLower = String(targetKeyword).trim().toLowerCase();
+      source = this.sources.find(s => s.keyword.trim().toLowerCase() === targetKwLower || s.name.trim().toLowerCase() === targetKwLower);
     }
 
-    if (!source) {
-      source = this.sources.find(s => !s.chat_id);
+    if (!source && channelTitle) {
+      const titleLower = String(channelTitle).trim().toLowerCase();
+      source = this.sources.find(s => s.name.trim().toLowerCase() === titleLower || s.keyword.trim().toLowerCase() === titleLower);
     }
 
     if (source) {
       source.chat_id = strChatId;
-      if (channelTitle) source.name = channelTitle;
       this.saveData();
       console.log(`🔗 Bound chat_id [${strChatId}] to Source [${source.name}] (Keyword: ${source.keyword})`);
     } else {
@@ -132,7 +132,7 @@ class SourceRegistry {
     return source;
   }
 
-  processChannelPost(msg) {
+  processChannelPost(msg, explicitKeyword = null) {
     if (!msg || !msg.chat) return null;
 
     const chatId = String(msg.chat.id);
@@ -141,7 +141,7 @@ class SourceRegistry {
 
     const existingPostIndex = this.posts.findIndex(p => p.unique_hash === uniqueHash);
 
-    const source = this.bindChatIdToSource(chatId, msg.chat.title || "");
+    const source = this.bindChatIdToSource(chatId, msg.chat.title || "", explicitKeyword);
 
     let text = msg.text || msg.caption || "";
     let mediaType = "text";
