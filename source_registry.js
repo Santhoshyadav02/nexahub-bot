@@ -7,14 +7,14 @@ const DATA_FILE = path.join(__dirname, "source_registry.json");
 const INITIAL_SOURCES = [
   { keyword: "Romantic Vibe", name: "Romantic Vibe", username: "ccsfvk", public_url: "https://t.me/ccsfvk" },
   { keyword: "Dating", name: "Dating", username: "cccsefk", public_url: "https://t.me/cccsefk" },
-  { keyword: "Romance", name: "Romance", invite_url: "https://t.me/+3g-HIjq_KgtkZDE5" },
+  { keyword: "Romance", name: "Romance", username: "e5brygh", public_url: "https://t.me/e5brygh" },
   { keyword: "Crotch", name: "Crotch", username: "ccdjxc", public_url: "https://t.me/ccdjxc" },
-  { keyword: "Mosa", name: "Mosa", invite_url: "https://t.me/+hdaykD30jbdhNzlh" },
+  { keyword: "Mosa", name: "Mosa", username: "vsdxda", public_url: "https://t.me/vsdxda" },
   { keyword: "Bunny Girl Cosplay Date", name: "Bunny Girl Cosplay Date", username: "tfccdet", public_url: "https://t.me/tfccdet" },
   { keyword: "Lustful Hostess", name: "Lustful Hostess", username: "sfgfem", public_url: "https://t.me/sfgfem" },
   { keyword: "Concubine", name: "Concubine", username: "ddkicr", public_url: "https://t.me/ddkicr" },
   { keyword: "Saki Mizumi", name: "Saki Mizumi", username: "cccddghhgf", public_url: "https://t.me/cccddghhgf" },
-  { keyword: "A Muse", name: "A Muse", invite_url: "https://t.me/+e-JQoCwT8wMyM2Zh" }
+  { keyword: "A Muse", name: "A Muse", username: "bzd4wrf", public_url: "https://t.me/bzd4wrf" }
 ];
 
 class SourceRegistry {

@@ -7,14 +7,14 @@ const sourceRegistry = require("./source_registry");
 const TARGET_CHANNELS = [
   { name: "Romantic Vibe", username: "ccsfvk", public_url: "https://t.me/ccsfvk", chat_id: "-1005563024409" },
   { name: "Dating", username: "cccsefk", public_url: "https://t.me/cccsefk", chat_id: "-1005362445410" },
-  { name: "Romance", invite_url: "https://t.me/+3g-HIjq_KgtkZDE5", hash: "3g-HIjq_KgtkZDE5", chat_id: "-1005491187683" },
+  { name: "Romance", username: "e5brygh", public_url: "https://t.me/e5brygh", chat_id: "-1005491187683" },
   { name: "Crotch", username: "ccdjxc", public_url: "https://t.me/ccdjxc", chat_id: "-1005296875877" },
-  { name: "Mosa", invite_url: "https://t.me/+hdaykD30jbdhNzlh", hash: "hdaykD30jbdhNzlh", chat_id: "-1005427855016" },
+  { name: "Mosa", username: "vsdxda", public_url: "https://t.me/vsdxda", chat_id: "-1005427855016" },
   { name: "Bunny Girl Cosplay Date", username: "tfccdet", public_url: "https://t.me/tfccdet", chat_id: "-1005353472623" },
   { name: "Lustful Hostess", username: "sfgfem", public_url: "https://t.me/sfgfem", chat_id: "-1005591987853" },
   { name: "Concubine", username: "ddkicr", public_url: "https://t.me/ddkicr", chat_id: "-1005394162064" },
   { name: "Saki Mizumi", username: "cccddghhgf", public_url: "https://t.me/cccddghhgf", chat_id: "-1005356656249" },
-  { name: "A Muse", invite_url: "https://t.me/+e-JQoCwT8wMyM2Zh", hash: "e-JQoCwT8wMyM2Zh", chat_id: "-1005476708057" }
+  { name: "A Muse", username: "bzd4wrf", public_url: "https://t.me/bzd4wrf", chat_id: "-1005476708057" }
 ];
 
 class MTProtoChannelReader {
