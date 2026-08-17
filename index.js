@@ -1517,8 +1517,8 @@ async function getMainKeyboard() {
     const rawKw = krKeywords[i] || `Trend ${i + 1}`;
     const displayKw = await translateText(rawKw, "en");
     let safeDisplay = displayKw.trim();
-    if (safeDisplay.length > 20) {
-      safeDisplay = safeDisplay.substring(0, 18) + "..";
+    if (safeDisplay.length > 12) {
+      safeDisplay = safeDisplay.substring(0, 10) + "..";
     }
     const channelKeyword = TARGET_CHANNELS[i] || "Dating";
     card1to10Buttons.push({
@@ -1539,14 +1539,14 @@ async function getMainKeyboard() {
     if (latestPost) {
       let cleanTitle = latestPost.title.replace(/^[▶️🎬🖼️\s]+/, '').replace(/^\[[^\]]+\]\s*/, '').trim();
       if (!cleanTitle) cleanTitle = channelKeyword;
-      if (cleanTitle.length > 20) {
-        cleanTitle = cleanTitle.substring(0, 18) + "..";
+      if (cleanTitle.length > 12) {
+        cleanTitle = cleanTitle.substring(0, 10) + "..";
       }
       label = `▶️ ${cleanTitle}`;
     } else {
       let srcName = channelKeyword;
-      if (srcName.length > 20) {
-        srcName = srcName.substring(0, 18) + "..";
+      if (srcName.length > 12) {
+        srcName = srcName.substring(0, 10) + "..";
       }
       label = `▶️ ${srcName}`;
     }
@@ -1557,11 +1557,11 @@ async function getMainKeyboard() {
     });
   }
 
-  // Assemble into 5 rows x 4 columns grid (Cards 1–20)
+  // Assemble into 4 rows x 5 columns grid (Cards 1–20)
   const allButtons = [...card1to10Buttons, ...card11to20Buttons];
   const gridRows = [];
-  for (let i = 0; i < allButtons.length; i += 4) {
-    gridRows.push(allButtons.slice(i, i + 4));
+  for (let i = 0; i < allButtons.length; i += 5) {
+    gridRows.push(allButtons.slice(i, i + 5));
   }
 
   return { inline_keyboard: gridRows };
