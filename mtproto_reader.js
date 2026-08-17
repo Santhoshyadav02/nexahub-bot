@@ -22,7 +22,11 @@ class MTProtoChannelReader {
     this.apiId = parseInt(process.env.TELEGRAM_API_ID || "0", 10);
     this.apiHash = process.env.TELEGRAM_API_HASH || "";
     this.sessionString = process.env.TELEGRAM_SESSION_STRING || "";
-    this.session = new StringSession(this.sessionString);
+    try {
+      this.session = new StringSession(this.sessionString);
+    } catch (e) {
+      this.session = new StringSession("");
+    }
     this.client = new TelegramClient(this.session, this.apiId, this.apiHash, {
       connectionRetries: 3,
     });
@@ -209,6 +213,39 @@ class MTProtoChannelReader {
       await this.disconnect();
     }
     return results;
+  }
+
+  async resolveMediaForPost(post) {
+    if (!post || (!post.chat_id && !post.username) || !post.message_id) return null;
+    try {
+      await this.connect();
+      let chatEntity = null;
+      if (post.username) {
+        try { chatEntity = await this.client.getEntity(post.username); } catch (e) {}
+      }
+      if (!chatEntity && post.chat_id) {
+        try { chatEntity = await this.client.getEntity(post.chat_id); } catch (e) {}
+      }
+      if (chatEntity) {
+        const msgs = await this.client.getMessages(chatEntity, { ids: [parseInt(post.message_id, 10)] });
+        if (msgs && msgs[0] && msgs[0].media) {
+          const m = msgs[0];
+          let type = "video";
+          if (m.media instanceof Api.MessageMediaPhoto) type = "photo";
+          return {
+            message_id: m.id,
+            type: type,
+            has_media: true,
+            chat_id: post.chat_id
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ Error in MTProto resolveMediaForPost:", err.message);
+    } finally {
+      await this.disconnect();
+    }
+    return null;
   }
 }
 

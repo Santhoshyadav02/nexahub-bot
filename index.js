@@ -1176,6 +1176,17 @@ async function sendPhotoSafe(chatId, photo, options = {}) {
   }
 }
 
+async function sendVideoSafe(chatId, video, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
+  try {
+    const res = await bot.sendVideo(chatId, video, cleanOpts);
+    if (res && res.message_id) trackMessage(chatId, res.message_id);
+    return res;
+  } catch (err) {
+    auditTelegramError("sendVideoSafe", chatId, err, video, cleanOpts);
+  }
+}
+
 async function answerCallbackQuerySafe(queryId, options = {}) {
   const cleanOpts = sanitizeTelegramPayload(options);
   try {
@@ -1333,7 +1344,16 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     const escapedTitle = escapeHTML(fullTitle);
 
     let itemUrl = p.telegram_url || p.url;
-    if (!itemUrl) {
+    if (isTopicView) {
+      const vidId = p.id || p.unique_hash;
+      if (vidId) {
+        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=video_${vidId}`;
+      } else {
+        const cleanPrefix = encodeURIComponent(callbackPrefix);
+        const itemIdx = startIndex + index;
+        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=det~${cleanPrefix}~${itemIdx}~${currentPage}`;
+      }
+    } else if (!itemUrl) {
       const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
       if (src && src.username) {
         itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
@@ -1469,10 +1489,11 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
   detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}`;
 
   const inline_keyboard = [
-    [{ text: "▶️ WATCH VIDEO", url: postUrl }],
     [{ text: "🔗 JOIN GROUP", url: groupUrl }],
-    [{ text: "◀️ BACK", callback_data: `${callbackPrefix}:${page}` }],
-    [{ text: "🏠 HOME", callback_data: "menu" }]
+    [
+      { text: "◀️ BACK", callback_data: `${callbackPrefix}:${page}` },
+      { text: "🏠 HOME", callback_data: "menu" }
+    ]
   ];
 
   const opts = {
@@ -1480,6 +1501,55 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     disable_web_page_preview: false,
     reply_markup: { inline_keyboard }
   };
+
+  let cachedFileId = item.file_id || item.video_file_id || getCachedFileId(item.id || item.unique_hash);
+
+  // If file_id is missing, attempt MTProto media resolution
+  if (!cachedFileId && process.env.TELEGRAM_SESSION_STRING && (item.chat_id || item.username) && item.message_id) {
+    try {
+      const MTProtoChannelReader = require("./mtproto_reader");
+      const reader = new MTProtoChannelReader();
+      const resolved = await reader.resolveMediaForPost(item);
+      if (resolved && resolved.file_id) {
+        cachedFileId = resolved.file_id;
+        saveVideoCache(item.id || item.unique_hash, cachedFileId);
+      }
+    } catch (err) {
+      console.warn("⚠️ MTProto media resolution fallback warning:", err.message);
+    }
+  }
+
+  // If file_id or direct media is available, send actual video/photo via sendVideoSafe / sendPhotoSafe
+  if (cachedFileId) {
+    if (item.media_type === "photo") {
+      return await sendPhotoSafe(chatId, cachedFileId, {
+        caption: detailText,
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard }
+      });
+    } else {
+      return await sendVideoSafe(chatId, cachedFileId, {
+        caption: detailText,
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard }
+      });
+    }
+  }
+
+  // For public video posts with direct post URL, attempt sendVideoSafe with postUrl
+  if (item.media_type === "video" && postUrl) {
+    try {
+      const res = await sendVideoSafe(chatId, postUrl, {
+        caption: detailText,
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard }
+      });
+      if (res && res.video && res.video.file_id) {
+        saveVideoCache(item.id || item.unique_hash, res.video.file_id);
+      }
+      if (res) return res;
+    } catch (e) {}
+  }
 
   if (messageId) {
     return await editMessageTextSafe(chatId, messageId, detailText, opts);
@@ -2000,11 +2070,37 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     const payload = match ? match[1] : null;
 
-    if (payload && payload.startsWith("det_")) {
-      const parts = payload.split("_");
-      const page = parseInt(parts.pop(), 10) || 1;
-      const itemIdx = parseInt(parts.pop(), 10) || 0;
-      const callbackPrefix = parts.slice(1).join(":");
+    if (payload && (payload.startsWith("det_") || payload.startsWith("det~") || payload.startsWith("video_"))) {
+      let callbackPrefix = "";
+      let itemIdx = 0;
+      let page = 1;
+
+      if (payload.startsWith("det~")) {
+        const parts = payload.split("~");
+        callbackPrefix = decodeURIComponent(parts[1] || "");
+        itemIdx = parseInt(parts[2], 10) || 0;
+        page = parseInt(parts[3], 10) || 1;
+      } else if (payload.startsWith("video_")) {
+        const videoId = payload.replace("video_", "");
+        const post = sourceRegistry.getPostById(videoId);
+        if (post) {
+          callbackPrefix = `topic_page:${post.keyword}`;
+          const posts = sourceRegistry.getPostsForKeyword(post.keyword);
+          const foundIdx = posts.findIndex(p => p.id === post.id || p.unique_hash === post.unique_hash);
+          itemIdx = foundIdx !== -1 ? foundIdx : 0;
+          page = Math.floor(itemIdx / 10) + 1;
+        } else {
+          callbackPrefix = "topic_page:Romance";
+          itemIdx = 0;
+          page = 1;
+        }
+      } else if (payload.startsWith("det_")) {
+        const parts = payload.split("_");
+        page = parseInt(parts.pop(), 10) || 1;
+        itemIdx = parseInt(parts.pop(), 10) || 0;
+        callbackPrefix = parts.slice(1).join(":");
+      }
+
       await renderItemDetailPage(chatId, callbackPrefix, itemIdx, page, null);
       return;
     }
@@ -2306,6 +2402,11 @@ if (isMainModule) {
 module.exports = {
   renderSearchResults,
   renderTopicPosts,
+  renderItemDetailPage,
+  sendVideoSafe,
+  sendPhotoSafe,
+  sendMessageSafe,
+  editMessageTextSafe,
   CHANNELS,
   CATEGORIES,
   truncateUTF8,
