@@ -1297,17 +1297,19 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     }
   }
 
-  // Strictly enforce 3-page UI data limit (7 items/page * 3 pages = max 21 items)
-  const maxUiItems = (items || []).slice(0, 21);
-  const itemsPerPage = 7;
-  const totalPages = Math.min(3, Math.ceil(maxUiItems.length / itemsPerPage));
+  const isTopicView = callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:");
+  const itemsPerPage = 10;
+  const maxTotalPages = isTopicView ? 2 : 3;
+  const maxItemsCap = isTopicView ? 20 : 30;
+
+  const maxUiItems = (items || []).slice(0, maxItemsCap);
+  const totalPages = Math.min(maxTotalPages, Math.ceil(maxUiItems.length / itemsPerPage));
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
 
   const itemLines = [];
-  const itemButtons = [];
 
   pageItems.forEach((p, index) => {
     const itemNumber = startIndex + index + 1;
@@ -1330,20 +1332,25 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     const fullTitle = `${icon}${displayTitle}`.trim();
     const escapedTitle = escapeHTML(fullTitle);
 
-    const cleanPrefix = callbackPrefix.replace(/:/g, "_");
-    const itemIdx = startIndex + index;
-    const internalBotUrl = `https://t.me/santhosh_learning_2026_bot?start=det_${cleanPrefix}_${itemIdx}_${currentPage}`;
-    const safeUrl = escapeHTML(internalBotUrl);
+    let itemUrl = p.telegram_url || p.url;
+    if (!itemUrl) {
+      const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
+      if (src && src.username) {
+        itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
+      } else if (p.username) {
+        itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
+      } else if (src && src.invite_url) {
+        itemUrl = src.invite_url;
+      } else if (p.invite_url) {
+        itemUrl = p.invite_url;
+      } else if (p.chat_id && p.message_id) {
+        let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
+        itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
+      }
+    }
+    const safeUrl = escapeHTML(itemUrl);
 
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
-
-    const btnLabel = `${itemNumber}. ${fullTitle}`.trim();
-    const truncatedBtnLabel = truncateUTF8(btnLabel, 55);
-
-    itemButtons.push([{
-      text: truncatedBtnLabel,
-      callback_data: `det:${callbackPrefix}:${itemIdx}:${currentPage}`
-    }]);
   });
 
   let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
@@ -1362,9 +1369,6 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const inline_keyboard = [];
-  if (itemButtons.length > 0) {
-    inline_keyboard.push(...itemButtons);
-  }
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }

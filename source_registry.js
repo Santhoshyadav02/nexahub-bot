@@ -104,8 +104,38 @@ class SourceRegistry {
     }
   }
 
+  applyRollingRetention(maxPerTopic = 20) {
+    const retainedPosts = [];
+    const grouped = {};
+
+    for (const post of this.posts) {
+      const key = String(post.keyword || post.channel_name || "General").trim();
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      const isDup = grouped[key].some(p => 
+        (p.unique_hash && post.unique_hash && p.unique_hash === post.unique_hash) ||
+        (p.telegram_url && post.telegram_url && p.telegram_url === post.telegram_url) ||
+        (p.message_id && post.message_id && String(p.message_id) === String(post.message_id))
+      );
+      if (!isDup) {
+        grouped[key].push(post);
+      }
+    }
+
+    for (const key of Object.keys(grouped)) {
+      const postsForGroup = grouped[key];
+      postsForGroup.sort((a, b) => (b.message_id || 0) - (a.message_id || 0));
+      const sliced = postsForGroup.slice(0, maxPerTopic);
+      retainedPosts.push(...sliced);
+    }
+
+    this.posts = retainedPosts;
+  }
+
   saveData() {
     try {
+      this.applyRollingRetention(20);
       const payload = {
         updated_at: new Date().toISOString(),
         sources: this.sources,
