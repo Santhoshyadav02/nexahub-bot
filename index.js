@@ -1200,14 +1200,19 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     }
   }
 
+  // Strictly enforce 3-page UI data limit (7 items/page * 3 pages = max 21 items)
+  const maxUiItems = (items || []).slice(0, 21);
   const itemsPerPage = 7;
-  const totalPages = Math.ceil(items.length / itemsPerPage);
+  const totalPages = Math.min(3, Math.ceil(maxUiItems.length / itemsPerPage));
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
+  const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
 
-  const linkLines = pageItems.map((p, index) => {
+  const itemLines = [];
+  const itemButtons = [];
+
+  pageItems.forEach((p, index) => {
     const itemNumber = startIndex + index + 1;
     let displayTitle = String(p.title || p.name || "").trim();
     if (!displayTitle) {
@@ -1227,33 +1232,26 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const fullTitle = `${icon}${displayTitle}`.trim();
     const escapedTitle = escapeHTML(fullTitle);
-    
-    const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
-    let itemUrl = "";
-    if (src && src.username) {
-      itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
-    } else if (p.username) {
-      itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
-    } else if (src && src.invite_url) {
-      itemUrl = src.invite_url;
-    } else if (p.invite_url) {
-      itemUrl = p.invite_url;
-    } else if (p.telegram_url && !p.telegram_url.includes("/c/")) {
-      itemUrl = p.telegram_url;
-    } else if (p.url) {
-      itemUrl = p.url;
-    } else if (p.chat_id && p.message_id) {
-      let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
-      itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
-    }
-    const safeUrl = escapeHTML(itemUrl);
 
-    return `${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`;
+    const cleanPrefix = callbackPrefix.replace(/:/g, "_");
+    const itemIdx = startIndex + index;
+    const internalBotUrl = `https://t.me/santhosh_learning_2026_bot?start=det_${cleanPrefix}_${itemIdx}_${currentPage}`;
+    const safeUrl = escapeHTML(internalBotUrl);
+
+    itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
+
+    const btnLabel = `${itemNumber}. ${fullTitle}`.trim();
+    const truncatedBtnLabel = btnLabel.length > 55 ? btnLabel.substring(0, 52) + "..." : btnLabel;
+
+    itemButtons.push([{
+      text: truncatedBtnLabel,
+      callback_data: `det:${callbackPrefix}:${itemIdx}:${currentPage}`
+    }]);
   });
 
   let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
   messageText += `Below are the latest videos from this channel.\n\n`;
-  messageText += linkLines.join("\n\n");
+  messageText += itemLines.join("\n\n");
   if (totalPages > 1) {
     messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
   }
@@ -1267,6 +1265,9 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const inline_keyboard = [];
+  if (itemButtons.length > 0) {
+    inline_keyboard.push(...itemButtons);
+  }
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
@@ -1289,56 +1290,88 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
   let items = [];
   let title = "Resource Detail";
 
-  if (callbackPrefix.startsWith("featured_page:")) {
+  if (callbackPrefix.startsWith("featured_page:") || callbackPrefix.startsWith("featured:")) {
     const cardId = parseInt(callbackPrefix.split(":")[1], 10);
     const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
     title = cardInfo ? cardInfo.name : `Card ${cardId}`;
     items = getFeaturedPosts(cardId);
-  } else if (callbackPrefix.startsWith("cat_page:")) {
+  } else if (callbackPrefix.startsWith("cat_page:") || callbackPrefix.startsWith("cat:")) {
     const catKey = callbackPrefix.split(":")[1];
     const category = CATEGORIES[catKey];
     title = category ? category.title : catKey;
     items = category ? category.items : [];
-  } else if (callbackPrefix.startsWith("topic_page:")) {
+  } else if (callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:")) {
     const topicKey = callbackPrefix.split(":")[1];
-    items = CHANNELS[topicKey] || [];
+    items = sourceRegistry.getPostsForKeyword(topicKey);
     title = TOPIC_NAMES[topicKey] || topicKey;
   }
 
   const item = items[itemIndex];
   if (!item) {
     return await sendMessageSafe(chatId, "⚠️ Item detail not found.", {
-      reply_markup: { inline_keyboard: [[{ text: "🏠 Back to Main Menu", callback_data: "menu" }]] }
+      reply_markup: { inline_keyboard: [[{ text: "🏠 HOME", callback_data: "menu" }]] }
     });
   }
 
   let displayTitle = String(item.title || item.name || "Telegram Content").trim();
-  let itemUrl = item.telegram_url || item.url || (item.user ? `https://t.me/${item.user}` : "");
-  let channelName = item.channel_name || item.user || title;
-  let mediaType = item.media_type ? item.media_type.toUpperCase() : "VIDEO/CHANNEL";
-  let duration = item.duration ? `
-<b>Duration:</b> ${item.duration}` : "";
-  let views = item.views ? `
-<b>Views:</b> ${item.views}` : "";
-  let caption = item.caption ? `
 
-<b>Description:</b>
-${escapeHTML(item.caption)}` : "";
+  // 1. Post URL for [ ▶️ WATCH VIDEO ]
+  const src = sourceRegistry.getSourceByKeyword(item.keyword || item.channel_name);
+  let postUrl = "";
+  if (src && src.username) {
+    postUrl = `https://t.me/${src.username}/${item.message_id || ""}`;
+  } else if (item.username) {
+    postUrl = `https://t.me/${item.username}/${item.message_id || ""}`;
+  } else if (src && src.invite_url) {
+    postUrl = src.invite_url;
+  } else if (item.invite_url) {
+    postUrl = item.invite_url;
+  } else if (item.telegram_url && !item.telegram_url.includes("/c/")) {
+    postUrl = item.telegram_url;
+  } else if (item.url) {
+    postUrl = item.url;
+  } else if (item.chat_id && item.message_id) {
+    let cleanChatId = String(item.chat_id).startsWith("-100") ? String(item.chat_id).substring(4) : String(item.chat_id).replace("-", "");
+    postUrl = `https://t.me/c/${cleanChatId}/${item.message_id}`;
+  }
 
-  let detailText = `📌 <b>${escapeHTML(displayTitle)}</b>
+  // 2. Channel/Group URL for [ 🔗 JOIN GROUP ]
+  let groupUrl = "";
+  if (src && src.username) {
+    groupUrl = `https://t.me/${src.username}`;
+  } else if (item.username) {
+    groupUrl = `https://t.me/${item.username}`;
+  } else if (src && src.invite_url) {
+    groupUrl = src.invite_url;
+  } else if (item.invite_url) {
+    groupUrl = item.invite_url;
+  } else if (src && src.public_url) {
+    groupUrl = src.public_url;
+  } else {
+    groupUrl = postUrl;
+  }
 
-`;
-  detailText += `<b>Channel:</b> ${escapeHTML(channelName)}
-`;
-  detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}
+  let channelName = item.channel_name || item.user || (src ? src.name : title);
+  let mediaType = item.media_type ? item.media_type.toUpperCase() : "VIDEO";
+  let duration = item.duration ? `\n<b>Duration:</b> ${item.duration}` : "";
+  let views = item.views ? `\n<b>Views:</b> ${item.views}` : "";
+  let caption = item.caption ? `\n\n<b>Description:</b>\n${escapeHTML(item.caption)}` : "";
 
-`;
-  detailText += `ℹ️ <i>Click the button below to open this post/channel in Telegram.</i>`;
+  let videoBox = `┌────────────────────────────────────────┐\n`;
+  videoBox += `│  🎬 <a href="${postUrl}"><b>[ WATCH VIDEO PREVIEW ]</b></a>    │\n`;
+  videoBox += `│  ▶️  Tap frame or button to watch video  │\n`;
+  videoBox += `└────────────────────────────────────────┘\n\n`;
+
+  let detailText = `🎬 <b>${escapeHTML(displayTitle)}</b>\n\n`;
+  detailText += videoBox;
+  detailText += `<b>Channel:</b> ${escapeHTML(channelName)}\n`;
+  detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}`;
 
   const inline_keyboard = [
-    [{ text: "🔗 Open in Telegram", url: itemUrl }],
-    [{ text: "◀ Back to List", callback_data: `${callbackPrefix}:${page}` }],
-    [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
+    [{ text: "▶️ WATCH VIDEO", url: postUrl }],
+    [{ text: "🔗 JOIN GROUP", url: groupUrl }],
+    [{ text: "◀️ BACK", callback_data: `${callbackPrefix}:${page}` }],
+    [{ text: "🏠 HOME", callback_data: "menu" }]
   ];
 
   const opts = {
@@ -1508,6 +1541,32 @@ const TARGET_CHANNELS = [
   "A Muse"
 ];
 
+function formatCompactHotTopicLabel(emoji, rawText) {
+  if (!rawText) return `${emoji} Topic`;
+  let text = String(rawText).trim()
+    .replace(/^[▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑\s]+/, '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .trim();
+  
+  if (!text) return `${emoji} Topic`;
+
+  const MAX_TEXT_LEN = 11;
+
+  if (text.length <= MAX_TEXT_LEN) {
+    return `${emoji} ${text}`;
+  }
+
+  const words = text.split(/\s+/);
+  if (words.length > 1) {
+    let firstWord = words[0];
+    if (firstWord.length <= MAX_TEXT_LEN - 1) {
+      return `${emoji} ${firstWord}…`;
+    }
+  }
+
+  return `${emoji} ${text.substring(0, MAX_TEXT_LEN - 1)}…`;
+}
+
 async function getMainKeyboard() {
   // 1. CARDS 1–10: Live Korean Trending Searches (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
   const krKeywords = getTrendingKeywords();
@@ -1516,13 +1575,10 @@ async function getMainKeyboard() {
   for (let i = 0; i < 10; i++) {
     const rawKw = krKeywords[i] || `Trend ${i + 1}`;
     const displayKw = await translateText(rawKw, "en");
-    let safeDisplay = displayKw.trim();
-    if (safeDisplay.length > 12) {
-      safeDisplay = safeDisplay.substring(0, 10) + "..";
-    }
+    const label = formatCompactHotTopicLabel("🔥", displayKw);
     const channelKeyword = TARGET_CHANNELS[i] || "Dating";
     card1to10Buttons.push({
-      text: `🔥 ${safeDisplay}`,
+      text: label,
       callback_data: `topic:${channelKeyword}` // Direct fixed channel connection (NO keyword searching)
     });
   }
@@ -1535,21 +1591,11 @@ async function getMainKeyboard() {
     const channelPosts = sourceRegistry.getPostsForKeyword(channelKeyword);
     const latestPost = channelPosts[0] || null;
 
-    let label = "";
-    if (latestPost) {
-      let cleanTitle = latestPost.title.replace(/^[▶️🎬🖼️\s]+/, '').replace(/^\[[^\]]+\]\s*/, '').trim();
-      if (!cleanTitle) cleanTitle = channelKeyword;
-      if (cleanTitle.length > 12) {
-        cleanTitle = cleanTitle.substring(0, 10) + "..";
-      }
-      label = `▶️ ${cleanTitle}`;
-    } else {
-      let srcName = channelKeyword;
-      if (srcName.length > 12) {
-        srcName = srcName.substring(0, 10) + "..";
-      }
-      label = `▶️ ${srcName}`;
+    let textToFormat = channelKeyword;
+    if (latestPost && latestPost.title) {
+      textToFormat = latestPost.title;
     }
+    const label = formatCompactHotTopicLabel("▶️", textToFormat);
 
     card11to20Buttons.push({
       text: label,
@@ -1849,9 +1895,20 @@ const TOPIC_NAMES = {
 // ============================
 // 🚀 /start COMMAND
 // ============================
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   try {
     const chatId = msg.chat.id;
+    const payload = match ? match[1] : null;
+
+    if (payload && payload.startsWith("det_")) {
+      const parts = payload.split("_");
+      const page = parseInt(parts.pop(), 10) || 1;
+      const itemIdx = parseInt(parts.pop(), 10) || 0;
+      const callbackPrefix = parts.slice(1).join(":");
+      await renderItemDetailPage(chatId, callbackPrefix, itemIdx, page, null);
+      return;
+    }
+
     const firstName = msg.from.first_name || "there";
 
     // Welcome image + text
