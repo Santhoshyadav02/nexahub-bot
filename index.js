@@ -1102,48 +1102,105 @@ function escapeHTML(str) {
     .replace(/"/g, "&quot;");
 }
 
+function sanitizeTelegramPayload(obj) {
+  if (obj === null || obj === undefined) return obj;
+
+  if (typeof obj === "string") {
+    return sanitizeUTF8(obj);
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeTelegramPayload(item));
+  }
+
+  if (typeof obj === "object") {
+    const sanitized = {};
+    for (const key of Object.keys(obj)) {
+      if (key === "url" || key === "callback_data") {
+        sanitized[key] = obj[key];
+      } else {
+        sanitized[key] = sanitizeTelegramPayload(obj[key]);
+      }
+    }
+    return sanitized;
+  }
+
+  return obj;
+}
+
+function auditTelegramError(funcName, chatId, err, text, options) {
+  const errCode = err.code || (err.response && err.response.body ? err.response.body.error_code : "UNKNOWN");
+  const errDesc = err.message || (err.response && err.response.body ? err.response.body.description : String(err));
+
+  console.error(`❌ [TELEGRAM API ERROR] Func:${funcName} | ChatID:${chatId} | Code:${errCode} | Error:${errDesc}`);
+
+  if (options && options.reply_markup && Array.isArray(options.reply_markup.inline_keyboard)) {
+    console.error(`📋 [KEYBOARD AUDIT] Rows:${options.reply_markup.inline_keyboard.length}`);
+    options.reply_markup.inline_keyboard.forEach((row, rIdx) => {
+      if (!Array.isArray(row)) return;
+      row.forEach((btn, cIdx) => {
+        if (btn && typeof btn.text === "string") {
+          const btnText = btn.text;
+          const jsonText = JSON.stringify(btnText);
+          const hasUnpaired = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/.test(btnText);
+          const codePoints = Array.from(btnText).map(c => "U+" + c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")).join(" ");
+          if (hasUnpaired || errDesc.includes("UTF-8")) {
+            console.error(`🚨 [BAD BUTTON DETECTED] Row ${rIdx} Col ${cIdx} | Text:"${btnText}" | JSON:${jsonText} | Unpaired:${hasUnpaired} | CodePoints:${codePoints}`);
+          }
+        }
+      });
+    });
+  }
+}
+
 async function sendMessageSafe(chatId, text, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
+  const cleanText = sanitizeUTF8(text);
   try {
-    const res = await bot.sendMessage(chatId, text, options);
+    const res = await bot.sendMessage(chatId, cleanText, cleanOpts);
     if (res && res.message_id) trackMessage(chatId, res.message_id);
     return res;
   } catch (err) {
-    console.error(`❌ Error sending message to chat ${chatId}:`, err.message);
+    auditTelegramError("sendMessageSafe", chatId, err, cleanText, cleanOpts);
   }
 }
 
 async function sendPhotoSafe(chatId, photo, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
   try {
-    const res = await bot.sendPhoto(chatId, photo, options);
+    const res = await bot.sendPhoto(chatId, photo, cleanOpts);
     if (res && res.message_id) trackMessage(chatId, res.message_id);
     return res;
   } catch (err) {
-    console.error(`❌ Error sending photo to chat ${chatId}:`, err.message);
+    auditTelegramError("sendPhotoSafe", chatId, err, photo, cleanOpts);
   }
 }
 
 async function answerCallbackQuerySafe(queryId, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
   try {
-    return await bot.answerCallbackQuery(queryId, options);
+    return await bot.answerCallbackQuery(queryId, cleanOpts);
   } catch (err) {
     console.error(`❌ Error answering callback query ${queryId}:`, err.message);
   }
 }
 
 async function editMessageTextSafe(chatId, messageId, text, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
+  const cleanText = sanitizeUTF8(text);
   try {
     const opts = {
       chat_id: chatId,
       message_id: messageId,
-      ...options
+      ...cleanOpts
     };
-    return await bot.editMessageText(text, opts);
+    return await bot.editMessageText(cleanText, opts);
   } catch (err) {
     if (err.message && err.message.includes("message is not modified")) {
       return true;
     }
-    console.warn(`⚠️ Error editing message ${messageId} in chat ${chatId}:`, err.message);
-    return await sendMessageSafe(chatId, text, options);
+    auditTelegramError("editMessageTextSafe", chatId, err, cleanText, cleanOpts);
+    return await sendMessageSafe(chatId, cleanText, cleanOpts);
   }
 }
 
