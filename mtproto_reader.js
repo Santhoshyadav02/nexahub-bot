@@ -22,12 +22,11 @@ class MTProtoChannelReader {
     this.apiId = parseInt(process.env.TELEGRAM_API_ID || "0", 10);
     this.apiHash = process.env.TELEGRAM_API_HASH || "";
     this.sessionString = process.env.TELEGRAM_SESSION_STRING || "";
-    this.botToken = process.env.BOT_TOKEN || "";
     this.session = new StringSession(this.sessionString);
     this.client = new TelegramClient(this.session, this.apiId, this.apiHash, {
       connectionRetries: 3,
     });
-    this.authMode = this.sessionString ? "USER_SESSION" : "BOT_TOKEN";
+    this.authMode = "USER_SESSION";
   }
 
   async connect() {
@@ -38,7 +37,7 @@ class MTProtoChannelReader {
         await this.client.getDialogs({ limit: 100 });
       } catch (e) {}
     } else {
-      await this.client.start({ botAuthToken: this.botToken });
+      console.log("ℹ️ GramJS MTProto reader: TELEGRAM_SESSION_STRING not configured. Skipping MTProto GramJS connection (will NOT use botAuthToken).");
     }
   }
 

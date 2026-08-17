@@ -23,6 +23,13 @@ if (!TOKEN) {
   process.exit(1);
 }
 
+function sanitizeUTF8(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/g, '')
+    .replace(/\uFFFD/g, '');
+}
+
 const isMainModule = require.main === module;
 const bot = new TelegramBot(TOKEN, {
   polling: isMainModule ? {
@@ -32,8 +39,35 @@ const bot = new TelegramBot(TOKEN, {
   } : false
 });
 
-bot.on("polling_error", (error) => {
-  console.error("⚠️ Telegram Bot Polling Error:", error.code || "", error.message || error);
+let isPollingConflictBackoff = false;
+
+bot.on("polling_error", async (error) => {
+  const errMsg = String(error.message || error);
+  const errCode = error.code || "";
+
+  if (errCode === "ETELEGRAM" && (errMsg.includes("409 Conflict") || errMsg.includes("terminated by other getUpdates request"))) {
+    if (!isPollingConflictBackoff) {
+      isPollingConflictBackoff = true;
+      console.warn("⚠️ Telegram 409 Polling Conflict detected! Backing off polling for 10 seconds to allow previous instance to release lock...");
+      try {
+        await bot.stopPolling();
+      } catch (e) {}
+      setTimeout(async () => {
+        try {
+          isPollingConflictBackoff = false;
+          if (isMainModule && !bot.isPolling()) {
+            console.log("🔄 Resuming Telegram Bot Polling after backoff...");
+            await bot.startPolling();
+          }
+        } catch (e) {
+          isPollingConflictBackoff = false;
+        }
+      }, 10000);
+    }
+    return;
+  }
+
+  console.error("⚠️ Telegram Bot Polling Error:", errCode, errMsg);
 });
 
 // ============================
@@ -1241,7 +1275,7 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
 
     const btnLabel = `${itemNumber}. ${fullTitle}`.trim();
-    const truncatedBtnLabel = btnLabel.length > 55 ? btnLabel.substring(0, 52) + "..." : btnLabel;
+    const truncatedBtnLabel = truncateUTF8(btnLabel, 55);
 
     itemButtons.push([{
       text: truncatedBtnLabel,
@@ -1486,17 +1520,14 @@ async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1
   }
 }
 
-function truncateUTF8(str, maxBytes) {
+function truncateUTF8(str, maxLen = 50) {
   if (!str) return "";
-  const buf = Buffer.from(String(str), "utf8");
-  if (buf.length <= maxBytes) {
-    return str;
+  const cleanStr = sanitizeUTF8(str);
+  const symbols = Array.from(cleanStr);
+  if (symbols.length <= maxLen) {
+    return cleanStr;
   }
-  let sliceLen = maxBytes;
-  while (sliceLen > 0 && (buf[sliceLen] & 0xc0) === 0x80) {
-    sliceLen--;
-  }
-  return buf.slice(0, sliceLen).toString("utf8");
+  return symbols.slice(0, maxLen - 1).join("") + "…";
 }
 
 function makeSearchCallbackData(keyword) {
@@ -1543,7 +1574,7 @@ const TARGET_CHANNELS = [
 
 function formatCompactHotTopicLabel(emoji, rawText) {
   if (!rawText) return `${emoji} Topic`;
-  let text = String(rawText).trim()
+  let text = sanitizeUTF8(rawText).trim()
     .replace(/^[▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑\s]+/, '')
     .replace(/^\[[^\]]+\]\s*/, '')
     .trim();
@@ -1551,20 +1582,22 @@ function formatCompactHotTopicLabel(emoji, rawText) {
   if (!text) return `${emoji} Topic`;
 
   const MAX_TEXT_LEN = 11;
+  const symbols = Array.from(text);
 
-  if (text.length <= MAX_TEXT_LEN) {
+  if (symbols.length <= MAX_TEXT_LEN) {
     return `${emoji} ${text}`;
   }
 
   const words = text.split(/\s+/);
   if (words.length > 1) {
     let firstWord = words[0];
-    if (firstWord.length <= MAX_TEXT_LEN - 1) {
+    const firstWordSymbols = Array.from(firstWord);
+    if (firstWordSymbols.length <= MAX_TEXT_LEN - 1) {
       return `${emoji} ${firstWord}…`;
     }
   }
 
-  return `${emoji} ${text.substring(0, MAX_TEXT_LEN - 1)}…`;
+  return `${emoji} ${symbols.slice(0, MAX_TEXT_LEN - 1).join('')}…`;
 }
 
 async function getMainKeyboard() {
