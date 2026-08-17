@@ -1119,19 +1119,6 @@ try {
   console.error("Error reading featured_dataset.json:", err.message);
 }
 
-const FEATURED_RESOURCES = [
-  { id: 1, name: "🔥 Huangguo Short Dramas" },
-  { id: 2, name: "⭐ Li Meng" },
-  { id: 3, name: "🎤 Dong Qing" },
-  { id: 4, name: "👁️ Hypnotic Divine Eye" },
-  { id: 5, name: "🖤 pinkchyu" },
-  { id: 6, name: "🔥 Teng Teng Cai" },
-  { id: 7, name: "⚽ World Cup" },
-  { id: 8, name: "🎲 Baccarat / Dice / Gaming" },
-  { id: 9, name: "💃 Odetta" },
-  { id: 10, name: "👑 Socialite" }
-];
-
 function getFeaturedPosts(cardId) {
   const cardData = FEATURED_DATASET[String(cardId)];
   if (!cardData || !Array.isArray(cardData.posts)) {
@@ -1213,19 +1200,14 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     }
   }
 
-  // Strictly enforce 3-page UI data limit (7 items/page * 3 pages = max 21 items)
-  const maxUiItems = (items || []).slice(0, 21);
   const itemsPerPage = 7;
-  const totalPages = Math.min(3, Math.ceil(maxUiItems.length / itemsPerPage));
+  const totalPages = Math.ceil(items.length / itemsPerPage);
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
+  const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
 
-  const itemLines = [];
-  const itemButtons = [];
-
-  pageItems.forEach((p, index) => {
+  const linkLines = pageItems.map((p, index) => {
     const itemNumber = startIndex + index + 1;
     let displayTitle = String(p.title || p.name || "").trim();
     if (!displayTitle) {
@@ -1245,20 +1227,33 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const fullTitle = `${icon}${displayTitle}`.trim();
     const escapedTitle = escapeHTML(fullTitle);
-    itemLines.push(`${itemNumber}. ${escapedTitle}`);
+    
+    const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
+    let itemUrl = "";
+    if (src && src.username) {
+      itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
+    } else if (p.username) {
+      itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
+    } else if (src && src.invite_url) {
+      itemUrl = src.invite_url;
+    } else if (p.invite_url) {
+      itemUrl = p.invite_url;
+    } else if (p.telegram_url && !p.telegram_url.includes("/c/")) {
+      itemUrl = p.telegram_url;
+    } else if (p.url) {
+      itemUrl = p.url;
+    } else if (p.chat_id && p.message_id) {
+      let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
+      itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
+    }
+    const safeUrl = escapeHTML(itemUrl);
 
-    const btnLabel = `${itemNumber}. ${fullTitle}`.trim();
-    const truncatedBtnLabel = btnLabel.length > 55 ? btnLabel.substring(0, 52) + "..." : btnLabel;
-
-    itemButtons.push([{
-      text: truncatedBtnLabel,
-      callback_data: `det:${callbackPrefix}:${startIndex + index}:${currentPage}`
-    }]);
+    return `${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`;
   });
 
   let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
-  messageText += `Related videos & channels about this topic.\n\n`;
-  messageText += itemLines.join("\n");
+  messageText += `Below are the latest videos from this channel.\n\n`;
+  messageText += linkLines.join("\n\n");
   if (totalPages > 1) {
     messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
   }
@@ -1272,9 +1267,6 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const inline_keyboard = [];
-  if (itemButtons.length > 0) {
-    inline_keyboard.push(...itemButtons);
-  }
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
@@ -1309,7 +1301,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     items = category ? category.items : [];
   } else if (callbackPrefix.startsWith("topic_page:")) {
     const topicKey = callbackPrefix.split(":")[1];
-    items = sourceRegistry.getPostsForKeyword(topicKey);
+    items = CHANNELS[topicKey] || [];
     title = TOPIC_NAMES[topicKey] || topicKey;
   }
 
@@ -1321,46 +1313,31 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
   }
 
   let displayTitle = String(item.title || item.name || "Telegram Content").trim();
-  
-  const src = sourceRegistry.getSourceByKeyword(item.keyword || item.channel_name);
-  let itemUrl = "";
-  if (src && src.username) {
-    itemUrl = `https://t.me/${src.username}/${item.message_id || ""}`;
-  } else if (item.username) {
-    itemUrl = `https://t.me/${item.username}/${item.message_id || ""}`;
-  } else if (src && src.invite_url) {
-    itemUrl = src.invite_url;
-  } else if (item.invite_url) {
-    itemUrl = item.invite_url;
-  } else if (item.telegram_url && !item.telegram_url.includes("/c/")) {
-    itemUrl = item.telegram_url;
-  } else if (item.url) {
-    itemUrl = item.url;
-  } else if (item.chat_id && item.message_id) {
-    let cleanChatId = String(item.chat_id).startsWith("-100") ? String(item.chat_id).substring(4) : String(item.chat_id).replace("-", "");
-    itemUrl = `https://t.me/c/${cleanChatId}/${item.message_id}`;
-  }
-
+  let itemUrl = item.telegram_url || item.url || (item.user ? `https://t.me/${item.user}` : "");
   let channelName = item.channel_name || item.user || title;
-  let mediaType = item.media_type ? item.media_type.toUpperCase() : "VIDEO";
-  let duration = item.duration ? `\n<b>Duration:</b> ${item.duration}` : "";
-  let views = item.views ? `\n<b>Views:</b> ${item.views}` : "";
-  let caption = item.caption ? `\n\n<b>Description:</b>\n${escapeHTML(item.caption)}` : "";
+  let mediaType = item.media_type ? item.media_type.toUpperCase() : "VIDEO/CHANNEL";
+  let duration = item.duration ? `
+<b>Duration:</b> ${item.duration}` : "";
+  let views = item.views ? `
+<b>Views:</b> ${item.views}` : "";
+  let caption = item.caption ? `
 
-  let videoBox = `┌────────────────────────────────────────┐\n`;
-  videoBox += `│  🎬 <a href="${itemUrl}"><b>[ WATCH VIDEO PREVIEW ]</b></a>    │\n`;
-  videoBox += `│  ▶️  Tap here or button to open video   │\n`;
-  videoBox += `└────────────────────────────────────────┘\n\n`;
+<b>Description:</b>
+${escapeHTML(item.caption)}` : "";
 
-  let detailText = `📌 <b>${escapeHTML(displayTitle)}</b>\n\n`;
-  detailText += videoBox;
-  detailText += `<b>Channel:</b> ${escapeHTML(channelName)}\n`;
-  detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}\n\n`;
-  detailText += `ℹ️ <i>Tap the video preview frame above or the button below to watch on Telegram.</i>`;
+  let detailText = `📌 <b>${escapeHTML(displayTitle)}</b>
+
+`;
+  detailText += `<b>Channel:</b> ${escapeHTML(channelName)}
+`;
+  detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}
+
+`;
+  detailText += `ℹ️ <i>Click the button below to open this post/channel in Telegram.</i>`;
 
   const inline_keyboard = [
-    [{ text: "▶️ TAP VIDEO TO WATCH ON TELEGRAM", url: itemUrl }],
-    [{ text: "⬅️ Back to List", callback_data: `${callbackPrefix}:${page}` }],
+    [{ text: "🔗 Open in Telegram", url: itemUrl }],
+    [{ text: "◀ Back to List", callback_data: `${callbackPrefix}:${page}` }],
     [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
   ];
 
@@ -1550,20 +1527,33 @@ async function getMainKeyboard() {
     });
   }
 
-  // 2. CARDS 11–20: TRENDING VIDEOS (Independent Featured Video Cards)
+  // 2. CARDS 11–20: OUR 10 MANAGED TELEGRAM CHANNELS (Fixed Channel Mapping -> Latest Post / Channel Name)
   const card11to20Buttons = [];
 
-  for (let i = 1; i <= 10; i++) {
-    const cardInfo = FEATURED_RESOURCES.find(r => r.id === i) || { id: i, name: `Trending Video ${i}` };
-    let label = cardInfo.name || `Video ${i}`;
-    let cleanTitle = label.replace(/^[▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑\s]+/, '').trim();
-    if (cleanTitle.length > 20) {
-      cleanTitle = cleanTitle.substring(0, 18) + "..";
+  for (let i = 0; i < 10; i++) {
+    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
+    const channelPosts = sourceRegistry.getPostsForKeyword(channelKeyword);
+    const latestPost = channelPosts[0] || null;
+
+    let label = "";
+    if (latestPost) {
+      let cleanTitle = latestPost.title.replace(/^[▶️🎬🖼️\s]+/, '').replace(/^\[[^\]]+\]\s*/, '').trim();
+      if (!cleanTitle) cleanTitle = channelKeyword;
+      if (cleanTitle.length > 20) {
+        cleanTitle = cleanTitle.substring(0, 18) + "..";
+      }
+      label = `▶️ ${cleanTitle}`;
+    } else {
+      let srcName = channelKeyword;
+      if (srcName.length > 20) {
+        srcName = srcName.substring(0, 18) + "..";
+      }
+      label = `▶️ ${srcName}`;
     }
 
     card11to20Buttons.push({
-      text: `▶️ ${cleanTitle}`,
-      callback_data: `featured_page:${i}:1`
+      text: label,
+      callback_data: `topic:${channelKeyword}`
     });
   }
 
