@@ -46,12 +46,7 @@ const bot = new TelegramBot(TOKEN, {
   } : false
 });
 
-// Clear lingering webhooks at startup if in main module (preserving pending updates)
-if (isMainModule) {
-  bot.deleteWebhook({ drop_pending_updates: false })
-    .then(() => console.log(`✅ [PID:${APP_PID}] Webhook cleared for single-consumer HTTP polling.`))
-    .catch((e) => console.warn(`⚠️ [PID:${APP_PID}] deleteWebhook warning:`, e.message));
-}
+
 
 bot.on("polling_error", (error) => {
   const errMsg = String(error.message || error);
