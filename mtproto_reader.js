@@ -78,7 +78,14 @@ class MTProtoChannelReader {
 
       try {
         let chatEntity = null;
-        if (ch.chat_id) {
+        if (ch.username) {
+          try {
+            chatEntity = await this.client.getEntity(ch.username);
+            channelReport.access = "YES";
+          } catch (e) {}
+        }
+
+        if (!chatEntity && ch.chat_id) {
           try {
             chatEntity = await this.client.getEntity(ch.chat_id);
             channelReport.access = "YES";
