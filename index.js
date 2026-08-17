@@ -1709,63 +1709,188 @@ const TARGET_CHANNELS = [
   "A Muse"
 ];
 
-function formatCompactHotTopicLabel(emoji, rawText) {
-  if (!rawText) return `${emoji} Topic`;
-  let text = sanitizeUTF8(rawText).trim()
-    .replace(/^[▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑\s]+/, '')
-    .replace(/^\[[^\]]+\]\s*/, '')
+async function formatTrendingCardLabel(rawTitle, isVideoCard = false, cardIndex = 0, channelKeyword = "") {
+  let englishTitle = rawTitle ? String(rawTitle).trim() : "";
+
+  // 1. Translate if contains CJK or non-English characters
+  if (/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(englishTitle)) {
+    try {
+      englishTitle = await translateText(englishTitle, "en");
+    } catch (e) {}
+  }
+
+  // Clean title: remove existing leading emojis, brackets, CJK leftovers, special noise
+  englishTitle = sanitizeUTF8(englishTitle)
+    .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "")
+    .replace(/^\[[^\]]+\]\s*/, "")
+    .replace(/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]+/g, "")
+    .replace(/[^\w\s"-]/gi, " ")
+    .replace(/\s+/g, " ")
     .trim();
-  
-  if (!text) return `${emoji} Topic`;
 
-  const MAX_TEXT_LEN = 11;
-  const symbols = Array.from(text);
+  // Video Cards specific (Cards 11-20): process actual raw source video title
+  if (isVideoCard) {
+    let lowerVideo = englishTitle.toLowerCase();
+    let videoSubject = "";
 
-  if (symbols.length <= MAX_TEXT_LEN) {
-    return `${emoji} ${text}`;
-  }
-
-  const words = text.split(/\s+/);
-  if (words.length > 1) {
-    let firstWord = words[0];
-    const firstWordSymbols = Array.from(firstWord);
-    if (firstWordSymbols.length <= MAX_TEXT_LEN - 1) {
-      return `${emoji} ${firstWord}…`;
+    // Extract actual video subject / topic strictly from raw post title
+    if (lowerVideo.includes("selena gomez")) {
+      videoSubject = "Selena Gomez";
+    } else if (lowerVideo.includes("jennie kaede")) {
+      videoSubject = "Jennie Kaede";
+    } else if (lowerVideo.includes("jennie")) {
+      videoSubject = "Jennie Free Move";
+    } else if (lowerVideo.includes("live realtime") || lowerVideo.includes("live dating")) {
+      videoSubject = "Live Dating Video";
+    } else if (lowerVideo.includes("gangnam")) {
+      videoSubject = "Gangnam 188GB";
+    } else if (lowerVideo.includes("buy a book") || lowerVideo.includes("book")) {
+      videoSubject = "Couple Book Story";
+    } else if (lowerVideo.includes("servant")) {
+      videoSubject = "Servant & Husband";
+    } else if (lowerVideo.includes("husband") || lowerVideo.includes("wife")) {
+      videoSubject = "Couple Special";
+    } else if (lowerVideo.includes("a muse")) {
+      videoSubject = "A Muse Update";
+    } else if (lowerVideo.includes("high-profile") || lowerVideo.includes("high profile")) {
+      videoSubject = "High-Profile Video";
+    } else if (englishTitle.length >= 3 && !/^\d+$/.test(englishTitle)) {
+      videoSubject = smartShortenTitle(englishTitle, 18);
+    } else {
+      videoSubject = channelKeyword || "Trending Video";
     }
+
+    // Assign semantic emoji strictly based on the actual title content
+    let emoji = "🎬";
+    const lowerSub = videoSubject.toLowerCase();
+    if (lowerSub.includes("selena")) emoji = "🎵";
+    else if (lowerSub.includes("jennie")) emoji = "✨";
+    else if (lowerSub.includes("gangnam")) emoji = "🏙️";
+    else if (lowerSub.includes("book")) emoji = "📖";
+    else if (lowerSub.includes("servant") || lowerSub.includes("couple")) emoji = "❤️";
+    else if (lowerSub.includes("live")) emoji = "🔴";
+    else if (lowerSub.includes("high-profile")) emoji = "🎬";
+    else if (lowerSub.includes("muse")) emoji = "🎨";
+    else emoji = "🎥";
+
+    return `${emoji} ${videoSubject}`;
   }
 
-  return `${emoji} ${symbols.slice(0, MAX_TEXT_LEN - 1).join('')}…`;
+  // Keyword Cards (Cards 1-10)
+  if (!englishTitle) {
+    englishTitle = `Trend ${cardIndex + 1}`;
+  }
+
+  const lower = englishTitle.toLowerCase();
+  let emoji = "🔥";
+
+  // Semantic Emoji Rules
+  if (lower.includes("diamondback")) emoji = "⚾";
+  else if (lower.includes("son") || lower.includes("soccer") || lower.includes("football") || lower.includes("world cup") || lower.includes("psg") || lower.includes("sports")) emoji = "⚽";
+  else if (lower.includes("busan") || lower.includes("pohang") || lower.includes("ocean") || lower.includes("sea")) emoji = "🌊";
+  else if (lower.includes("seoul") || lower.includes("hongdae") || lower.includes("gangnam")) emoji = "🌆";
+  else if (lower.includes("bus")) emoji = "🚌";
+  else if (lower.includes("flood") || lower.includes("rain") || lower.includes("storm") || lower.includes("weather")) emoji = "🌧️";
+  else if (lower.includes("missile") || lower.includes("war") || lower.includes("defense") || lower.includes("attack")) emoji = "🚨";
+  else if (lower.includes("lg") || lower.includes("samsung") || lower.includes("hynix") || lower.includes("tech") || lower.includes("computer")) emoji = "💻";
+  else if (lower.includes("bank") || lower.includes("stock") || lower.includes("finance") || lower.includes("money") || lower.includes("market")) emoji = "💰";
+  else if (lower.includes("ai") || lower.includes("robot")) emoji = "🤖";
+  else if (lower.includes("siwoo") || lower.includes("dating") || lower.includes("romance") || lower.includes("love") || lower.includes("crotch") || lower.includes("mosa") || lower.includes("hostess") || lower.includes("concubine") || lower.includes("muse")) emoji = "❤️";
+  else if (lower.includes("music") || lower.includes("dance") || lower.includes("song") || lower.includes("kpop") || lower.includes("sing")) emoji = "🎵";
+  else if (lower.includes("trump") || lower.includes("news") || lower.includes("election") || lower.includes("politics") || lower.includes("democrat")) emoji = "📰";
+  else if (lower.includes("food") || lower.includes("eat") || lower.includes("dish")) emoji = "🍜";
+  else if (lower.includes("migration") || lower.includes("world") || lower.includes("global")) emoji = "🌎";
+  else if (lower.includes("korea")) emoji = "🇰🇷";
+  else {
+    const DEFAULT_EMOJIS = ["📈", "✨", "🎯", "💬", "⭐", "🔥", "🌟", "👀", "📱", "🌎"];
+    emoji = DEFAULT_EMOJIS[cardIndex % DEFAULT_EMOJIS.length];
+  }
+
+  const cleanLabel = smartShortenTitle(englishTitle, 18);
+  return `${emoji} ${cleanLabel}`;
+}
+
+function smartShortenTitle(str, maxLen = 18) {
+  if (!str) return "";
+  let clean = str.trim();
+
+  // Expand / preserve full meaningful terms where applicable
+  const lower = clean.toLowerCase();
+  if (lower === "son") return "Son Heung-min";
+  if (lower === "bus") return "Bus Trends";
+  if (lower === "flood") return "Flood Updates";
+  if (lower === "missile") return "Missile News";
+  if (lower === "migration") return "Migration Trends";
+  if (lower.includes("diamondbac")) return "Diamondbacks";
+  if (lower.includes("lg group") || lower === "lg") return "LG Group";
+  if (lower.includes("lens vs")) return "Lens vs PSG";
+
+  if (clean.length <= maxLen) return clean;
+
+  const words = clean.split(" ");
+  if (words.length > 1) {
+    let result = words[0];
+    for (let i = 1; i < words.length; i++) {
+      if ((result + " " + words[i]).length <= maxLen) {
+        result += " " + words[i];
+      } else {
+        break;
+      }
+    }
+    return result;
+  }
+
+  const symbols = Array.from(clean);
+  return symbols.slice(0, maxLen - 1).join("") + "…";
 }
 
 async function getMainKeyboard() {
-  // 1. CARDS 1–10: Live Korean Trending Searches (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
+  // 1. CARDS 1–10: Live Trending Keywords (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
   const krKeywords = getTrendingKeywords();
   const card1to10Buttons = [];
   
   for (let i = 0; i < 10; i++) {
     const rawKw = krKeywords[i] || `Trend ${i + 1}`;
-    const displayKw = await translateText(rawKw, "en");
-    const label = formatCompactHotTopicLabel("🔥", displayKw);
+    const label = await formatTrendingCardLabel(rawKw, false, i);
     const channelKeyword = TARGET_CHANNELS[i] || "Dating";
     card1to10Buttons.push({
       text: label,
-      callback_data: `topic:${channelKeyword}` // Direct fixed channel connection (NO keyword searching)
+      callback_data: `topic:${channelKeyword}`
     });
   }
 
-  // 2. CARDS 11–20: OUR 10 MANAGED TELEGRAM CHANNELS (Fixed Channel Mapping -> Latest Post / Channel Name)
+  // 2. CARDS 11–20: TRENDING VIDEOS (Prefer 10 UNIQUE actual stored video posts)
   const card11to20Buttons = [];
+  const usedVideoSignatures = new Set();
 
   for (let i = 0; i < 10; i++) {
     const channelKeyword = TARGET_CHANNELS[i] || "Dating";
     const channelPosts = sourceRegistry.getPostsForKeyword(channelKeyword);
-    const latestPost = channelPosts[0] || null;
+
+    let selectedPost = null;
+    for (const p of channelPosts) {
+      if (!p || !p.title) continue;
+      const cleanTitleSig = sanitizeUTF8(p.title)
+        .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "")
+        .replace(/^\[[^\]]+\]\s*/, "")
+        .trim().toLowerCase().substring(0, 35);
+
+      if (!usedVideoSignatures.has(cleanTitleSig)) {
+        selectedPost = p;
+        usedVideoSignatures.add(cleanTitleSig);
+        break;
+      }
+    }
+
+    if (!selectedPost && channelPosts.length > 0) {
+      selectedPost = channelPosts[0];
+    }
 
     let textToFormat = channelKeyword;
-    if (latestPost && latestPost.title) {
-      textToFormat = latestPost.title;
+    if (selectedPost && selectedPost.title) {
+      textToFormat = selectedPost.title;
     }
-    const label = formatCompactHotTopicLabel("▶️", textToFormat);
+    const label = await formatTrendingCardLabel(textToFormat, true, i, channelKeyword);
 
     card11to20Buttons.push({
       text: label,
