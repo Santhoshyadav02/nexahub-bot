@@ -23,6 +23,10 @@ if (!TOKEN) {
   process.exit(1);
 }
 
+const os = require("os");
+const APP_PID = process.pid;
+const APP_HOST = os.hostname();
+
 function sanitizeUTF8(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -31,6 +35,9 @@ function sanitizeUTF8(str) {
 }
 
 const isMainModule = require.main === module;
+
+console.log(`🤖 [PID:${APP_PID}] [Host:${APP_HOST}] Main module initialized. isMainModule=${isMainModule}`);
+
 const bot = new TelegramBot(TOKEN, {
   polling: isMainModule ? {
     params: {
@@ -39,36 +46,40 @@ const bot = new TelegramBot(TOKEN, {
   } : false
 });
 
-let isPollingConflictBackoff = false;
+// Clear lingering webhooks at startup if in main module (preserving pending updates)
+if (isMainModule) {
+  bot.deleteWebhook({ drop_pending_updates: false })
+    .then(() => console.log(`✅ [PID:${APP_PID}] Webhook cleared for single-consumer HTTP polling.`))
+    .catch((e) => console.warn(`⚠️ [PID:${APP_PID}] deleteWebhook warning:`, e.message));
+}
 
-bot.on("polling_error", async (error) => {
+bot.on("polling_error", (error) => {
   const errMsg = String(error.message || error);
   const errCode = error.code || "";
-
-  if (errCode === "ETELEGRAM" && (errMsg.includes("409 Conflict") || errMsg.includes("terminated by other getUpdates request"))) {
-    if (!isPollingConflictBackoff) {
-      isPollingConflictBackoff = true;
-      console.warn("⚠️ Telegram 409 Polling Conflict detected! Backing off polling for 10 seconds to allow previous instance to release lock...");
-      try {
-        await bot.stopPolling();
-      } catch (e) {}
-      setTimeout(async () => {
-        try {
-          isPollingConflictBackoff = false;
-          if (isMainModule && !bot.isPolling()) {
-            console.log("🔄 Resuming Telegram Bot Polling after backoff...");
-            await bot.startPolling();
-          }
-        } catch (e) {
-          isPollingConflictBackoff = false;
-        }
-      }, 10000);
-    }
-    return;
-  }
-
-  console.error("⚠️ Telegram Bot Polling Error:", errCode, errMsg);
+  console.error(`⚠️ [PID:${APP_PID}] Telegram Bot Polling Error: ${errCode} - ${errMsg}`);
 });
+
+let isShuttingDown = false;
+
+// Process signal listeners for Railway container rolling updates
+async function handleProcessExit(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`🛑 [PID:${APP_PID}] Received ${signal}. Closing bot polling connection...`);
+  try {
+    if (bot.isPolling()) {
+      await bot.stopPolling();
+      console.log(`✅ [PID:${APP_PID}] Bot polling stopped cleanly for ${signal}.`);
+    }
+  } catch (err) {
+    console.error(`⚠️ [PID:${APP_PID}] Error stopping polling on ${signal}:`, err.message);
+  }
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => handleProcessExit("SIGTERM"));
+process.on("SIGINT", () => handleProcessExit("SIGINT"));
 
 // ============================
 // 📡 REAL-TIME TELEGRAM SOURCE CHANNEL POST LISTENERS
