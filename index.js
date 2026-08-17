@@ -1228,8 +1228,21 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     const fullTitle = `${icon}${displayTitle}`.trim();
     const escapedTitle = escapeHTML(fullTitle);
     
-    let itemUrl = p.telegram_url || p.url || "";
-    if (!itemUrl && p.chat_id && p.message_id) {
+    const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
+    let itemUrl = "";
+    if (src && src.username) {
+      itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
+    } else if (p.username) {
+      itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
+    } else if (src && src.invite_url) {
+      itemUrl = src.invite_url;
+    } else if (p.invite_url) {
+      itemUrl = p.invite_url;
+    } else if (p.telegram_url && !p.telegram_url.includes("/c/")) {
+      itemUrl = p.telegram_url;
+    } else if (p.url) {
+      itemUrl = p.url;
+    } else if (p.chat_id && p.message_id) {
       let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
       itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
     }

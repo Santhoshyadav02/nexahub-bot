@@ -5,15 +5,15 @@ const { StringSession } = require("telegram/sessions");
 const sourceRegistry = require("./source_registry");
 
 const TARGET_CHANNELS = [
-  { name: "Romantic Vibe", invite_url: "https://t.me/+AGVRDJ6c7M9lMGRh", hash: "AGVRDJ6c7M9lMGRh", chat_id: "-1005563024409" },
-  { name: "Dating", invite_url: "https://t.me/+I3z-vJdRRV8xZDlh", hash: "I3z-vJdRRV8xZDlh", chat_id: "-1005362445410" },
+  { name: "Romantic Vibe", username: "ccsfvk", public_url: "https://t.me/ccsfvk", chat_id: "-1005563024409" },
+  { name: "Dating", username: "cccsefk", public_url: "https://t.me/cccsefk", chat_id: "-1005362445410" },
   { name: "Romance", invite_url: "https://t.me/+3g-HIjq_KgtkZDE5", hash: "3g-HIjq_KgtkZDE5", chat_id: "-1005491187683" },
-  { name: "Crotch", invite_url: "https://t.me/+8MHLLZRd1L5jMzhh", hash: "8MHLLZRd1L5jMzhh", chat_id: "-1005296875877" },
+  { name: "Crotch", username: "ccdjxc", public_url: "https://t.me/ccdjxc", chat_id: "-1005296875877" },
   { name: "Mosa", invite_url: "https://t.me/+hdaykD30jbdhNzlh", hash: "hdaykD30jbdhNzlh", chat_id: "-1005427855016" },
-  { name: "Bunny Girl Cosplay Date", invite_url: "https://t.me/+5jGUuJ_HWLg5ZWRh", hash: "5jGUuJ_HWLg5ZWRh", chat_id: "-1005353472623" },
-  { name: "Lustful Hostess", invite_url: "https://t.me/+IypAk6ypLrM1Y2Rh", hash: "IypAk6ypLrM1Y2Rh", chat_id: "-1005591987853" },
-  { name: "Concubine", invite_url: "https://t.me/+McyWlyEXgEdkY2Jh", hash: "McyWlyEXgEdkY2Jh", chat_id: "-1005394162064" },
-  { name: "Saki Mizumi", invite_url: "https://t.me/+Kr4JkikOPjtmNTNh", hash: "Kr4JkikOPjtmNTNh", chat_id: "-1005356656249" },
+  { name: "Bunny Girl Cosplay Date", username: "tfccdet", public_url: "https://t.me/tfccdet", chat_id: "-1005353472623" },
+  { name: "Lustful Hostess", username: "sfgfem", public_url: "https://t.me/sfgfem", chat_id: "-1005591987853" },
+  { name: "Concubine", username: "ddkicr", public_url: "https://t.me/ddkicr", chat_id: "-1005394162064" },
+  { name: "Saki Mizumi", username: "cccddghhgf", public_url: "https://t.me/cccddghhgf", chat_id: "-1005356656249" },
   { name: "A Muse", invite_url: "https://t.me/+e-JQoCwT8wMyM2Zh", hash: "e-JQoCwT8wMyM2Zh", chat_id: "-1005476708057" }
 ];
 
@@ -55,9 +55,10 @@ class MTProtoChannelReader {
 
   async syncAllChannels(limit = 10, saveToDisk = false) {
     const results = [];
-    await this.connect();
+    try {
+      await this.connect();
 
-    for (const ch of TARGET_CHANNELS) {
+      for (const ch of TARGET_CHANNELS) {
       const channelReport = {
         channel_name: ch.name,
         chat_id: "NOT BOUND YET",
@@ -198,8 +199,9 @@ class MTProtoChannelReader {
 
       results.push(channelReport);
     }
-
-    await this.disconnect();
+    } finally {
+      await this.disconnect();
+    }
     return results;
   }
 }

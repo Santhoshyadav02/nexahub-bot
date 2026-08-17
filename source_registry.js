@@ -5,15 +5,15 @@ const DATA_FILE = path.join(__dirname, "source_registry.json");
 
 // Initial 10 Curated Telegram Source Channels provided by the user
 const INITIAL_SOURCES = [
-  { keyword: "Romantic Vibe", name: "Romantic Vibe", invite_url: "https://t.me/+AGVRDJ6c7M9lMGRh" },
-  { keyword: "Dating", name: "Dating", invite_url: "https://t.me/+I3z-vJdRRV8xZDlh" },
+  { keyword: "Romantic Vibe", name: "Romantic Vibe", username: "ccsfvk", public_url: "https://t.me/ccsfvk" },
+  { keyword: "Dating", name: "Dating", username: "cccsefk", public_url: "https://t.me/cccsefk" },
   { keyword: "Romance", name: "Romance", invite_url: "https://t.me/+3g-HIjq_KgtkZDE5" },
-  { keyword: "Crotch", name: "Crotch", invite_url: "https://t.me/+8MHLLZRd1L5jMzhh" },
+  { keyword: "Crotch", name: "Crotch", username: "ccdjxc", public_url: "https://t.me/ccdjxc" },
   { keyword: "Mosa", name: "Mosa", invite_url: "https://t.me/+hdaykD30jbdhNzlh" },
-  { keyword: "Bunny Girl Cosplay Date", name: "Bunny Girl Cosplay Date", invite_url: "https://t.me/+5jGUuJ_HWLg5ZWRh" },
-  { keyword: "Lustful Hostess", name: "Lustful Hostess", invite_url: "https://t.me/+IypAk6ypLrM1Y2Rh" },
-  { keyword: "Concubine", name: "Concubine", invite_url: "https://t.me/+McyWlyEXgEdkY2Jh" },
-  { keyword: "Saki Mizumi", name: "Saki Mizumi", invite_url: "https://t.me/+Kr4JkikOPjtmNTNh" },
+  { keyword: "Bunny Girl Cosplay Date", name: "Bunny Girl Cosplay Date", username: "tfccdet", public_url: "https://t.me/tfccdet" },
+  { keyword: "Lustful Hostess", name: "Lustful Hostess", username: "sfgfem", public_url: "https://t.me/sfgfem" },
+  { keyword: "Concubine", name: "Concubine", username: "ddkicr", public_url: "https://t.me/ddkicr" },
+  { keyword: "Saki Mizumi", name: "Saki Mizumi", username: "cccddghhgf", public_url: "https://t.me/cccddghhgf" },
   { keyword: "A Muse", name: "A Muse", invite_url: "https://t.me/+e-JQoCwT8wMyM2Zh" }
 ];
 
@@ -50,20 +50,55 @@ class SourceRegistry {
   ensureInitialSources() {
     let modified = false;
     for (const src of INITIAL_SOURCES) {
-      const existing = this.sources.find(s => s.keyword === src.keyword || s.invite_url === src.invite_url);
+      const existing = this.sources.find(s => s.keyword === src.keyword);
       if (!existing) {
         this.sources.push({
           id: `src_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
           keyword: src.keyword,
           name: src.name,
-          invite_url: src.invite_url,
+          username: src.username || null,
+          public_url: src.public_url || null,
+          invite_url: src.invite_url || null,
           chat_id: null,
           created_at: new Date().toISOString(),
           last_checked_at: new Date().toISOString()
         });
         modified = true;
+      } else {
+        if (src.username && existing.username !== src.username) {
+          existing.username = src.username;
+          existing.public_url = src.public_url;
+          delete existing.invite_url;
+          modified = true;
+        }
+        if (src.invite_url && existing.invite_url !== src.invite_url) {
+          existing.invite_url = src.invite_url;
+          modified = true;
+        }
       }
     }
+
+    // Sanitize and update existing post records with source username/invite_url metadata
+    for (const post of this.posts) {
+      const src = this.sources.find(s => s.keyword === post.keyword || s.name === post.channel_name);
+      if (src) {
+        if (src.username) {
+          if (post.username !== src.username || !post.telegram_url || !post.telegram_url.includes(src.username)) {
+            post.username = src.username;
+            post.telegram_url = `https://t.me/${src.username}/${post.message_id || ""}`;
+            delete post.invite_url;
+            modified = true;
+          }
+        } else if (src.invite_url) {
+          if (post.invite_url !== src.invite_url || !post.telegram_url) {
+            post.invite_url = src.invite_url;
+            post.telegram_url = src.invite_url;
+            modified = true;
+          }
+        }
+      }
+    }
+
     if (modified) {
       this.saveData();
     }
@@ -175,9 +210,17 @@ class SourceRegistry {
     const fullTitle = `${icon}${displayTitle}`;
 
     let cleanChatId = chatId.startsWith("-100") ? chatId.substring(4) : chatId.replace("-", "");
-    let telegramUrl = msg.chat.username 
-      ? `https://t.me/${msg.chat.username}/${messageId}`
-      : `https://t.me/c/${cleanChatId}/${messageId}`;
+    let inviteUrl = source ? source.invite_url : null;
+    let username = msg.chat.username || (source ? source.username : null);
+
+    let telegramUrl = "";
+    if (username) {
+      telegramUrl = `https://t.me/${username}/${messageId}`;
+    } else if (inviteUrl) {
+      telegramUrl = inviteUrl;
+    } else {
+      telegramUrl = `https://t.me/c/${cleanChatId}/${messageId}`;
+    }
 
     const postRecord = {
       id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -191,6 +234,8 @@ class SourceRegistry {
       caption: text,
       media_type: mediaType,
       duration: duration,
+      invite_url: inviteUrl,
+      username: username,
       telegram_url: telegramUrl,
       views: "1.2K",
       published_at: new Date(msg.date * 1000).toISOString(),
@@ -215,6 +260,12 @@ class SourceRegistry {
       this.saveData();
       return { post: postRecord, isNew: true };
     }
+  }
+
+  getSourceByKeyword(keyword) {
+    if (!keyword) return null;
+    const kwLower = keyword.trim().toLowerCase();
+    return this.sources.find(s => s.keyword.trim().toLowerCase() === kwLower || s.name.trim().toLowerCase() === kwLower);
   }
 
   getPostsForKeyword(keyword) {
