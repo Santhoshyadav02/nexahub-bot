@@ -125,7 +125,20 @@ class SourceRegistry {
 
     for (const key of Object.keys(grouped)) {
       const postsForGroup = grouped[key];
-      postsForGroup.sort((a, b) => (b.message_id || 0) - (a.message_id || 0));
+      postsForGroup.sort((a, b) => {
+        const aIsLegacy = a.message_id && parseInt(a.message_id, 10) > 10000;
+        const bIsLegacy = b.message_id && parseInt(b.message_id, 10) > 10000;
+        if (aIsLegacy !== bIsLegacy) {
+          return aIsLegacy ? 1 : -1;
+        }
+
+        const dateA = a.published_at ? new Date(a.published_at).getTime() : (a.date ? a.date * 1000 : 0);
+        const dateB = b.published_at ? new Date(b.published_at).getTime() : (b.date ? b.date * 1000 : 0);
+        if (dateA !== dateB && dateA > 0 && dateB > 0) {
+          return dateB - dateA;
+        }
+        return (b.message_id || 0) - (a.message_id || 0);
+      });
       const sliced = postsForGroup.slice(0, maxPerTopic);
       retainedPosts.push(...sliced);
     }
