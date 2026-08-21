@@ -1844,14 +1844,25 @@ function smartShortenTitle(str, maxLen = 18) {
   return symbols.slice(0, maxLen - 1).join("") + "…";
 }
 
+const CARD_1_TO_10_LABELS = [
+  "🔥 K-pop Dating Scandal",
+  "💋 Secret Relationship",
+  "👀 Idol Dating Rumor",
+  "💔 Celebrity Breakup",
+  "🚨 Dating Controversy",
+  "❤️ Secret Couple",
+  "😳 Viral Romance",
+  "🔥 Lovestagram",
+  "💍 Marriage Rumor",
+  "👀 Celebrity Scandal"
+];
+
 async function getMainKeyboard() {
   // 1. CARDS 1–10: Live Trending Keywords (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
-  const krKeywords = getTrendingKeywords();
   const card1to10Buttons = [];
   
   for (let i = 0; i < 10; i++) {
-    const rawKw = krKeywords[i] || `Trend ${i + 1}`;
-    const label = await formatTrendingCardLabel(rawKw, false, i);
+    const label = CARD_1_TO_10_LABELS[i];
     const channelKeyword = TARGET_CHANNELS[i] || "Dating";
     card1to10Buttons.push({
       text: label,
