@@ -2509,19 +2509,6 @@ if (isMainModule) {
   startScraperScheduler();
   console.log("✅ NewsSearch Main Bot is running...");
   console.log("🔗 Channels shown directly in main bot!");
-
-  // Perform ONE-TIME MTProto Startup Sync for all 10 managed private channels
-  if (process.env.TELEGRAM_SESSION_STRING) {
-    const MTProtoChannelReader = require("./mtproto_reader");
-    const reader = new MTProtoChannelReader();
-    console.log("📡 Initializing MTProto Startup Channel Sync...");
-    reader.syncAllChannels(10, true)
-      .then(results => {
-        const totalIngested = results.reduce((acc, r) => acc + (r.posts_found || 0), 0);
-        console.log(`✅ MTProto Startup Sync Complete! Synced ${results.length} channels (${totalIngested} total posts persisted).`);
-      })
-      .catch(err => console.error("⚠️ MTProto Startup Sync Error:", err.message));
-  }
 }
 
 module.exports = {

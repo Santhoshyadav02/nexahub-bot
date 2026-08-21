@@ -168,17 +168,15 @@ class MTProtoChannelReader {
 
               const fullTitle = `${icon}${titleText}`;
               const cleanChatId = fullChatId.substring(4);
-              const tgUrl = `https://t.me/c/${cleanChatId}/${m.id}`;
-
               const postObj = {
                 message_id: m.id,
                 date: m.date,
-                chat: { id: fullChatId, title: ch.name, type: "channel" },
+                chat: { id: fullChatId, title: ch.name, username: ch.username, type: "channel" },
                 caption: textContent,
                 text: textContent,
                 media_type: mediaType,
                 title: fullTitle,
-                telegram_url: tgUrl
+                telegram_url: ch.username ? `https://t.me/${ch.username}/${m.id}` : tgUrl
               };
 
               parsedPosts.push(postObj);
@@ -193,11 +191,31 @@ class MTProtoChannelReader {
               channelReport.latest_caption = top.caption || top.title;
 
               if (saveToDisk) {
+                const postsBefore = sourceRegistry.getPostsForKeyword(ch.name);
+                channelReport.existing_before = postsBefore.length;
+
+                let newCount = 0;
+                let insertedCount = 0;
+                let skippedCount = 0;
+
                 // Sort by message_id ascending so newest post is unshifted last to position 0
                 const sortedMsgs = [...parsedPosts].sort((a, b) => a.message_id - b.message_id);
                 for (const p of sortedMsgs) {
-                  sourceRegistry.processChannelPost(p, ch.name);
+                  const res = sourceRegistry.processChannelPost(p, ch.name);
+                  if (res && res.isNew) {
+                    newCount++;
+                    insertedCount++;
+                  } else {
+                    skippedCount++;
+                  }
                 }
+
+                const postsAfter = sourceRegistry.getPostsForKeyword(ch.name);
+                channelReport.fetched = parsedPosts.length;
+                channelReport.new_posts = newCount;
+                channelReport.inserted = insertedCount;
+                channelReport.skipped = skippedCount;
+                channelReport.existing_after = postsAfter.length;
               }
             }
           }

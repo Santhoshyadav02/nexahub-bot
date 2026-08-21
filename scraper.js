@@ -212,22 +212,79 @@ function parseEmbedHTML(url, html) {
   return { url, title: finalTitle, duration };
 }
 
+let isSyncingTelegram = false;
+
 async function refreshTelegramPosts() {
-  console.log("📡 Telegram Periodic Audit/Reconciliation: Auditing source channels...");
+  if (isSyncingTelegram) {
+    console.log("⏳ Periodic Telegram MTProto sync already in progress, skipping iteration.");
+    return;
+  }
+  isSyncingTelegram = true;
+  console.log("📡 Starting MTProto Periodic Channel Sync...");
+
+  if (!process.env.TELEGRAM_SESSION_STRING) {
+    console.log("ℹ️ TELEGRAM_SESSION_STRING not configured. Skipping periodic MTProto channel sync.");
+    isSyncingTelegram = false;
+    return;
+  }
+
   try {
-    const sourceRegistry = require("./source_registry");
-    const sources = sourceRegistry.getAllSources();
-    console.log(`📊 Periodic Audit: ${sources.length} Telegram source channel(s) registered in database.`);
+    const MTProtoChannelReader = require("./mtproto_reader");
+    const reader = new MTProtoChannelReader();
+    const results = await reader.syncAllChannels(10, true);
+
+    let totalFetched = 0;
+    let totalNew = 0;
+    let totalInserted = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+
+    results.forEach((r, idx) => {
+      const fetched = r.fetched || r.posts_found || 0;
+      const existingBefore = r.existing_before || 0;
+      const newPosts = r.new_posts || 0;
+      const inserted = r.inserted || 0;
+      const skipped = r.skipped || 0;
+      const existingAfter = r.existing_after || 0;
+
+      totalFetched += fetched;
+      totalNew += newPosts;
+      totalInserted += inserted;
+      totalSkipped += skipped;
+      if (r.history_status === "ERROR") totalErrors++;
+
+      console.log(`[${idx + 1}/${results.length}] ${r.channel_name}`);
+      console.log(`Existing before: ${existingBefore}`);
+      console.log(`Fetched: ${fetched}`);
+      console.log(`New: ${newPosts}`);
+      console.log(`Inserted: ${inserted}`);
+      console.log(`Duplicates skipped: ${skipped}`);
+      console.log(`Existing after: ${existingAfter}\n`);
+    });
+
+    console.log("Telegram Sync Complete");
+    console.log(`Channels checked: ${results.length}`);
+    console.log(`Messages fetched: ${totalFetched}`);
+    console.log(`New messages: ${totalNew}`);
+    console.log(`Inserted: ${totalInserted}`);
+    console.log(`Duplicates skipped: ${totalSkipped}`);
+    console.log(`Errors: ${totalErrors}\n`);
 
     const updateLog = {
       lastChecked: new Date().toISOString(),
-      activeSources: sources.length,
-      status: "SUCCESS"
+      activeSources: results.length,
+      totalFetched,
+      totalNew,
+      totalInserted,
+      totalSkipped,
+      totalErrors,
+      status: totalErrors === 0 ? "SUCCESS" : "PARTIAL"
     };
     fs.writeFileSync("channels_cache.json", JSON.stringify(updateLog, null, 2), "utf8");
-    console.log("✅ Periodic source channel audit & state reconciliation complete.");
   } catch (err) {
-    console.error("❌ Telegram post auditor error:", err.message);
+    console.error("❌ Telegram MTProto periodic sync error:", err.message);
+  } finally {
+    isSyncingTelegram = false;
   }
 }
 
@@ -237,12 +294,12 @@ function startScraperScheduler() {
   safeScrapeBreakingNews();
   refreshTelegramPosts();
 
-  // Run trending every 10 minutes, breaking news every 3 minutes, telegram posts every 10 minutes
+  // Run trending every 10 minutes, breaking news every 3 minutes, telegram posts every 5 minutes
   setInterval(safeScrapeTrending, 10 * 60 * 1000);
   setInterval(safeScrapeBreakingNews, 3 * 60 * 1000);
-  setInterval(refreshTelegramPosts, 10 * 60 * 1000);
+  setInterval(refreshTelegramPosts, 5 * 60 * 1000);
 
-  console.log("⏰ Scrapers active: Trending (10m), Breaking news (3m), Telegram posts (10m)");
+  console.log("⏰ Scrapers active: Trending (10m), Breaking news (3m), Telegram posts (5m)");
 }
 
 if (require.main === module) {

@@ -204,9 +204,9 @@ class SourceRegistry {
     const messageId = msg.message_id;
     const uniqueHash = `${chatId}_${messageId}`;
 
-    const existingPostIndex = this.posts.findIndex(p => p.unique_hash === uniqueHash);
-
     const source = this.bindChatIdToSource(chatId, msg.chat.title || "", explicitKeyword);
+    const targetKeyword = source ? source.keyword : (explicitKeyword || "General");
+    const targetChannelName = source ? source.name : (msg.chat.title || "Telegram Channel");
 
     let text = msg.text || msg.caption || "";
     let mediaType = "text";
@@ -251,6 +251,12 @@ class SourceRegistry {
     } else {
       telegramUrl = `https://t.me/c/${cleanChatId}/${messageId}`;
     }
+
+    const existingPostIndex = this.posts.findIndex(p => 
+      (p.unique_hash && p.unique_hash === uniqueHash) ||
+      (p.telegram_url && telegramUrl && p.telegram_url === telegramUrl) ||
+      (p.message_id && String(p.message_id) === String(messageId) && (p.keyword === targetKeyword || p.channel_name === targetChannelName))
+    );
 
     const postRecord = {
       id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
