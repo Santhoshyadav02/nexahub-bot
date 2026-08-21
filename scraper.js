@@ -1,5 +1,6 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
+const path = require("path");
 
 let isScrapingTrending = false;
 let isScrapingBreaking = false;
@@ -213,6 +214,7 @@ function parseEmbedHTML(url, html) {
 }
 
 let isSyncingTelegram = false;
+let mtprotoReaderInstance = null;
 
 async function refreshTelegramPosts() {
   if (isSyncingTelegram) {
@@ -220,7 +222,9 @@ async function refreshTelegramPosts() {
     return;
   }
   isSyncingTelegram = true;
-  console.log("📡 Starting MTProto Periodic Channel Sync...");
+  console.log("\n==========================================");
+  console.log("📡 MTProto Periodic Sync: START");
+  console.log("==========================================");
 
   if (!process.env.TELEGRAM_SESSION_STRING) {
     console.log("ℹ️ TELEGRAM_SESSION_STRING not configured. Skipping periodic MTProto channel sync.");
@@ -229,9 +233,11 @@ async function refreshTelegramPosts() {
   }
 
   try {
-    const MTProtoChannelReader = require("./mtproto_reader");
-    const reader = new MTProtoChannelReader();
-    const results = await reader.syncAllChannels(10, true);
+    if (!mtprotoReaderInstance) {
+      const MTProtoChannelReader = require("./mtproto_reader");
+      mtprotoReaderInstance = new MTProtoChannelReader();
+    }
+    const results = await mtprotoReaderInstance.syncAllChannels(10, true);
 
     let totalFetched = 0;
     let totalNew = 0;
@@ -262,27 +268,30 @@ async function refreshTelegramPosts() {
       console.log(`Existing after: ${existingAfter}\n`);
     });
 
-    console.log("Telegram Sync Complete");
-    console.log(`Channels checked: ${results.length}`);
-    console.log(`Messages fetched: ${totalFetched}`);
-    console.log(`New messages: ${totalNew}`);
-    console.log(`Inserted: ${totalInserted}`);
-    console.log(`Duplicates skipped: ${totalSkipped}`);
-    console.log(`Errors: ${totalErrors}\n`);
+    console.log("==========================================");
+    console.log("📡 MTProto Periodic Sync: SYNC COMPLETE");
+    console.log(`Channels checked : ${results.length}`);
+    console.log(`Messages fetched : ${totalFetched}`);
+    console.log(`New messages     : ${totalNew}`);
+    console.log(`Inserted         : ${totalInserted}`);
+    console.log(`Duplicates skip  : ${totalSkipped}`);
+    console.log(`Errors           : ${totalErrors}`);
+    console.log("==========================================\n");
 
     const updateLog = {
       lastChecked: new Date().toISOString(),
       activeSources: results.length,
-      totalFetched,
-      totalNew,
-      totalInserted,
-      totalSkipped,
-      totalErrors,
+      channelsChecked: results.length,
+      totalFetched: totalFetched,
+      newPosts: totalNew,
+      inserted: totalInserted,
+      skipped: totalSkipped,
+      errors: totalErrors,
       status: totalErrors === 0 ? "SUCCESS" : "PARTIAL"
     };
-    fs.writeFileSync("channels_cache.json", JSON.stringify(updateLog, null, 2), "utf8");
+    fs.writeFileSync(path.join(__dirname, "channels_cache.json"), JSON.stringify(updateLog, null, 2), "utf8");
   } catch (err) {
-    console.error("❌ Telegram MTProto periodic sync error:", err.message);
+    console.error("❌ Error during periodic Telegram MTProto sync:", err.message);
   } finally {
     isSyncingTelegram = false;
   }

@@ -19,6 +19,10 @@ const TARGET_CHANNELS = [
 
 class MTProtoChannelReader {
   constructor() {
+    if (MTProtoChannelReader.instance) {
+      return MTProtoChannelReader.instance;
+    }
+
     this.apiId = parseInt(process.env.TELEGRAM_API_ID || "0", 10);
     this.apiHash = process.env.TELEGRAM_API_HASH || "";
     this.sessionString = process.env.TELEGRAM_SESSION_STRING || "";
@@ -28,26 +32,54 @@ class MTProtoChannelReader {
       this.session = new StringSession("");
     }
     this.client = new TelegramClient(this.session, this.apiId, this.apiHash, {
-      connectionRetries: 3,
+      connectionRetries: 5,
     });
     this.authMode = "USER_SESSION";
+    this.connectingPromise = null;
+
+    MTProtoChannelReader.instance = this;
   }
 
   async connect() {
-    if (this.sessionString) {
-      await this.client.connect();
-      try {
-        // Cache all joined channel entities in 1 single request to avoid CheckChatInvite flood wait
-        await this.client.getDialogs({ limit: 100 });
-      } catch (e) {}
-    } else {
-      console.log("ℹ️ GramJS MTProto reader: TELEGRAM_SESSION_STRING not configured. Skipping MTProto GramJS connection (will NOT use botAuthToken).");
+    if (!this.sessionString) {
+      console.log("ℹ️ GramJS MTProto reader: TELEGRAM_SESSION_STRING not configured. Skipping MTProto connection.");
+      return false;
     }
+
+    if (this.client && this.client.connected) {
+      console.log("✅ MTProto client: CONNECTED (reusing persistent connection)");
+      return true;
+    }
+
+    if (this.connectingPromise) {
+      return await this.connectingPromise;
+    }
+
+    this.connectingPromise = (async () => {
+      try {
+        console.log("📡 MTProto client: CONNECTING...");
+        await this.client.connect();
+        try {
+          // Cache all joined channel entities in 1 single request to avoid CheckChatInvite flood wait
+          await this.client.getDialogs({ limit: 100 });
+        } catch (e) {}
+        console.log("✅ MTProto client: CONNECTED");
+        return true;
+      } catch (err) {
+        console.error("❌ MTProto client connection error:", err.message);
+        return false;
+      } finally {
+        this.connectingPromise = null;
+      }
+    })();
+
+    return await this.connectingPromise;
   }
 
   async disconnect() {
     try {
-      if (this.client) {
+      if (this.client && this.client.connected) {
+        console.log("🔌 Explicitly disconnecting MTProto client...");
         await this.client.disconnect().catch(() => {});
         if (typeof this.client.destroy === "function") {
           await this.client.destroy().catch(() => {});
@@ -58,10 +90,16 @@ class MTProtoChannelReader {
 
   async syncAllChannels(limit = 10, saveToDisk = false) {
     const results = [];
-    try {
-      await this.connect();
+    const connected = await this.connect();
+    if (!connected) {
+      console.warn("⚠️ Cannot run MTProto sync: Client not connected.");
+      return results;
+    }
 
-      for (const ch of TARGET_CHANNELS) {
+    console.log("📡 MTProto client: SYNC START");
+
+    for (let idx = 0; idx < TARGET_CHANNELS.length; idx++) {
+      const ch = TARGET_CHANNELS[idx];
       const channelReport = {
         channel_name: ch.name,
         chat_id: "NOT BOUND YET",
@@ -167,7 +205,6 @@ class MTProtoChannelReader {
               }
 
               const fullTitle = `${icon}${titleText}`;
-              const cleanChatId = fullChatId.substring(4);
               const postObj = {
                 message_id: m.id,
                 date: m.date,
@@ -176,7 +213,7 @@ class MTProtoChannelReader {
                 text: textContent,
                 media_type: mediaType,
                 title: fullTitle,
-                telegram_url: ch.username ? `https://t.me/${ch.username}/${m.id}` : tgUrl
+                telegram_url: ch.username ? `https://t.me/${ch.username}/${m.id}` : `https://t.me/c/${fullChatId.substring(4)}/${m.id}`
               };
 
               parsedPosts.push(postObj);
@@ -223,20 +260,32 @@ class MTProtoChannelReader {
       } catch (err) {
         channelReport.history_status = "ERROR";
         channelReport.error = err.message;
+        if (err.message && (err.message.includes("disconnected") || err.message.includes("closed") || err.message.includes("TIMEOUT"))) {
+          console.warn("⚠️ MTProto CONNECTION LOST during channel sync:", err.message);
+          console.log("🔄 RECONNECTING MTProto client...");
+          try {
+            await this.client.connect();
+            console.log("✅ MTProto RECONNECTED");
+          } catch (recErr) {
+            console.error("❌ MTProto reconnection failed:", recErr.message);
+          }
+        }
       }
 
       results.push(channelReport);
     }
-    } finally {
-      await this.disconnect();
-    }
+
+    console.log("📡 MTProto client: SYNC COMPLETE");
+    console.log("📡 MTProto client: STILL CONNECTED");
     return results;
   }
 
   async resolveMediaForPost(post) {
     if (!post || (!post.chat_id && !post.username) || !post.message_id) return null;
     try {
-      await this.connect();
+      const connected = await this.connect();
+      if (!connected) return null;
+
       let chatEntity = null;
       if (post.username) {
         try { chatEntity = await this.client.getEntity(post.username); } catch (e) {}
@@ -260,8 +309,6 @@ class MTProtoChannelReader {
       }
     } catch (err) {
       console.warn("⚠️ Error in MTProto resolveMediaForPost:", err.message);
-    } finally {
-      await this.disconnect();
     }
     return null;
   }
