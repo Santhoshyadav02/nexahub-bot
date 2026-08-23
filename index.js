@@ -1980,7 +1980,7 @@ async function getTrendingKeyboard() {
   if (breaking && breaking.length > 0) {
     rows.push([{ text: "📰 속보", callback_data: "none" }]);
     for (let i = 0; i < breaking.length; i++) {
-      const { title: rawTitle } = parseNewsItem(breaking[i]);
+      const { title: rawTitle, url: originalUrl } = parseNewsItem(breaking[i]);
       if (!rawTitle) continue;
 
       const translatedTitle = await translateText(rawTitle, "ko");
@@ -1988,9 +1988,13 @@ async function getTrendingKeyboard() {
         ? translatedTitle
         : rawTitle;
 
+      const googleTranslateUrl = originalUrl
+        ? `https://translate.google.com/translate?sl=auto&tl=ko&u=${encodeURIComponent(originalUrl)}`
+        : `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
+
       rows.push([{
         text: `📰 ${cleanDisplay}`,
-        callback_data: `news_art:${i}`
+        url: googleTranslateUrl
       }]);
     }
   }
