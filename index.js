@@ -1758,231 +1758,6 @@ function parseNewsItem(item) {
   return { title: String(item), url: "" };
 }
 
-const TARGET_CHANNELS = [
-  "Romantic Vibe",
-  "Dating",
-  "Romance",
-  "Crotch",
-  "Mosa",
-  "Bunny Girl Cosplay Date",
-  "Lustful Hostess",
-  "Concubine",
-  "Saki Mizumi",
-  "A Muse"
-];
-
-async function formatTrendingCardLabel(rawTitle, isVideoCard = false, cardIndex = 0, channelKeyword = "") {
-  let titleText = rawTitle ? String(rawTitle).trim() : "";
-
-  // 1. Translate title to Korean if not already in Korean
-  if (titleText && !/[\uac00-\ud7af]/.test(titleText)) {
-    try {
-      titleText = await translateText(titleText, "ko");
-    } catch (e) {}
-  }
-
-  // Clean title: remove existing leading emojis, brackets, CJK leftovers, special noise
-  titleText = sanitizeUTF8(titleText)
-    .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "")
-    .replace(/^\[[^\]]+\]\s*/, "")
-    .replace(/[^\w\s"-\uac00-\ud7af]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Video Cards specific (Cards 11-20): process actual raw source video title
-  if (isVideoCard) {
-    let lowerVideo = titleText.toLowerCase();
-    let videoSubject = "";
-
-    // Extract actual video subject / topic strictly from raw post title
-    if (lowerVideo.includes("selena") || lowerVideo.includes("셀레나")) {
-      videoSubject = "셀레나 고메즈";
-    } else if (lowerVideo.includes("kaede") || lowerVideo.includes("카에데")) {
-      videoSubject = "제니 카에데";
-    } else if (lowerVideo.includes("jennie") || lowerVideo.includes("제니")) {
-      videoSubject = "제니 영상";
-    } else if (lowerVideo.includes("live") || lowerVideo.includes("라이브") || lowerVideo.includes("dating")) {
-      videoSubject = "라이브 데이트";
-    } else if (lowerVideo.includes("gangnam") || lowerVideo.includes("강남")) {
-      videoSubject = "강남 188GB";
-    } else if (lowerVideo.includes("book") || lowerVideo.includes("책") || lowerVideo.includes("소설")) {
-      videoSubject = "커플 스토리";
-    } else if (lowerVideo.includes("servant") || lowerVideo.includes("하녀")) {
-      videoSubject = "하녀와 남편";
-    } else if (lowerVideo.includes("husband") || lowerVideo.includes("wife") || lowerVideo.includes("커플")) {
-      videoSubject = "커플 스페셜";
-    } else if (lowerVideo.includes("muse") || lowerVideo.includes("뮤즈")) {
-      videoSubject = "뮤즈 업데이트";
-    } else if (lowerVideo.includes("high-profile") || lowerVideo.includes("화제")) {
-      videoSubject = "화제의 영상";
-    } else if (titleText.length >= 2 && !/^\d+$/.test(titleText) && /[\uac00-\ud7af]/.test(titleText)) {
-      videoSubject = smartShortenTitle(titleText, 18);
-    } else {
-      videoSubject = "";
-    }
-
-    if (videoSubject && /[\uac00-\ud7af]/.test(videoSubject)) {
-      let emoji = "🎬";
-      const lowerSub = videoSubject.toLowerCase();
-      if (lowerSub.includes("셀레나") || lowerSub.includes("음악")) emoji = "🎵";
-      else if (lowerSub.includes("제니")) emoji = "✨";
-      else if (lowerSub.includes("강남")) emoji = "🏙️";
-      else if (lowerSub.includes("스토리") || lowerSub.includes("소설")) emoji = "📖";
-      else if (lowerSub.includes("하녀") || lowerSub.includes("커플") || lowerSub.includes("남편")) emoji = "❤️";
-      else if (lowerSub.includes("라이브")) emoji = "🔴";
-      else if (lowerSub.includes("화제")) emoji = "🎬";
-      else if (lowerSub.includes("뮤즈")) emoji = "🎨";
-      else emoji = "🎥";
-
-      return `${emoji} ${videoSubject}`;
-    }
-    return "";
-  }
-
-  const cleanLabel = smartShortenTitle(titleText, 18);
-  return cleanLabel;
-}
-
-function smartShortenTitle(str, maxLen = 18) {
-  if (!str) return "";
-  let clean = str.trim();
-
-  // Expand / preserve full meaningful terms where applicable
-  const lower = clean.toLowerCase();
-  if (lower === "son") return "Son Heung-min";
-  if (lower === "bus") return "Bus Trends";
-  if (lower === "flood") return "Flood Updates";
-  if (lower === "missile") return "Missile News";
-  if (lower === "migration") return "Migration Trends";
-  if (lower.includes("diamondbac")) return "Diamondbacks";
-  if (lower.includes("lg group") || lower === "lg") return "LG Group";
-  if (lower.includes("lens vs")) return "Lens vs PSG";
-
-  if (clean.length <= maxLen) return clean;
-
-  const words = clean.split(" ");
-  if (words.length > 1) {
-    let result = words[0];
-    for (let i = 1; i < words.length; i++) {
-      if ((result + " " + words[i]).length <= maxLen) {
-        result += " " + words[i];
-      } else {
-        break;
-      }
-    }
-    return result;
-  }
-
-  const symbols = Array.from(clean);
-  return symbols.slice(0, maxLen - 1).join("") + "…";
-}
-
-const CARD_1_TO_10_LABELS = [
-  "🔥 K-Pop 열애설",
-  "💋 비밀 연애",
-  "👀 아이돌 열애 루머",
-  "💔 연예인 결별",
-  "🚨 열애 논란",
-  "❤️ 비밀 커플",
-  "😳 바이럴 로맨스",
-  "🔥 럽스타그램",
-  "💍 결혼 루머",
-  "👀 연예계 스캔들"
-];
-
-const CARD_11_TO_20_LABELS = [
-  "🎬 로맨스 VOD",
-  "💖 연애 클립",
-  "🌸 심쿵 로맨스",
-  "🔥 바이럴 영상",
-  "🚨 모자이크 이슈",
-  "🐰 코스프레 데이트",
-  "🍸 호스테스 이슈",
-  "👑 후궁 이야기",
-  "🌸 사키 미즈미",
-  "🎨 뮤즈 컬렉션"
-];
-
-async function getMainKeyboard() {
-  // 1. CARDS 1–10: Live Trending Keywords (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
-  const card1to10Buttons = [];
-  
-  for (let i = 0; i < 10; i++) {
-    const label = CARD_1_TO_10_LABELS[i];
-    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
-    card1to10Buttons.push({
-      text: label,
-      callback_data: `topic:${channelKeyword}`
-    });
-  }
-
-  // 2. CARDS 11–20: TRENDING VIDEOS (Korean Display Labels -> Direct Fixed Channel Callback)
-  const card11to20Buttons = [];
-  const usedVideoSignatures = new Set();
-  const rawEnglishNames = ["romantic vibe", "dating", "romance", "crotch", "mosa", "bunny girl cosplay date", "lustful hostess", "concubine", "saki mizumi", "a muse", "jun ko"];
-
-  for (let i = 0; i < 10; i++) {
-    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
-    const channelPosts = sourceRegistry.getPostsForKeyword(channelKeyword);
-
-    let selectedPost = null;
-    for (const p of channelPosts) {
-      if (!p || !p.title) continue;
-      const cleanTitleSig = sanitizeUTF8(p.title)
-        .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "")
-        .replace(/^\[[^\]]+\]\s*/, "")
-        .trim().toLowerCase().substring(0, 35);
-
-      if (!usedVideoSignatures.has(cleanTitleSig)) {
-        selectedPost = p;
-        usedVideoSignatures.add(cleanTitleSig);
-        break;
-      }
-    }
-
-    if (!selectedPost && channelPosts.length > 0) {
-      selectedPost = channelPosts[0];
-    }
-
-    let textToFormat = channelKeyword;
-    if (selectedPost && selectedPost.title) {
-      textToFormat = selectedPost.title;
-    }
-    
-    let label = await formatTrendingCardLabel(textToFormat, true, i, channelKeyword);
-    const cleanLabelLower = label ? label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱🎨🍸👑🐰💖]+/gu, "").trim().toLowerCase() : "";
-
-    if (!label || !/[\uac00-\ud7af]/.test(label) || rawEnglishNames.some(name => cleanLabelLower.includes(name))) {
-      label = CARD_11_TO_20_LABELS[i] || "🎬 트렌딩 동영상";
-    }
-
-    card11to20Buttons.push({
-      text: label,
-      callback_data: `topic:${channelKeyword}`
-    });
-  }
-
-  // Assemble into 4 rows x 5 columns grid (Cards 1–20)
-  const allButtons = [...card1to10Buttons, ...card11to20Buttons];
-  const gridRows = [];
-  for (let i = 0; i < allButtons.length; i += 5) {
-    gridRows.push(allButtons.slice(i, i + 5));
-  }
-
-  return { inline_keyboard: gridRows };
-}
-
-async function getPopularKeyboard() {
-  const mainKeys = (await getMainKeyboard()).inline_keyboard;
-  const rows = [...mainKeys];
-
-  // Action buttons at bottom of Popular screen
-  rows.push([{ text: "🔄 새로고침", callback_data: "screen:popular" }]);
-  rows.push([{ text: "🏠 홈으로 돌아가기", callback_data: "menu" }]);
-
-  return { inline_keyboard: rows };
-}
-
 async function getBreakingNewsKeyboard() {
   const breaking = getBreakingNews();
   const rows = [];
@@ -2064,8 +1839,7 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. Navigation Buttons to Dedicated Popular, Breaking News & Content Hub Screens
-  rows.push([{ text: "🔥 인기 콘텐츠", callback_data: "screen:popular" }]);
+  // 2. Navigation Buttons to Dedicated Breaking News & Content Hub Screens
   rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
   rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
 
@@ -2578,18 +2352,6 @@ bot.on("callback_query", async (query) => {
       } else {
         await sendMessageSafe(chatId, text, opts);
       }
-    } else if (data === "screen:popular") {
-      const keyboard = await getPopularKeyboard();
-      const text = `🔥 <b>인기 콘텐츠</b>\n\n실시간 인기 주제 20개 👇`;
-      const opts = {
-        parse_mode: "HTML",
-        reply_markup: keyboard,
-      };
-      if (messageId) {
-        await editMessageTextSafe(chatId, messageId, text, opts);
-      } else {
-        await sendMessageSafe(chatId, text, opts);
-      }
     } else if (data === "screen:breaking") {
       const keyboard = await getBreakingNewsKeyboard();
       const text = `📰 <b>속보</b>\n\n최신 속보 뉴스를 빠르게 확인하세요. 👇`;
@@ -2769,9 +2531,7 @@ module.exports = {
   makeSearchCallbackData,
   escapeHTML,
   translateText,
-  getMainKeyboard,
   getTrendingKeyboard,
-  getPopularKeyboard,
   getBreakingNewsKeyboard,
   getCategoryHubKeyboard,
   getPersistentKeyboard,
