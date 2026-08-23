@@ -2037,7 +2037,7 @@ async function getTrendingKeyboard() {
   const rankings = (rankingData && Array.isArray(rankingData.rankings)) ? rankingData.rankings : [];
 
   if (rankings.length > 0) {
-    rows.push([{ text: "🔥 실시간 검색어 TOP 10", callback_data: "none" }]);
+    rows.push([{ text: "🔥 실시간 검색어 TOP 10 ⚡", callback_data: "none" }]);
     const rankEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
     for (let i = 0; i < Math.min(10, rankings.length); i++) {
       const item = rankings[i];
@@ -2058,9 +2058,11 @@ async function getTrendingKeyboard() {
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
   rows.push(...mainKeys);
 
-  // 3. Navigation Buttons directly below Cards 1–20: Breaking News & Content Hub
-  rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
-  rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
+  // 3. Navigation Buttons directly below Cards 1–20: Breaking News & Content Hub (Side-by-Side)
+  rows.push([
+    { text: "📰 속보", callback_data: "screen:breaking" },
+    { text: "📂 콘텐츠 허브", callback_data: "screen:categories" }
+  ]);
 
   return { inline_keyboard: rows };
 }
