@@ -107,7 +107,7 @@ const WELCOME_IMAGE = "https://raw.githubusercontent.com/hiruboyz/news-bot/main/
 // ============================
 const translationCache = new Map();
 
-async function translateText(text, targetLang = "en") {
+async function translateText(text, targetLang = "ko") {
   if (!text || typeof text !== "string") {
     return text || "";
   }
@@ -128,7 +128,7 @@ async function translateText(text, targetLang = "en") {
             const parsed = JSON.parse(data);
             if (parsed && parsed[0] && parsed[0][0] && parsed[0][0][0]) {
               const fullText = parsed[0].map((item) => item[0]).filter(Boolean).join("");
-              resolve(fullText);
+              resolve(fullText || text);
             } else {
               resolve(text);
             }
@@ -144,8 +144,9 @@ async function translateText(text, targetLang = "en") {
       });
     });
 
-    translationCache.set(cacheKey, translated);
-    return translated;
+    const result = translated || text;
+    translationCache.set(cacheKey, result);
+    return result;
   } catch (err) {
     return text;
   }
@@ -1077,9 +1078,9 @@ function getPersistentNavigationKeyboard() {
   return {
     keyboard: [
       [
-        { text: "🏠 Home" },
-        { text: "ℹ️ About" },
-        { text: "🗑️ History" }
+        { text: "🏠 홈" },
+        { text: "ℹ️ 정보" },
+        { text: "🗑️ 기록" }
       ]
     ],
     resize_keyboard: true,
@@ -1292,12 +1293,12 @@ function getFeaturedChannels(cardId) {
 // ============================================================
 async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
   if (!items || items.length === 0) {
-    const emptyText = `📺 <b>${escapeHTML(title)}</b>\n\nNo posts available in this channel yet.`;
+    const emptyText = `📺 <b>${escapeHTML(title)}</b>\n\n이 채널에 이용 가능한 게시물이 없습니다.`;
     const emptyOpts = {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
+          [{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]
         ]
       }
     };
@@ -1326,7 +1327,7 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     const itemNumber = startIndex + index + 1;
     let displayTitle = String(p.title || p.name || "").trim();
     if (!displayTitle) {
-      displayTitle = "Telegram Resource";
+      displayTitle = "텔레그램 리소스";
     }
 
     let icon = "";
@@ -1374,25 +1375,25 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   });
 
   let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
-  messageText += `Below are the latest videos from this channel.\n\n`;
+  messageText += `이 채널의 최신 동영상 목록입니다.\n\n`;
   messageText += itemLines.join("\n\n");
   if (totalPages > 1) {
-    messageText += `\n\n<b>Page ${currentPage}/${totalPages}</b>`;
+    messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
   }
 
   const navRow = [];
   if (currentPage > 1) {
-    navRow.push({ text: "⬅️ Previous", callback_data: `${callbackPrefix}:${currentPage - 1}` });
+    navRow.push({ text: "⬅️ 이전", callback_data: `${callbackPrefix}:${currentPage - 1}` });
   }
   if (currentPage < totalPages) {
-    navRow.push({ text: "Next ➡️", callback_data: `${callbackPrefix}:${currentPage + 1}` });
+    navRow.push({ text: "다음 ➡️", callback_data: `${callbackPrefix}:${currentPage + 1}` });
   }
 
   const inline_keyboard = [];
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
-  inline_keyboard.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+  inline_keyboard.push([{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]);
 
   const messageOptions = {
     parse_mode: "HTML",
@@ -1409,12 +1410,12 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
 async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1, messageId = null) {
   let items = [];
-  let title = "Resource Detail";
+  let title = "상세 정보";
 
   if (callbackPrefix.startsWith("featured_page:") || callbackPrefix.startsWith("featured:")) {
     const cardId = parseInt(callbackPrefix.split(":")[1], 10);
     const cardInfo = FEATURED_RESOURCES.find(r => r.id === cardId);
-    title = cardInfo ? cardInfo.name : `Card ${cardId}`;
+    title = cardInfo ? cardInfo.name : `카드 ${cardId}`;
     items = getFeaturedPosts(cardId);
   } else if (callbackPrefix.startsWith("cat_page:") || callbackPrefix.startsWith("cat:")) {
     const catKey = callbackPrefix.split(":")[1];
@@ -1429,12 +1430,12 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
 
   const item = items[itemIndex];
   if (!item) {
-    return await sendMessageSafe(chatId, "⚠️ Item detail not found.", {
-      reply_markup: { inline_keyboard: [[{ text: "🏠 HOME", callback_data: "menu" }]] }
+    return await sendMessageSafe(chatId, "⚠️ 항목 상세 정보를 찾을 수 없습니다.", {
+      reply_markup: { inline_keyboard: [[{ text: "🏠 홈", callback_data: "menu" }]] }
     });
   }
 
-  let displayTitle = String(item.title || item.name || "Telegram Content").trim();
+  let displayTitle = String(item.title || item.name || "텔레그램 콘텐츠").trim();
 
   // 1. Post URL for [ ▶️ WATCH VIDEO ]
   const src = sourceRegistry.getSourceByKeyword(item.keyword || item.channel_name);
@@ -1474,25 +1475,25 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
 
   let channelName = item.channel_name || item.user || (src ? src.name : title);
   let mediaType = item.media_type ? item.media_type.toUpperCase() : "VIDEO";
-  let duration = item.duration ? `\n<b>Duration:</b> ${item.duration}` : "";
-  let views = item.views ? `\n<b>Views:</b> ${item.views}` : "";
-  let caption = item.caption ? `\n\n<b>Description:</b>\n${escapeHTML(item.caption)}` : "";
+  let duration = item.duration ? `\n<b>재생 시간:</b> ${item.duration}` : "";
+  let views = item.views ? `\n<b>조회수:</b> ${item.views}` : "";
+  let caption = item.caption ? `\n\n<b>설명:</b>\n${escapeHTML(item.caption)}` : "";
 
   let videoBox = `┌────────────────────────────────────────┐\n`;
-  videoBox += `│  🎬 <a href="${postUrl}"><b>[ WATCH VIDEO PREVIEW ]</b></a>    │\n`;
-  videoBox += `│  ▶️  Tap frame or button to watch video  │\n`;
+  videoBox += `│  🎬 <a href="${postUrl}"><b>[ 동영상 미리보기 ]</b></a>    │\n`;
+  videoBox += `│  ▶️  화면이나 버튼을 누르면 동영상을 시청할 수 있습니다  │\n`;
   videoBox += `└────────────────────────────────────────┘\n\n`;
 
   let detailText = `🎬 <b>${escapeHTML(displayTitle)}</b>\n\n`;
   detailText += videoBox;
-  detailText += `<b>Channel:</b> ${escapeHTML(channelName)}\n`;
-  detailText += `<b>Type:</b> ${mediaType}${views}${duration}${caption}`;
+  detailText += `<b>채널:</b> ${escapeHTML(channelName)}\n`;
+  detailText += `<b>유형:</b> ${mediaType}${views}${duration}${caption}`;
 
   const inline_keyboard = [
-    [{ text: "🔗 JOIN GROUP", url: groupUrl }],
+    [{ text: "🔗 그룹 가입", url: groupUrl }],
     [
-      { text: "◀️ BACK", callback_data: `${callbackPrefix}:${page}` },
-      { text: "🏠 HOME", callback_data: "menu" }
+      { text: "◀️ 뒤로가기", callback_data: `${callbackPrefix}:${page}` },
+      { text: "🏠 홈", callback_data: "menu" }
     ]
   ];
 
@@ -1710,67 +1711,66 @@ const TARGET_CHANNELS = [
 ];
 
 async function formatTrendingCardLabel(rawTitle, isVideoCard = false, cardIndex = 0, channelKeyword = "") {
-  let englishTitle = rawTitle ? String(rawTitle).trim() : "";
+  let titleText = rawTitle ? String(rawTitle).trim() : "";
 
-  // 1. Translate if contains CJK or non-English characters
-  if (/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(englishTitle)) {
+  // 1. Translate title to Korean if not already in Korean
+  if (titleText && !/[\uac00-\ud7af]/.test(titleText)) {
     try {
-      englishTitle = await translateText(englishTitle, "en");
+      titleText = await translateText(titleText, "ko");
     } catch (e) {}
   }
 
   // Clean title: remove existing leading emojis, brackets, CJK leftovers, special noise
-  englishTitle = sanitizeUTF8(englishTitle)
+  titleText = sanitizeUTF8(titleText)
     .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "")
     .replace(/^\[[^\]]+\]\s*/, "")
-    .replace(/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]+/g, "")
-    .replace(/[^\w\s"-]/gi, " ")
+    .replace(/[^\w\s"-\uac00-\ud7af]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 
   // Video Cards specific (Cards 11-20): process actual raw source video title
   if (isVideoCard) {
-    let lowerVideo = englishTitle.toLowerCase();
+    let lowerVideo = titleText.toLowerCase();
     let videoSubject = "";
 
     // Extract actual video subject / topic strictly from raw post title
-    if (lowerVideo.includes("selena gomez")) {
-      videoSubject = "Selena Gomez";
-    } else if (lowerVideo.includes("jennie kaede")) {
-      videoSubject = "Jennie Kaede";
-    } else if (lowerVideo.includes("jennie")) {
-      videoSubject = "Jennie Free Move";
-    } else if (lowerVideo.includes("live realtime") || lowerVideo.includes("live dating")) {
-      videoSubject = "Live Dating Video";
-    } else if (lowerVideo.includes("gangnam")) {
-      videoSubject = "Gangnam 188GB";
-    } else if (lowerVideo.includes("buy a book") || lowerVideo.includes("book")) {
-      videoSubject = "Couple Book Story";
-    } else if (lowerVideo.includes("servant")) {
-      videoSubject = "Servant & Husband";
-    } else if (lowerVideo.includes("husband") || lowerVideo.includes("wife")) {
-      videoSubject = "Couple Special";
-    } else if (lowerVideo.includes("a muse")) {
-      videoSubject = "A Muse Update";
-    } else if (lowerVideo.includes("high-profile") || lowerVideo.includes("high profile")) {
-      videoSubject = "High-Profile Video";
-    } else if (englishTitle.length >= 3 && !/^\d+$/.test(englishTitle)) {
-      videoSubject = smartShortenTitle(englishTitle, 18);
+    if (lowerVideo.includes("selena") || lowerVideo.includes("셀레나")) {
+      videoSubject = "셀레나 고메즈";
+    } else if (lowerVideo.includes("kaede") || lowerVideo.includes("카에데")) {
+      videoSubject = "제니 카에데";
+    } else if (lowerVideo.includes("jennie") || lowerVideo.includes("제니")) {
+      videoSubject = "제니 영상";
+    } else if (lowerVideo.includes("live") || lowerVideo.includes("라이브") || lowerVideo.includes("dating")) {
+      videoSubject = "라이브 데이트";
+    } else if (lowerVideo.includes("gangnam") || lowerVideo.includes("강남")) {
+      videoSubject = "강남 188GB";
+    } else if (lowerVideo.includes("book") || lowerVideo.includes("책") || lowerVideo.includes("소설")) {
+      videoSubject = "커플 스토리";
+    } else if (lowerVideo.includes("servant") || lowerVideo.includes("하녀")) {
+      videoSubject = "하녀와 남편";
+    } else if (lowerVideo.includes("husband") || lowerVideo.includes("wife") || lowerVideo.includes("커플")) {
+      videoSubject = "커플 스페셜";
+    } else if (lowerVideo.includes("muse") || lowerVideo.includes("뮤즈")) {
+      videoSubject = "뮤즈 업데이트";
+    } else if (lowerVideo.includes("high-profile") || lowerVideo.includes("화제")) {
+      videoSubject = "화제의 영상";
+    } else if (titleText.length >= 2 && !/^\d+$/.test(titleText)) {
+      videoSubject = smartShortenTitle(titleText, 18);
     } else {
-      videoSubject = channelKeyword || "Trending Video";
+      videoSubject = channelKeyword || "트렌딩 동영상";
     }
 
     // Assign semantic emoji strictly based on the actual title content
     let emoji = "🎬";
     const lowerSub = videoSubject.toLowerCase();
-    if (lowerSub.includes("selena")) emoji = "🎵";
-    else if (lowerSub.includes("jennie")) emoji = "✨";
-    else if (lowerSub.includes("gangnam")) emoji = "🏙️";
-    else if (lowerSub.includes("book")) emoji = "📖";
-    else if (lowerSub.includes("servant") || lowerSub.includes("couple")) emoji = "❤️";
-    else if (lowerSub.includes("live")) emoji = "🔴";
-    else if (lowerSub.includes("high-profile")) emoji = "🎬";
-    else if (lowerSub.includes("muse")) emoji = "🎨";
+    if (lowerSub.includes("셀레나") || lowerSub.includes("음악")) emoji = "🎵";
+    else if (lowerSub.includes("제니")) emoji = "✨";
+    else if (lowerSub.includes("강남")) emoji = "🏙️";
+    else if (lowerSub.includes("스토리") || lowerSub.includes("소설")) emoji = "📖";
+    else if (lowerSub.includes("하녀") || lowerSub.includes("커플") || lowerSub.includes("남편")) emoji = "❤️";
+    else if (lowerSub.includes("라이브")) emoji = "🔴";
+    else if (lowerSub.includes("화제")) emoji = "🎬";
+    else if (lowerSub.includes("뮤즈")) emoji = "🎨";
     else emoji = "🎥";
 
     return `${emoji} ${videoSubject}`;
@@ -1845,16 +1845,16 @@ function smartShortenTitle(str, maxLen = 18) {
 }
 
 const CARD_1_TO_10_LABELS = [
-  "🔥 K-pop Dating Scandal",
-  "💋 Secret Relationship",
-  "👀 Idol Dating Rumor",
-  "💔 Celebrity Breakup",
-  "🚨 Dating Controversy",
-  "❤️ Secret Couple",
-  "😳 Viral Romance",
-  "🔥 Lovestagram",
-  "💍 Marriage Rumor",
-  "👀 Celebrity Scandal"
+  "🔥 K-Pop 열애설",
+  "💋 비밀 연애",
+  "👀 아이돌 열애 루머",
+  "💔 연예인 결별",
+  "🚨 열애 논란",
+  "❤️ 비밀 커플",
+  "😳 바이럴 로맨스",
+  "🔥 럽스타그램",
+  "💍 결혼 루머",
+  "👀 연예계 스캔들"
 ];
 
 async function getMainKeyboard() {
@@ -1926,32 +1926,32 @@ async function getTrendingKeyboard() {
 
   // 1. Breaking News (if any)
   if (breaking.length > 0) {
-    rows.push([{ text: "📰 BREAKING NEWS", callback_data: "none" }]);
+    rows.push([{ text: "📰 속보", callback_data: "none" }]);
     for (const news of breaking) {
-      const displayNews = await translateText(news, "en");
+      const displayNews = await translateText(news, "ko");
       rows.push([{ text: `📰 ${displayNews}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
     }
   }
 
   // 2. Refresh Trending button (full width)
-  rows.push([{ text: "🔄 REFRESH TRENDING", callback_data: "refresh_trending" }]);
+  rows.push([{ text: "🔄 트렌딩 새로고침", callback_data: "refresh_trending" }]);
 
   // 3. 8 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
   rows.push([
-    { text: "🎮 Play Games", callback_data: "cat:games" },
+    { text: "🎮 게임 플레이", callback_data: "cat:games" },
     { text: "🤖 AI", callback_data: "cat:ai_tools" }
   ]);
   rows.push([
-    { text: "📚 Short Stories", callback_data: "cat:stories" },
-    { text: "🔬 Scientific Paper", callback_data: "cat:papers" }
+    { text: "📚 단편 소설", callback_data: "cat:stories" },
+    { text: "🔬 학술 논문", callback_data: "cat:papers" }
   ]);
   rows.push([
-    { text: "🔓 Opening Up", callback_data: "cat:opening_up" },
-    { text: "🍴 Source of Food", callback_data: "cat:food_source" }
+    { text: "🔓 콘텐츠", callback_data: "cat:opening_up" },
+    { text: "🍴 미식 레시피", callback_data: "cat:food_source" }
   ]);
   rows.push([
-    { text: "💰 Financial Investment", callback_data: "cat:finance" },
-    { text: "🔞 Adult Content", callback_data: "cat:adult" }
+    { text: "💰 재테크 & 투자", callback_data: "cat:finance" },
+    { text: "🔞 성인 콘텐츠", callback_data: "cat:adult" }
   ]);
 
   return { inline_keyboard: rows };
@@ -1959,7 +1959,7 @@ async function getTrendingKeyboard() {
 
 async function renderSearchResults(chatId, query, page = 1, messageId = null) {
   recordUserSearch(chatId, query);
-  const displayQuery = await translateText(query, "en");
+  const displayQuery = await translateText(query, "ko");
 
   // Search posts from our 10 managed Telegram channels
   let posts = sourceRegistry.searchPosts(query);
@@ -1967,7 +1967,7 @@ async function renderSearchResults(chatId, query, page = 1, messageId = null) {
     posts = sourceRegistry.searchPosts(displayQuery);
   }
 
-  const titleHeader = `🔍 Live Trending Keyword: ${displayQuery}`;
+  const titleHeader = `🔍 실시간 검색어: ${displayQuery}`;
   const callbackPrefix = `search_page:${encodeURIComponent(query)}`;
 
   return await renderHyperlinkListPostView(chatId, titleHeader, posts, page, callbackPrefix, messageId);
@@ -1977,13 +1977,13 @@ function getChannelButtons(channels) {
   const rows = channels.map(ch => ([
     { text: `${ch.name}`, url: `https://t.me/${ch.user}` }
   ]));
-  rows.push([{ text: "🏠 Back to Main Menu", callback_data: "menu" }]);
+  rows.push([{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]);
   return { inline_keyboard: rows };
 }
 
 function formatChannelList(channels, topicName) {
   const displayTopicName = TOPIC_NAMES[topicName] || topicName;
-  return `📢 <b>${escapeHTML(displayTopicName)}</b>\n\n👇 Tap any post below:`;
+  return `📢 <b>${escapeHTML(displayTopicName)}</b>\n\n👇 아래 항목을 누르세요:`;
 }
 
 
@@ -1992,23 +1992,23 @@ function formatChannelList(channels, topicName) {
 // ============================
 const CATEGORIES = {
   games: {
-    title: "🎮 Play Games",
+    title: "🎮 게임 플레이",
     items: [
-      { name: "🎮 Play Games — @newgames", url: "https://t.me/newgames" },
-      { name: "🎮 Play Games — @GameMartzOfficial", url: "https://t.me/GameMartzOfficial" },
-      { name: "🎮 Play Games — @TGGames_official", url: "https://t.me/TGGames_official" },
-      { name: "🎮 Play Games — @thenotgames", url: "https://t.me/thenotgames" },
-      { name: "🎮 Play Games — @FreeGamesNews", url: "https://t.me/FreeGamesNews" },
-      { name: "🎮 Play Games — @swag912", url: "https://t.me/swag912?start=xbiso" },
-      { name: "🎮 Play Games — @xi_8888888", url: "https://t.me/xi_8888888?start=xbiso" },
-      { name: "🎮 Play Games — @lifanhuangyouxi", url: "https://t.me/lifanhuangyouxi?start=xbiso" },
-      { name: "🎮 Play Games — @zest110", url: "https://t.me/zest110?start=xbiso" },
-      { name: "🎮 Play Games — @Ebpay", url: "https://t.me/Ebpay?start=xbiso" },
-      { name: "🎮 Play Games — @dohnaduona", url: "https://t.me/dohnaduona?start=xbiso" },
-      { name: "🎮 Play Games — @farrslgrpg", url: "https://t.me/farrslgrpg?start=xbiso" },
-      { name: "🎮 Play Games — @MTXFXS", url: "https://t.me/MTXFXS?start=xbiso" },
-      { name: "🎮 Play Games — @huangyou_A", url: "https://t.me/huangyou_A?start=xbiso" },
-      { name: "🎮 Play Games — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" }
+      { name: "🎮 게임 플레이 — @newgames", url: "https://t.me/newgames" },
+      { name: "🎮 게임 플레이 — @GameMartzOfficial", url: "https://t.me/GameMartzOfficial" },
+      { name: "🎮 게임 플레이 — @TGGames_official", url: "https://t.me/TGGames_official" },
+      { name: "🎮 게임 플레이 — @thenotgames", url: "https://t.me/thenotgames" },
+      { name: "🎮 게임 플레이 — @FreeGamesNews", url: "https://t.me/FreeGamesNews" },
+      { name: "🎮 게임 플레이 — @swag912", url: "https://t.me/swag912?start=xbiso" },
+      { name: "🎮 게임 플레이 — @xi_8888888", url: "https://t.me/xi_8888888?start=xbiso" },
+      { name: "🎮 게임 플레이 — @lifanhuangyouxi", url: "https://t.me/lifanhuangyouxi?start=xbiso" },
+      { name: "🎮 게임 플레이 — @zest110", url: "https://t.me/zest110?start=xbiso" },
+      { name: "🎮 게임 플레이 — @Ebpay", url: "https://t.me/Ebpay?start=xbiso" },
+      { name: "🎮 게임 플레이 — @dohnaduona", url: "https://t.me/dohnaduona?start=xbiso" },
+      { name: "🎮 게임 플레이 — @farrslgrpg", url: "https://t.me/farrslgrpg?start=xbiso" },
+      { name: "🎮 게임 플레이 — @MTXFXS", url: "https://t.me/MTXFXS?start=xbiso" },
+      { name: "🎮 게임 플레이 — @huangyou_A", url: "https://t.me/huangyou_A?start=xbiso" },
+      { name: "🎮 게임 플레이 — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" }
     ]
   },
   ai_tools: {
@@ -2034,149 +2034,149 @@ const CATEGORIES = {
     ]
   },
   stories: {
-    title: "📚 Short Stories",
+    title: "📚 단편 소설",
     items: [
-      { name: "📚 Short Stories — @shortstoriesmm", url: "https://t.me/shortstoriesmm" },
-      { name: "📚 Short Stories — @tellshorttales", url: "https://t.me/tellshorttales" },
-      { name: "📚 Short Stories — @english_storyBook", url: "https://t.me/english_storyBook" },
-      { name: "📚 Short Stories — @book_lists", url: "https://t.me/book_lists" },
-      { name: "📚 Short Stories — @booksmania", url: "https://t.me/booksmania" },
-      { name: "📚 Short Stories — @happylibrary", url: "https://t.me/happylibrary?start=xbiso" },
-      { name: "📚 Short Stories — @WANJSW", url: "https://t.me/WANJSW?start=xbiso" },
-      { name: "📚 Short Stories — @JJSW125689", url: "https://t.me/JJSW125689?start=xbiso" },
-      { name: "📚 Short Stories — @JinPingMeiold", url: "https://t.me/JinPingMeiold?start=xbiso" },
-      { name: "📚 Short Stories — @JGshuoshu", url: "https://t.me/JGshuoshu?start=xbiso" },
-      { name: "📚 Short Stories — @sharebooks4you", url: "https://t.me/sharebooks4you?start=xbiso" },
-      { name: "📚 Short Stories — @soundxiaoshuo", url: "https://t.me/soundxiaoshuo?start=xbiso" },
-      { name: "📚 Short Stories — @yellownovel", url: "https://t.me/yellownovel?start=xbiso" },
-      { name: "📚 Short Stories — @gayui", url: "https://t.me/gayui?start=xbiso" },
-      { name: "📚 Short Stories — @GuyBuok", url: "https://t.me/GuyBuok?start=xbiso" },
-      { name: "📚 Short Stories — @BookLogChannel", url: "https://t.me/BookLogChannel?start=xbiso" },
-      { name: "📚 Short Stories — @novel_174", url: "https://t.me/novel_174?start=xbiso" },
-      { name: "📚 Short Stories — @ysxs8", url: "https://t.me/ysxs8?start=xbiso" }
+      { name: "📚 단편 소설 — @shortstoriesmm", url: "https://t.me/shortstoriesmm" },
+      { name: "📚 단편 소설 — @tellshorttales", url: "https://t.me/tellshorttales" },
+      { name: "📚 단편 소설 — @english_storyBook", url: "https://t.me/english_storyBook" },
+      { name: "📚 단편 소설 — @book_lists", url: "https://t.me/book_lists" },
+      { name: "📚 단편 소설 — @booksmania", url: "https://t.me/booksmania" },
+      { name: "📚 단편 소설 — @happylibrary", url: "https://t.me/happylibrary?start=xbiso" },
+      { name: "📚 단편 소설 — @WANJSW", url: "https://t.me/WANJSW?start=xbiso" },
+      { name: "📚 단편 소설 — @JJSW125689", url: "https://t.me/JJSW125689?start=xbiso" },
+      { name: "📚 단편 소설 — @JinPingMeiold", url: "https://t.me/JinPingMeiold?start=xbiso" },
+      { name: "📚 단편 소설 — @JGshuoshu", url: "https://t.me/JGshuoshu?start=xbiso" },
+      { name: "📚 단편 소설 — @sharebooks4you", url: "https://t.me/sharebooks4you?start=xbiso" },
+      { name: "📚 단편 소설 — @soundxiaoshuo", url: "https://t.me/soundxiaoshuo?start=xbiso" },
+      { name: "📚 단편 소설 — @yellownovel", url: "https://t.me/yellownovel?start=xbiso" },
+      { name: "📚 단편 소설 — @gayui", url: "https://t.me/gayui?start=xbiso" },
+      { name: "📚 단편 소설 — @GuyBuok", url: "https://t.me/GuyBuok?start=xbiso" },
+      { name: "📚 단편 소설 — @BookLogChannel", url: "https://t.me/BookLogChannel?start=xbiso" },
+      { name: "📚 단편 소설 — @novel_174", url: "https://t.me/novel_174?start=xbiso" },
+      { name: "📚 단편 소설 — @ysxs8", url: "https://t.me/ysxs8?start=xbiso" }
     ]
   },
   papers: {
-    title: "🔬 Scientific Paper",
+    title: "🔬 학술 논문",
     items: [
-      { name: "🔬 Scientific Paper — @science", url: "https://t.me/science" },
-      { name: "🔬 Scientific Paper — @scientific", url: "https://t.me/scientific" },
-      { name: "🔬 Scientific Paper — @science_talk", url: "https://t.me/science_talk" },
-      { name: "🔬 Scientific Paper — @research_publications", url: "https://t.me/research_publications" },
-      { name: "🔬 Scientific Paper — @assignmentandthesis", url: "https://t.me/assignmentandthesis" },
-      { name: "🔬 Scientific Paper — @VPNqn", url: "https://t.me/VPNqn?start=xbiso" },
-      { name: "🔬 Scientific Paper — @xiaohuojianvpnvpn", url: "https://t.me/xiaohuojianvpnvpn?start=xbiso" },
-      { name: "🔬 Scientific Paper — @BJxinyu", url: "https://t.me/BJxinyu?start=xbiso" },
-      { name: "🔬 Scientific Paper — @fun_apk", url: "https://t.me/fun_apk?start=xbiso" },
-      { name: "🔬 Scientific Paper — @XQFXS", url: "https://t.me/XQFXS?start=xbiso" },
-      { name: "🔬 Scientific Paper — @PJAPKVPN", url: "https://t.me/PJAPKVPN?start=xbiso" },
-      { name: "🔬 Scientific Paper — @qiuyue2", url: "https://t.me/qiuyue2?start=xbiso" },
-      { name: "🔬 Scientific Paper — @pjrjzy", url: "https://t.me/pjrjzy?start=xbiso" },
-      { name: "🔬 Scientific Paper — @feiyangdigital", url: "https://t.me/feiyangdigital?start=xbiso" },
-      { name: "🔬 Scientific Paper — @hkfwq111", url: "https://t.me/hkfwq111?start=xbiso" },
-      { name: "🔬 Scientific Paper — @LCGFX", url: "https://t.me/LCGFX?start=xbiso" },
-      { name: "🔬 Scientific Paper — @xiaoshuwu", url: "https://t.me/xiaoshuwu?start=xbiso" }
+      { name: "🔬 학술 논문 — @science", url: "https://t.me/science" },
+      { name: "🔬 학술 논문 — @scientific", url: "https://t.me/scientific" },
+      { name: "🔬 학술 논문 — @science_talk", url: "https://t.me/science_talk" },
+      { name: "🔬 학술 논문 — @research_publications", url: "https://t.me/research_publications" },
+      { name: "🔬 학술 논문 — @assignmentandthesis", url: "https://t.me/assignmentandthesis" },
+      { name: "🔬 학술 논문 — @VPNqn", url: "https://t.me/VPNqn?start=xbiso" },
+      { name: "🔬 학술 논문 — @xiaohuojianvpnvpn", url: "https://t.me/xiaohuojianvpnvpn?start=xbiso" },
+      { name: "🔬 학술 논문 — @BJxinyu", url: "https://t.me/BJxinyu?start=xbiso" },
+      { name: "🔬 학술 논문 — @fun_apk", url: "https://t.me/fun_apk?start=xbiso" },
+      { name: "🔬 학술 논문 — @XQFXS", url: "https://t.me/XQFXS?start=xbiso" },
+      { name: "🔬 학술 논문 — @PJAPKVPN", url: "https://t.me/PJAPKVPN?start=xbiso" },
+      { name: "🔬 학술 논문 — @qiuyue2", url: "https://t.me/qiuyue2?start=xbiso" },
+      { name: "🔬 학술 논문 — @pjrjzy", url: "https://t.me/pjrjzy?start=xbiso" },
+      { name: "🔬 학술 논문 — @feiyangdigital", url: "https://t.me/feiyangdigital?start=xbiso" },
+      { name: "🔬 학술 논문 — @hkfwq111", url: "https://t.me/hkfwq111?start=xbiso" },
+      { name: "🔬 학술 논문 — @LCGFX", url: "https://t.me/LCGFX?start=xbiso" },
+      { name: "🔬 학술 논문 — @xiaoshuwu", url: "https://t.me/xiaoshuwu?start=xbiso" }
     ]
   },
   opening_up: {
-    title: "🔓 Opening Up",
+    title: "🔓 콘텐츠",
     items: [
-      { name: "🔓 Opening Up — @ASMREmily", url: "https://t.me/ASMREmily" },
-      { name: "🔓 Opening Up — @asmrselena", url: "https://t.me/asmrselena" },
-      { name: "🔓 Opening Up — @videosasmr", url: "https://t.me/videosasmr" },
-      { name: "🔓 Opening Up — @ASMR_Relaxing_Sound", url: "https://t.me/ASMR_Relaxing_Sound" },
-      { name: "🔓 Opening Up — @relaxwithasmr", url: "https://t.me/relaxwithasmr" },
-      { name: "🔓 Opening Up — @QianMogc_asmr1", url: "https://t.me/QianMogc_asmr1?start=xbiso" },
-      { name: "🔓 Opening Up — @R_E_STUDIO", url: "https://t.me/R_E_STUDIO?start=xbiso" },
-      { name: "🔓 Opening Up — @jingluoasmr", url: "https://t.me/jingluoasmr?start=xbiso" },
-      { name: "🔓 Opening Up — @ASMRLNGC", url: "https://t.me/ASMRLNGC?start=xbiso" },
-      { name: "🔓 Opening Up — @huach12", url: "https://t.me/huach12?start=xbiso" },
-      { name: "🔓 Opening Up — @PMV8888", url: "https://t.me/PMV8888?start=xbiso" },
-      { name: "🔓 Opening Up — @OUEMEI", url: "https://t.me/OUEMEI?start=xbiso" },
-      { name: "🔓 Opening Up — @PMVMOI", url: "https://t.me/PMVMOI?start=xbiso" },
-      { name: "🔓 Opening Up — @FC2PPVcom", url: "https://t.me/FC2PPVcom?start=xbiso" },
-      { name: "🔓 Opening Up — @asmreggaudios", url: "https://t.me/asmreggaudios?start=xbiso" },
-      { name: "🔓 Opening Up — @asmr_one_chan", url: "https://t.me/asmr_one_chan?start=xbiso" }
+      { name: "🔓 콘텐츠 — @ASMREmily", url: "https://t.me/ASMREmily" },
+      { name: "🔓 콘텐츠 — @asmrselena", url: "https://t.me/asmrselena" },
+      { name: "🔓 콘텐츠 — @videosasmr", url: "https://t.me/videosasmr" },
+      { name: "🔓 콘텐츠 — @ASMR_Relaxing_Sound", url: "https://t.me/ASMR_Relaxing_Sound" },
+      { name: "🔓 콘텐츠 — @relaxwithasmr", url: "https://t.me/relaxwithasmr" },
+      { name: "🔓 콘텐츠 — @QianMogc_asmr1", url: "https://t.me/QianMogc_asmr1?start=xbiso" },
+      { name: "🔓 콘텐츠 — @R_E_STUDIO", url: "https://t.me/R_E_STUDIO?start=xbiso" },
+      { name: "🔓 콘텐츠 — @jingluoasmr", url: "https://t.me/jingluoasmr?start=xbiso" },
+      { name: "🔓 콘텐츠 — @ASMRLNGC", url: "https://t.me/ASMRLNGC?start=xbiso" },
+      { name: "🔓 콘텐츠 — @huach12", url: "https://t.me/huach12?start=xbiso" },
+      { name: "🔓 콘텐츠 — @PMV8888", url: "https://t.me/PMV8888?start=xbiso" },
+      { name: "🔓 콘텐츠 — @OUEMEI", url: "https://t.me/OUEMEI?start=xbiso" },
+      { name: "🔓 콘텐츠 — @PMVMOI", url: "https://t.me/PMVMOI?start=xbiso" },
+      { name: "🔓 콘텐츠 — @FC2PPVcom", url: "https://t.me/FC2PPVcom?start=xbiso" },
+      { name: "🔓 콘텐츠 — @asmreggaudios", url: "https://t.me/asmreggaudios?start=xbiso" },
+      { name: "🔓 콘텐츠 — @asmr_one_chan", url: "https://t.me/asmr_one_chan?start=xbiso" }
     ]
   },
   food_source: {
-    title: "🍴 Source of Food",
+    title: "🍴 미식 레시피",
     items: [
-      { name: "🍴 Source of Food — @culinaryD", url: "https://t.me/culinaryD" },
-      { name: "🍴 Source of Food — @cookingandcooking", url: "https://t.me/cookingandcooking" },
-      { name: "🍴 Source of Food — @cookingdish", url: "https://t.me/cookingdish" },
-      { name: "🍴 Source of Food — @thevideorecipes", url: "https://t.me/thevideorecipes" },
-      { name: "🍴 Source of Food — @JiyasKitchenIndianVegFood", url: "https://t.me/JiyasKitchenIndianVegFood" },
-      { name: "🍴 Source of Food — @zhenmeiyisi", url: "https://t.me/zhenmeiyisi?start=xbiso" },
-      { name: "🍴 Source of Food — @NudefilmsTV", url: "https://t.me/NudefilmsTV?start=xbiso" },
-      { name: "🍴 Source of Food — @gchtdpymfljrg", url: "https://t.me/gchtdpymfljrg?start=xbiso" },
-      { name: "🍴 Source of Food — @av0000000001", url: "https://t.me/av0000000001?start=xbiso" },
-      { name: "🍴 Source of Food — @AV_cao", url: "https://t.me/AV_cao?start=xbiso" },
-      { name: "🍴 Source of Food — @wumingzhidao123", url: "https://t.me/wumingzhidao123?start=xbiso" },
-      { name: "🍴 Source of Food — @FC2PPV4K", url: "https://t.me/FC2PPV4K?start=xbiso" },
-      { name: "🍴 Source of Food — @fuqibacc", url: "https://t.me/fuqibacc?start=xbiso" },
-      { name: "🍴 Source of Food — @fulicangku0", url: "https://t.me/fulicangku0?start=xbiso" },
-      { name: "🍴 Source of Food — @cili8888", url: "https://t.me/cili8888?start=xbiso" },
-      { name: "🍴 Source of Food — @shunvguan4", url: "https://t.me/shunvguan4?start=xbiso" },
-      { name: "🍴 Source of Food — @mingxingtu5", url: "https://t.me/mingxingtu5?start=xbiso" },
-      { name: "🍴 Source of Food — @Gay123TV", url: "https://t.me/Gay123TV?start=xbiso" },
-      { name: "🍴 Source of Food — @Aliyun_4K_Movies", url: "https://t.me/Aliyun_4K_Movies?start=xbiso" },
-      { name: "🍴 Source of Food — @ZYFLS66", url: "https://t.me/ZYFLS66?start=xbiso" }
+      { name: "🍴 미식 레시피 — @culinaryD", url: "https://t.me/culinaryD" },
+      { name: "🍴 미식 레시피 — @cookingandcooking", url: "https://t.me/cookingandcooking" },
+      { name: "🍴 미식 레시피 — @cookingdish", url: "https://t.me/cookingdish" },
+      { name: "🍴 미식 레시피 — @thevideorecipes", url: "https://t.me/thevideorecipes" },
+      { name: "🍴 미식 레시피 — @JiyasKitchenIndianVegFood", url: "https://t.me/JiyasKitchenIndianVegFood" },
+      { name: "🍴 미식 레시피 — @zhenmeiyisi", url: "https://t.me/zhenmeiyisi?start=xbiso" },
+      { name: "🍴 미식 레시피 — @NudefilmsTV", url: "https://t.me/NudefilmsTV?start=xbiso" },
+      { name: "🍴 미식 레시피 — @gchtdpymfljrg", url: "https://t.me/gchtdpymfljrg?start=xbiso" },
+      { name: "🍴 미식 레시피 — @av0000000001", url: "https://t.me/av0000000001?start=xbiso" },
+      { name: "🍴 미식 레시피 — @AV_cao", url: "https://t.me/AV_cao?start=xbiso" },
+      { name: "🍴 미식 레시피 — @wumingzhidao123", url: "https://t.me/wumingzhidao123?start=xbiso" },
+      { name: "🍴 미식 레시피 — @FC2PPV4K", url: "https://t.me/FC2PPV4K?start=xbiso" },
+      { name: "🍴 미식 레시피 — @fuqibacc", url: "https://t.me/fuqibacc?start=xbiso" },
+      { name: "🍴 미식 레시피 — @fulicangku0", url: "https://t.me/fulicangku0?start=xbiso" },
+      { name: "🍴 미식 레시피 — @cili8888", url: "https://t.me/cili8888?start=xbiso" },
+      { name: "🍴 미식 레시피 — @shunvguan4", url: "https://t.me/shunvguan4?start=xbiso" },
+      { name: "🍴 미식 레시피 — @mingxingtu5", url: "https://t.me/mingxingtu5?start=xbiso" },
+      { name: "🍴 미식 레시피 — @Gay123TV", url: "https://t.me/Gay123TV?start=xbiso" },
+      { name: "🍴 미식 레시피 — @Aliyun_4K_Movies", url: "https://t.me/Aliyun_4K_Movies?start=xbiso" },
+      { name: "🍴 미식 레시피 — @ZYFLS66", url: "https://t.me/ZYFLS66?start=xbiso" }
     ]
   },
   finance: {
-    title: "💰 Financial Investment",
+    title: "💰 재테크 & 투자",
     items: [
-      { name: "💰 Financial Investment — @finance", url: "https://t.me/finance" },
-      { name: "💰 Financial Investment — @crypto_finance", url: "https://t.me/crypto_finance" },
-      { name: "💰 Financial Investment — @stockstudy", url: "https://t.me/stockstudy" },
-      { name: "💰 Financial Investment — @financially_free_in", url: "https://t.me/financially_free_in" },
-      { name: "💰 Financial Investment — @token", url: "https://t.me/token" },
-      { name: "💰 Financial Investment — @biquanqu", url: "https://t.me/biquanqu?start=xbiso" },
-      { name: "💰 Financial Investment — @China77", url: "https://t.me/China77?start=xbiso" },
-      { name: "💰 Financial Investment — @tonkeeper_news", url: "https://t.me/tonkeeper_news?start=xbiso" },
-      { name: "💰 Financial Investment — @toncoin", url: "https://t.me/toncoin?start=xbiso" },
-      { name: "💰 Financial Investment — @bbxx6666", url: "https://t.me/bbxx6666?start=xbiso" },
-      { name: "💰 Financial Investment — @sssvip4", url: "https://t.me/sssvip4?start=xbiso" },
-      { name: "💰 Financial Investment — @toncoin_es", url: "https://t.me/toncoin_es?start=xbiso" },
-      { name: "💰 Financial Investment — @bx600", url: "https://t.me/bx600?start=xbiso" },
-      { name: "💰 Financial Investment — @vhhhh", url: "https://t.me/vhhhh?start=xbiso" },
-      { name: "💰 Financial Investment — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" },
-      { name: "💰 Financial Investment — @xinwenrd", url: "https://t.me/xinwenrd?start=xbiso" },
-      { name: "💰 Financial Investment — @shuzibaike", url: "https://t.me/shuzibaike?start=xbiso" }
+      { name: "💰 재테크 & 투자 — @finance", url: "https://t.me/finance" },
+      { name: "💰 재테크 & 투자 — @crypto_finance", url: "https://t.me/crypto_finance" },
+      { name: "💰 재테크 & 투자 — @stockstudy", url: "https://t.me/stockstudy" },
+      { name: "💰 재테크 & 투자 — @financially_free_in", url: "https://t.me/financially_free_in" },
+      { name: "💰 재테크 & 투자 — @token", url: "https://t.me/token" },
+      { name: "💰 재테크 & 투자 — @biquanqu", url: "https://t.me/biquanqu?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @China77", url: "https://t.me/China77?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @tonkeeper_news", url: "https://t.me/tonkeeper_news?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @toncoin", url: "https://t.me/toncoin?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @bbxx6666", url: "https://t.me/bbxx6666?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @sssvip4", url: "https://t.me/sssvip4?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @toncoin_es", url: "https://t.me/toncoin_es?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @bx600", url: "https://t.me/bx600?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @vhhhh", url: "https://t.me/vhhhh?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @dailikaixian", url: "https://t.me/dailikaixian?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @xinwenrd", url: "https://t.me/xinwenrd?start=xbiso" },
+      { name: "💰 재테크 & 투자 — @shuzibaike", url: "https://t.me/shuzibaike?start=xbiso" }
     ]
   },
   adult: {
-    title: "🔞 Adult Content",
+    title: "🔞 성인 콘텐츠",
     items: [
-      { name: "🔞 Adult Content — @bgcgw1", url: "https://t.me/bgcgw1/2773" },
-      { name: "🔞 Adult Content — @weme_downIoad", url: "https://t.me/weme_downIoad/1031730" },
-      { name: "🔞 Adult Content — @xahvh", url: "https://t.me/xahvh/1286" },
-      { name: "🔞 Adult Content — @Daoyusmlie", url: "https://t.me/Daoyusmlie/93889" },
-      { name: "🔞 Adult Content — @tianjin2023", url: "https://t.me/tianjin2023/6939" },
-      { name: "🔞 Adult Content — @XOTANHUA", url: "https://t.me/XOTANHUA?start=xbiso" },
-      { name: "🔞 Adult Content — @diyisec", url: "https://t.me/diyisec?start=xbiso" },
-      { name: "🔞 Adult Content — @SGPAVCN", url: "https://t.me/SGPAVCN?start=xbiso" },
-      { name: "🔞 Adult Content — @flapxz3", url: "https://t.me/flapxz3?start=xbiso" },
-      { name: "🔞 Adult Content — @biaojie128", url: "https://t.me/biaojie128?start=xbiso" },
-      { name: "🔞 Adult Content — @dongman98", url: "https://t.me/dongman98?start=xbiso" },
-      { name: "🔞 Adult Content — @v131312", url: "https://t.me/v131312?start=xbiso" },
-      { name: "🔞 Adult Content — @tunjing66666", url: "https://t.me/tunjing66666?start=xbiso" },
-      { name: "🔞 Adult Content — @minixue", url: "https://t.me/minixue?start=xbiso" },
-      { name: "🔞 Adult Content — @baiyisizu", url: "https://t.me/baiyisizu?start=xbiso" },
-      { name: "🔞 Adult Content — @daydayACG", url: "https://t.me/daydayACG?start=xbiso" },
-      { name: "🔞 Adult Content — @OFOSSS", url: "https://t.me/OFOSSS?start=xbiso" },
-      { name: "🔞 Adult Content — @happylibrary", url: "https://t.me/happylibrary?start=xbiso" },
-      { name: "🔞 Adult Content — @wumingzhidao123", url: "https://t.me/wumingzhidao123?start=xbiso" },
-      { name: "🔞 Adult Content — @avav131", url: "https://t.me/avav131?start=xbiso" },
-      { name: "🔞 Adult Content — @skkt888", url: "https://t.me/skkt888?start=xbiso" },
-      { name: "🔞 Adult Content — @r18cg", url: "https://t.me/r18cg?start=xbiso" },
-      { name: "🔞 Adult Content — @cosywdj", url: "https://t.me/cosywdj?start=xbiso" },
-      { name: "🔞 Adult Content — @cutexf1v1", url: "https://t.me/cutexf1v1?start=xbiso" },
-      { name: "🔞 Adult Content — @chigua1618", url: "https://t.me/chigua1618?start=xbiso" },
-      { name: "🔞 Adult Content — @ddddffxxr", url: "https://t.me/ddddffxxr?start=xbiso" },
-      { name: "🔞 Adult Content — @ahegobymt", url: "https://t.me/ahegobymt?start=xbiso" },
-      { name: "🔞 Adult Content — @AVDSTV", url: "https://t.me/AVDSTV?start=xbiso" }
+      { name: "🔞 성인 콘텐츠 — @bgcgw1", url: "https://t.me/bgcgw1/2773" },
+      { name: "🔞 성인 콘텐츠 — @weme_downIoad", url: "https://t.me/weme_downIoad/1031730" },
+      { name: "🔞 성인 콘텐츠 — @xahvh", url: "https://t.me/xahvh/1286" },
+      { name: "🔞 성인 콘텐츠 — @Daoyusmlie", url: "https://t.me/Daoyusmlie/93889" },
+      { name: "🔞 성인 콘텐츠 — @tianjin2023", url: "https://t.me/tianjin2023/6939" },
+      { name: "🔞 성인 콘텐츠 — @XOTANHUA", url: "https://t.me/XOTANHUA?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @diyisec", url: "https://t.me/diyisec?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @SGPAVCN", url: "https://t.me/SGPAVCN?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @flapxz3", url: "https://t.me/flapxz3?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @biaojie128", url: "https://t.me/biaojie128?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @dongman98", url: "https://t.me/dongman98?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @v131312", url: "https://t.me/v131312?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @tunjing66666", url: "https://t.me/tunjing66666?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @minixue", url: "https://t.me/minixue?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @baiyisizu", url: "https://t.me/baiyisizu?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @daydayACG", url: "https://t.me/daydayACG?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @OFOSSS", url: "https://t.me/OFOSSS?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @happylibrary", url: "https://t.me/happylibrary?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @wumingzhidao123", url: "https://t.me/wumingzhidao123?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @avav131", url: "https://t.me/avav131?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @skkt888", url: "https://t.me/skkt888?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @r18cg", url: "https://t.me/r18cg?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @cosywdj", url: "https://t.me/cosywdj?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @cutexf1v1", url: "https://t.me/cutexf1v1?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @chigua1618", url: "https://t.me/chigua1618?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @ddddffxxr", url: "https://t.me/ddddffxxr?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @ahegobymt", url: "https://t.me/ahegobymt?start=xbiso" },
+      { name: "🔞 성인 콘텐츠 — @AVDSTV", url: "https://t.me/AVDSTV?start=xbiso" }
     ]
   }
 };
@@ -2246,9 +2246,10 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     // Welcome image + text
     await sendPhotoSafe(chatId, WELCOME_IMAGE, {
       caption:
-        `📡 <b>Welcome to NexaHub, ${escapeHTML(firstName)}!</b>\n\n` +
-        `🔍This is a Telegram resource search engine. Send keywords to find groups, channels, videos, and music.\n\n` +
-        `👇 Tap any topic to see the best channels!`,
+        `📡 <b>NexaHub에 오신 것을 환영합니다, ${escapeHTML(firstName)}님!</b>\n\n` +
+        `🔍 텔레그램 리소스 검색 엔진입니다. 키워드를 전송하여 그룹, 채널, 동영상, 음악을 검색하세요.\n\n` +
+        `한국어 및 영어를 지원합니다.\n\n` +
+        `👇 탐색할 주제를 선택하세요!`,
       parse_mode: "HTML",
       reply_markup: getPersistentNavigationKeyboard()
     });
@@ -2259,7 +2260,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const combinedKeyboard = await getTrendingKeyboard();
 
     await sendMessageSafe(chatId,
-      `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`,
+      `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`,
       {
         parse_mode: "HTML",
         reply_markup: combinedKeyboard,
@@ -2275,19 +2276,19 @@ bot.onText(/\/19guide/, async (msg) => {
   try {
     const chatId = msg.chat.id;
 
-    const message = `<b>How to Access Restricted/Sensitive Content on Telegram (iOS)</b>\n\n` +
-      `If you encounter the following message when joining a group or channel:\n\n` +
-      `<i>"This channel can't be displayed because it was used to spread pornographic content."</i>\n\n` +
-      `<b>The Reason:</b>\n` +
-      `The channel or group has been restricted by Telegram for containing adult or sensitive content.\n\n` +
-      `<b>✅ The Fix:</b>\n\n` +
-      `Log in to Telegram Web: https://web.telegram.org (Open this link in your mobile or desktop browser).\n\n` +
-      `Follow these steps:\n` +
-      `➊ Go to Settings\n` +
-      `➋ Select Privacy and Security\n` +
-      `➌ Scroll down to the Sensitive Content section\n` +
-      `➍ Enable "Disable filtering"\n\n` +
-      `Restart the Telegram app on your iOS device, and you should now have full access.`;
+    const message = `<b>텔레그램 제한/민감한 콘텐츠 해제 가이드 (iOS)</b>\n\n` +
+      `그룹이나 채널에 가입할 때 다음 메시지가 표시되는 경우:\n\n` +
+      `<i>"포르노 콘텐츠 유포에 사용되었기 때문에 이 채널을 표시할 수 없습니다."</i>\n\n` +
+      `<b>원인:</b>\n` +
+      `해당 채널 또는 그룹이 민감한 콘텐츠로 인해 텔레그램에서 제한되었습니다.\n\n` +
+      `<b>✅ 해제 방법:</b>\n\n` +
+      `모바일 또는 데스크톱 브라우저에서 텔레그램 웹 접속: https://web.telegram.org\n\n` +
+      `다음 순서대로 설정하세요:\n` +
+      `➊ 설정 (Settings) 이동\n` +
+      `➋ 개인 정보 및 보안 (Privacy and Security) 선택\n` +
+      `➌ 민감한 콘텐츠 (Sensitive Content) 항목으로 스크롤\n` +
+      `➍ "필터링 안 함" (Disable filtering) 활성화\n\n` +
+      `iOS 기기에서 텔레그램 앱을 재시작하면 모든 콘텐츠에 정상적으로 접근할 수 있습니다.`;
 
     await sendMessageSafe(chatId, message, {
       parse_mode: "HTML",
@@ -2384,7 +2385,7 @@ bot.on("callback_query", async (query) => {
       await renderTopicPosts(chatId, topicKey, page, messageId);
     } else if (data === "refresh_trending") {
       const combinedKeyboard = await getTrendingKeyboard();
-      const text = `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`;
+      const text = `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`;
       const opts = {
         parse_mode: "HTML",
         reply_markup: combinedKeyboard,
@@ -2396,7 +2397,7 @@ bot.on("callback_query", async (query) => {
       }
     } else if (data === "menu") {
       const combinedKeyboard = await getTrendingKeyboard();
-      const text = `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`;
+      const text = `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`;
       const opts = {
         parse_mode: "HTML",
         reply_markup: combinedKeyboard,
@@ -2415,14 +2416,14 @@ bot.on("callback_query", async (query) => {
 
         const combinedKeyboard = await getTrendingKeyboard();
         await sendMessageSafe(chatId,
-          `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`,
+          `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`,
           {
             parse_mode: "HTML",
             reply_markup: combinedKeyboard,
           }
         );
         await sendMessageSafe(chatId,
-          `✨ <b>Fresh session started!</b>`,
+          `✨ <b>새로운 세션이 시작되었습니다!</b>`,
           {
             parse_mode: "HTML",
             reply_markup: getPersistentNavigationKeyboard()
@@ -2435,7 +2436,7 @@ bot.on("callback_query", async (query) => {
           } catch (e) {}
         }
         await sendMessageSafe(chatId,
-          `❌ History clearing cancelled.`,
+          `❌ 기록 삭제가 취소되었습니다.`,
           {
             parse_mode: "HTML",
             reply_markup: getPersistentNavigationKeyboard()
@@ -2457,11 +2458,11 @@ bot.on("message", async (msg) => {
     if (msg.message_id) trackMessage(chatId, msg.message_id);
     if (!text) return;
 
-    if (text === "🏠 Home") {
+    if (text === "🏠 Home" || text === "🏠 홈") {
       const combinedKeyboard = await getTrendingKeyboard();
 
       await sendMessageSafe(chatId,
-        `🔥 <b>HOT TOPICS</b>\n\nChoose a topic to explore channels 👇`,
+        `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`,
         {
           parse_mode: "HTML",
           reply_markup: combinedKeyboard,
@@ -2470,13 +2471,13 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "ℹ️ About") {
+    if (text === "ℹ️ About" || text === "ℹ️ 정보") {
       const aboutText =
-        `ℹ️ <b>About NexaHub</b>\n\n` +
-        `NexaHub is a fast, intelligent Telegram resource search engine.\n\n` +
-        `• Send any keyword to search groups, channels, and videos.\n` +
-        `• Explore Hot Topics, Trending searches, and Breaking News.\n` +
-        `• Access featured media & direct channel links instantly.`;
+        `ℹ️ <b>NexaHub 정보</b>\n\n` +
+        `NexaHub는 빠르고 지능적인 텔레그램 리소스 검색 엔진입니다.\n\n` +
+        `• 키워드를 전송하여 그룹, 채널, 동영상을 검색할 수 있습니다.\n` +
+        `• 핫 토픽, 실시간 검색어, 속보를 탐색할 수 있습니다.\n` +
+        `• 추천 미디어 및 채널 링크를 즉시 이용할 수 있습니다.`;
 
       await sendMessageSafe(chatId, aboutText, {
         parse_mode: "HTML",
@@ -2485,19 +2486,19 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "🗑️ History" || text === "🗑️ Clear History") {
+    if (text === "🗑️ History" || text === "🗑️ Clear History" || text === "🗑️ 기록") {
       const confirmText =
-        `⚠️ <b>Clear Chat History?</b>\n\n` +
-        `This will remove the recent NexaHub messages from this conversation and start a fresh session.\n\n` +
-        `Are you sure?`;
+        `⚠️ <b>대화 기록을 삭제하시겠습니까?</b>\n\n` +
+        `최근 NexaHub 메시지를 삭제하고 새 세션을 시작합니다.\n\n` +
+        `진행하시겠습니까?`;
 
       await sendMessageSafe(chatId, confirmText, {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "✅ Yes, Clear", callback_data: "confirm_clear_history" },
-              { text: "❌ Cancel", callback_data: "cancel_clear_history" }
+              { text: "✅ 예, 삭제합니다", callback_data: "confirm_clear_history" },
+              { text: "❌ 취소", callback_data: "cancel_clear_history" }
             ]
           ]
         }
