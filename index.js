@@ -2053,14 +2053,14 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. Navigation Buttons: Breaking News & Content Hub
-  rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
-  rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
-
-  // 3. 🔥 HOT TOPICS Section Header & 20 Cards (4 rows x 5 columns) directly on Home screen
+  // 2. 🔥 HOT TOPICS Section Header & 20 Cards (4 rows x 5 columns) directly below TOP 10 & 🔄 순위 새로고침
   rows.push([{ text: "🔥 HOT TOPICS", callback_data: "none" }]);
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
   rows.push(...mainKeys);
+
+  // 3. Navigation Buttons directly below Cards 1–20: Breaking News & Content Hub
+  rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
+  rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
 
   return { inline_keyboard: rows };
 }
