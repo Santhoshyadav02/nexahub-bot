@@ -2057,7 +2057,8 @@ async function getTrendingKeyboard() {
   rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
   rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
 
-  // 3. 20 HOT TOPICS Cards (4 rows x 5 columns) directly on Home screen
+  // 3. 🔥 HOT TOPICS Section Header & 20 Cards (4 rows x 5 columns) directly on Home screen
+  rows.push([{ text: "🔥 HOT TOPICS", callback_data: "none" }]);
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
   rows.push(...mainKeys);
 
@@ -2494,6 +2495,10 @@ bot.on("callback_query", async (query) => {
     const data = query.data;
 
     const messageId = query.message ? query.message.message_id : null;
+
+    if (data === "none") {
+      return await bot.answerCallbackQuery(query.id).catch(() => {});
+    }
 
     if (data.startsWith("det:")) {
       // det:<callbackPrefix>:<itemIndex>:<page>
