@@ -64,7 +64,7 @@ async function scrapeTrending() {
 async function scrapeBreakingNews() {
   console.log("📰 Scraping breaking news via HTTP RSS...");
   return new Promise((resolve) => {
-    const newsUrl = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en";
+    const newsUrl = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
     https.get(newsUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -77,10 +77,14 @@ async function scrapeBreakingNews() {
       res.on("end", () => {
         const itemMatches = data.match(/<item>([\s\S]*?)<\/item>/gi) || [];
         const news = [];
+        const seenTitles = new Set();
+
         for (const item of itemMatches) {
           const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/i);
+          const linkMatch = item.match(/<link>([\s\S]*?)<\/link>/i);
+
           if (titleMatch) {
-            let clean = titleMatch[1]
+            let cleanTitle = titleMatch[1]
               .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
               .replace(/<[^>]+>/g, "")
               .replace(/&quot;/g, '"')
@@ -89,8 +93,15 @@ async function scrapeBreakingNews() {
               .replace(/&gt;/g, '>')
               .replace(/&#39;/g, "'")
               .trim();
-            if (clean && !news.includes(clean)) {
-              news.push(clean);
+
+            let cleanLink = linkMatch ? linkMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim() : "";
+
+            if (cleanTitle && !seenTitles.has(cleanTitle)) {
+              seenTitles.add(cleanTitle);
+              news.push({
+                title: cleanTitle,
+                url: cleanLink || `https://www.google.com/search?q=${encodeURIComponent(cleanTitle)}`
+              });
             }
           }
           if (news.length >= 5) break;

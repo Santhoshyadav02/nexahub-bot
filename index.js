@@ -117,10 +117,14 @@ async function translateText(text, targetLang = "ko") {
     return translationCache.get(cacheKey);
   }
 
+  // Tier 1: Google GTX
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
     const translated = await new Promise((resolve) => {
-      const req = https.get(url, { timeout: 3000 }, (res) => {
+      const req = https.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        timeout: 3000
+      }, (res) => {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
@@ -128,28 +132,71 @@ async function translateText(text, targetLang = "ko") {
             const parsed = JSON.parse(data);
             if (parsed && parsed[0] && parsed[0][0] && parsed[0][0][0]) {
               const fullText = parsed[0].map((item) => item[0]).filter(Boolean).join("");
-              resolve(fullText || text);
+              resolve(fullText);
             } else {
-              resolve(text);
+              resolve(null);
             }
           } catch (e) {
-            resolve(text);
+            resolve(null);
           }
         });
       });
-      req.on("error", () => resolve(text));
+      req.on("error", () => resolve(null));
       req.on("timeout", () => {
         req.destroy();
-        resolve(text);
+        resolve(null);
       });
     });
 
-    const result = translated || text;
-    translationCache.set(cacheKey, result);
-    return result;
+    if (translated && translated !== text) {
+      translationCache.set(cacheKey, translated);
+      return translated;
+    }
   } catch (err) {
-    return text;
+    // Fall through to Tier 2
   }
+
+  // Tier 2: MyMemory API Fallback
+  try {
+    const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${targetLang}`;
+    const fallbackTranslated = await new Promise((resolve) => {
+      const req = https.get(fallbackUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        timeout: 3000
+      }, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed && parsed.responseData && parsed.responseData.translatedText) {
+              resolve(parsed.responseData.translatedText);
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            resolve(null);
+          }
+        });
+      });
+      req.on("error", () => resolve(null));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(null);
+      });
+    });
+
+    if (fallbackTranslated && fallbackTranslated !== text) {
+      translationCache.set(cacheKey, fallbackTranslated);
+      return fallbackTranslated;
+    }
+  } catch (err) {
+    // Fall through to safety
+  }
+
+  // Tier 3: Return original text safely
+  translationCache.set(cacheKey, text);
+  return text;
 }
 
 // ============================
@@ -1986,6 +2033,55 @@ function formatChannelList(channels, topicName) {
   return `📢 <b>${escapeHTML(displayTopicName)}</b>\n\n👇 아래 항목을 누르세요:`;
 }
 
+async function renderNewsArticlePage(chatId, articleIndex = 0, messageId = null) {
+  const news = await scraper.scrapeBreakingNews();
+  if (!news || news.length === 0) {
+    const text = "📰 <b>속보 뉴스</b>\n\n현재 표시할 최신 뉴스 속보가 없습니다.";
+    const opts = {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [[{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]]
+      }
+    };
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, text, opts);
+    }
+    return await sendMessageSafe(chatId, text, opts);
+  }
+
+  const idx = Math.max(0, Math.min(articleIndex, news.length - 1));
+  const item = news[idx];
+  const translatedTitle = await translateText(item.title, "ko");
+
+  const text =
+    `📰 <b>속보 상세 뉴스 [ ${idx + 1} / ${news.length} ]</b>\n\n` +
+    `📌 <b>${escapeHTML(translatedTitle)}</b>\n\n` +
+    `💡 버튼을 클릭하여 원문 기사를 확인하거나 다른 속보를 둘러보세요.`;
+
+  const inline_keyboard = [];
+  inline_keyboard.push([{ text: "🔗 원문 보기", url: item.url }]);
+
+  const navRow = [];
+  if (idx > 0) {
+    navRow.push({ text: "⬅️ 이전 속보", callback_data: `news_art:${idx - 1}` });
+  }
+  if (idx < news.length - 1) {
+    navRow.push({ text: "다음 속보 ➡️", callback_data: `news_art:${idx + 1}` });
+  }
+  if (navRow.length > 0) inline_keyboard.push(navRow);
+  inline_keyboard.push([{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]);
+
+  const opts = {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard }
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, text, opts);
+  }
+  return await sendMessageSafe(chatId, text, opts);
+}
+
 
 // ============================
 // 🎮 4 PERMANENT CATEGORY DATASETS & RENDERER
@@ -2182,20 +2278,24 @@ const CATEGORIES = {
 };
 
 const TOPIC_NAMES = {
-  ai: "🎯 Perverted Woman",
-  bitcoin: "💎 BeautyFilterRendering",
-  tesla: " Test-03",
-  openai: "🌐 Test-04",
-  meriolchan: "🌸 Meriolchan",
-  isa: "⭐ Isa",
-  hypnotic_eyes: "👁️ Hypnotic Eyes",
-  sun_yezi: "☀️ Sun Yezi",
-  odetta: "💃 Odetta",
-  socialite: "👑 Socialite",
-  nine_gates: "⛩️ Nine Gates",
-  ssaimi: "✨ Ssaimi",
-  dragon_restaurant: "🐉 King Welcoming Dragon Restaurant",
-  shoko_shouko: "📣 Shoko Shouko",
+  "Romantic Vibe": "🔥 K-Pop 열애설",
+  "Dating": "💋 비밀 연애",
+  "Romance": "👀 아이돌 열애 루머",
+  "Crotch": "💔 연예인 결별",
+  "Mosa": "🚨 열애 논란",
+  "Bunny Girl Cosplay Date": "❤️ 비밀 커플",
+  "Lustful Hostess": "😳 바이럴 로맨스",
+  "Concubine": "🔥 럽스타그램",
+  "Saki Mizumi": "💍 결혼 루머",
+  "A Muse": "👀 연예계 스캔들",
+  "ai": "🤖 AI",
+  "games": "🎮 게임 플레이",
+  "stories": "📚 단편 소설",
+  "papers": "🔬 학술 논문",
+  "opening_up": "🔓 콘텐츠",
+  "food_source": "🍴 미식 레시피",
+  "finance": "💰 재테크 & 투자",
+  "adult": "🔞 성인 콘텐츠"
 };
 
 // ============================
@@ -2383,6 +2483,9 @@ bot.on("callback_query", async (query) => {
       const topicKey = parts[1];
       const page = parseInt(parts[2] || "1", 10);
       await renderTopicPosts(chatId, topicKey, page, messageId);
+    } else if (data.startsWith("news_art:")) {
+      const newsIdx = parseInt(data.split(":")[1], 10) || 0;
+      await renderNewsArticlePage(chatId, newsIdx, messageId);
     } else if (data === "refresh_trending") {
       const combinedKeyboard = await getTrendingKeyboard();
       const text = `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`;
