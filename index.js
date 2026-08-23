@@ -8,6 +8,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 const https = require("https");
 const { startScraperScheduler } = require("./scraper");
+const rankingScraper = require("./ranking_scraper");
 const sourceRegistry = require("./source_registry");
 
 
@@ -1972,11 +1973,36 @@ async function getMainKeyboard() {
 }
 
 async function getTrendingKeyboard() {
-  const mainKeys = (await getMainKeyboard()).inline_keyboard;
-  const breaking = getBreakingNews();
-  const rows = [...mainKeys];
+  const rows = [];
 
-  // 1. Breaking News (if any)
+  // 1. 🔥 실시간 검색어 TOP 10 (NEW SEPARATE RANKING SECTION)
+  const rankingData = rankingScraper.getLocalRankings();
+  const rankings = (rankingData && Array.isArray(rankingData.rankings)) ? rankingData.rankings : [];
+
+  if (rankings.length > 0) {
+    rows.push([{ text: "🔥 실시간 검색어 TOP 10", callback_data: "none" }]);
+    const rankEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+    for (let i = 0; i < Math.min(10, rankings.length); i++) {
+      const item = rankings[i];
+      if (!item || !item.keyword) continue;
+      const emoji = rankEmojis[i] || `${i + 1}️⃣`;
+      const targetUrl = item.url || `https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(item.keyword)}`;
+
+      rows.push([{
+        text: `${emoji} ${item.keyword}`,
+        url: targetUrl
+      }]);
+    }
+    rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
+  }
+
+  // 2. 🔥 핫 토픽 Header + Existing Cards 1–20 (100% UNCHANGED)
+  rows.push([{ text: "🔥 핫 토픽", callback_data: "none" }]);
+  const mainKeys = (await getMainKeyboard()).inline_keyboard;
+  rows.push(...mainKeys);
+
+  // 3. 📰 속보 Breaking News (if any)
+  const breaking = getBreakingNews();
   if (breaking && breaking.length > 0) {
     rows.push([{ text: "📰 속보", callback_data: "none" }]);
     for (let i = 0; i < breaking.length; i++) {
@@ -1997,7 +2023,7 @@ async function getTrendingKeyboard() {
     }
   }
 
-  // 2. Refresh Trending button (full width)
+  // 4. Refresh Trending button (full width)
   rows.push([{ text: "🔄 트렌딩 새로고침", callback_data: "refresh_trending" }]);
 
   // 3. 8 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
@@ -2510,6 +2536,23 @@ bot.on("callback_query", async (query) => {
     } else if (data.startsWith("news_art:")) {
       const newsIdx = parseInt(data.split(":")[1], 10) || 0;
       await renderNewsArticlePage(chatId, newsIdx, messageId);
+    } else if (data === "refresh_rankings") {
+      try {
+        await rankingScraper.scrapeRealtimeRankings();
+      } catch (e) {
+        console.error("Refresh rankings error:", e.message);
+      }
+      const combinedKeyboard = await getTrendingKeyboard();
+      const text = `🔥 <b>실시간 검색어 TOP 10 & 핫 토픽</b>\n\n실시간 이슈 키워드와 인기 주제를 탐색하세요 👇`;
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: combinedKeyboard,
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
     } else if (data === "refresh_trending") {
       const combinedKeyboard = await getTrendingKeyboard();
       const text = `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`;
@@ -2646,6 +2689,7 @@ bot.on("message", async (msg) => {
 // ============================
 if (isMainModule) {
   startScraperScheduler();
+  rankingScraper.startRankingScheduler();
   console.log("✅ NewsSearch Main Bot is running...");
   console.log("🔗 Channels shown directly in main bot!");
 }
