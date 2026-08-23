@@ -1972,10 +1972,51 @@ async function getMainKeyboard() {
   return { inline_keyboard: gridRows };
 }
 
+async function getPopularKeyboard() {
+  const mainKeys = (await getMainKeyboard()).inline_keyboard;
+  const rows = [...mainKeys];
+
+  // Action buttons at bottom of Popular screen
+  rows.push([{ text: "🔄 새로고침", callback_data: "screen:popular" }]);
+  rows.push([{ text: "🏠 홈으로 돌아가기", callback_data: "menu" }]);
+
+  return { inline_keyboard: rows };
+}
+
+async function getBreakingNewsKeyboard() {
+  const breaking = getBreakingNews();
+  const rows = [];
+
+  if (breaking && breaking.length > 0) {
+    for (let i = 0; i < breaking.length; i++) {
+      const { title: rawTitle, url: originalUrl } = parseNewsItem(breaking[i]);
+      if (!rawTitle) continue;
+
+      const translatedTitle = await translateText(rawTitle, "ko");
+      const cleanDisplay = (typeof translatedTitle === "string" && translatedTitle.length > 0 && !translatedTitle.includes("[object Object]"))
+        ? translatedTitle
+        : rawTitle;
+
+      const targetUrl = originalUrl || `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
+
+      rows.push([{
+        text: `📰 ${cleanDisplay}`,
+        url: targetUrl
+      }]);
+    }
+  }
+
+  // Action buttons at bottom of Breaking News screen
+  rows.push([{ text: "🔄 새로고침", callback_data: "screen:breaking" }]);
+  rows.push([{ text: "🏠 홈으로 돌아가기", callback_data: "menu" }]);
+
+  return { inline_keyboard: rows };
+}
+
 async function getTrendingKeyboard() {
   const rows = [];
 
-  // 1. 🔥 실시간 검색어 TOP 10 (NEW SEPARATE RANKING SECTION)
+  // 1. 🔥 실시간 검색어 TOP 10 (UNTOUCHED SEPARATE RANKING SECTION)
   const rankingData = rankingScraper.getLocalRankings();
   const rankings = (rankingData && Array.isArray(rankingData.rankings)) ? rankingData.rankings : [];
 
@@ -1996,37 +2037,11 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. 🔥 핫 토픽 Header + Existing Cards 1–20 (100% UNCHANGED)
-  rows.push([{ text: "🔥 핫 토픽", callback_data: "none" }]);
-  const mainKeys = (await getMainKeyboard()).inline_keyboard;
-  rows.push(...mainKeys);
+  // 2. Navigation Buttons to Dedicated Popular & Breaking News Screens
+  rows.push([{ text: "🔥 인기 콘텐츠", callback_data: "screen:popular" }]);
+  rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
 
-  // 3. 📰 속보 Breaking News (if any)
-  const breaking = getBreakingNews();
-  if (breaking && breaking.length > 0) {
-    rows.push([{ text: "📰 속보", callback_data: "none" }]);
-    for (let i = 0; i < breaking.length; i++) {
-      const { title: rawTitle, url: originalUrl } = parseNewsItem(breaking[i]);
-      if (!rawTitle) continue;
-
-      const translatedTitle = await translateText(rawTitle, "ko");
-      const cleanDisplay = (typeof translatedTitle === "string" && translatedTitle.length > 0 && !translatedTitle.includes("[object Object]"))
-        ? translatedTitle
-        : rawTitle;
-
-      const targetUrl = originalUrl || `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
-
-      rows.push([{
-        text: `📰 ${cleanDisplay}`,
-        url: targetUrl
-      }]);
-    }
-  }
-
-  // 4. Refresh Trending button (full width)
-  rows.push([{ text: "🔄 트렌딩 새로고침", callback_data: "refresh_trending" }]);
-
-  // 3. 8 Permanent Category Buttons (2 per row) directly below REFRESH TRENDING
+  // 3. 8 Permanent Category Buttons (2 per row) directly below Navigation Buttons
   rows.push([
     { text: "🎮 게임 플레이", callback_data: "cat:games" },
     { text: "🤖 AI", callback_data: "cat:ai_tools" }
@@ -2553,6 +2568,30 @@ bot.on("callback_query", async (query) => {
       } else {
         await sendMessageSafe(chatId, text, opts);
       }
+    } else if (data === "screen:popular") {
+      const keyboard = await getPopularKeyboard();
+      const text = `🔥 <b>인기 콘텐츠</b>\n\n실시간 인기 주제 20개 👇`;
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
+    } else if (data === "screen:breaking") {
+      const keyboard = await getBreakingNewsKeyboard();
+      const text = `📰 <b>속보</b>\n\n최신 속보 뉴스를 빠르게 확인하세요. 👇`;
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
     } else if (data === "refresh_trending") {
       const combinedKeyboard = await getTrendingKeyboard();
       const text = `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`;
@@ -2710,6 +2749,8 @@ module.exports = {
   translateText,
   getMainKeyboard,
   getTrendingKeyboard,
+  getPopularKeyboard,
+  getBreakingNewsKeyboard,
   getPersistentKeyboard,
   getPersistentNavigationKeyboard,
   clearUserHistory,
