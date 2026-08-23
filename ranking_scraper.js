@@ -77,6 +77,105 @@ function fetchJSON(url, timeoutMs = 8000) {
   });
 }
 
+function fetchText(url, extraHeaders = {}) {
+  return new Promise(resolve => {
+    https.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        ...extraHeaders
+      },
+      timeout: 8000
+    }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => resolve(data));
+    }).on('error', () => resolve(''));
+  });
+}
+
+/**
+ * Decodes Google News RSS article URL base64 protobuf payload if needed.
+ */
+function decodeGoogleRssUrl(rssUrl) {
+  try {
+    const match = rssUrl.match(/articles\/([A-Za-z0-9_-]+)/);
+    if (match && match[1]) {
+      const b64 = match[1].replace(/-/g, '+').replace(/_/g, '/');
+      const buf = Buffer.from(b64, 'base64');
+      const str = buf.toString('latin1');
+      const urlMatch = str.match(/https?:\/\/[a-zA-Z0-9_.~!*';:@&=+$,/?%#[\]-]+/);
+      if (urlMatch && urlMatch[0] && !urlMatch[0].includes('google.com') && !urlMatch[0].includes('search.naver.com')) {
+        return urlMatch[0];
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Resolves the actual direct publisher article URL for a ranking keyword.
+ * Strictly rejects search.naver.com, google.com/search, news.google.com/rss/articles, translate.google.com.
+ */
+async function getDirectArticleUrl(keyword) {
+  // Method 1: Naver News Search (where=news) - extract direct Naver News Article or publisher article
+  try {
+    const naverNewsUrl = `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(keyword)}`;
+    const html = await fetchText(naverNewsUrl);
+
+    // 1a. Naver news article link (n.news.naver.com)
+    const m1 = html.match(/href="(https?:\/\/n\.news\.naver\.com\/mnews\/article\/[^"]+)"/i);
+    if (m1 && m1[1]) return m1[1].replace(/&amp;/g, '&');
+
+    // 1b. Direct press news_tit link
+    const m2 = html.match(/class="news_tit"[^>]*href="([^"]+)"/i);
+    if (m2 && m2[1] && m2[1].startsWith('http') && !m2[1].includes('naver.com') && !m2[1].includes('google.com')) {
+      return m2[1].replace(/&amp;/g, '&');
+    }
+  } catch (e) {}
+
+  // Method 2: Naver Main Search (where=nexearch) - extract top organic search result link
+  try {
+    const naverMainUrl = `https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(keyword)}`;
+    const html = await fetchText(naverMainUrl);
+
+    const m3 = html.match(/class="link_tit"[^>]*href="([^"]+)"/i) ||
+               html.match(/class="api_txt_lines total_tit"[^>]*href="([^"]+)"/i) ||
+               html.match(/href="(https?:\/\/n\.news\.naver\.com\/mnews\/article\/[^"]+)"/i);
+    if (m3 && m3[1] && m3[1].startsWith('http') && !m3[1].includes('search.naver.com') && !m3[1].includes('google.com')) {
+      return m3[1].replace(/&amp;/g, '&');
+    }
+  } catch (e) {}
+
+  // Method 3: Daum / Kakao News Search fallback
+  try {
+    const daumUrl = `https://search.daum.net/search?w=news&q=${encodeURIComponent(keyword)}`;
+    const html = await fetchText(daumUrl);
+    const m4 = html.match(/class="tit_main fn_tit_u"[^>]*href="([^"]+)"/i) ||
+               html.match(/href="(https?:\/\/v\.daum\.net\/v\/[^"]+)"/i);
+    if (m4 && m4[1] && m4[1].startsWith('http') && !m4[1].includes('google.com')) {
+      return m4[1].replace(/&amp;/g, '&');
+    }
+  } catch (e) {}
+
+  // Method 4: Google RSS decoded URL
+  try {
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(keyword)}&hl=ko&gl=KR&ceid=KR:ko`;
+    const xml = await fetchText(rssUrl);
+    const linkMatch = xml.match(/<item>[\s\S]*?<link>(https?:\/\/[^<]+)<\/link>/i);
+    if (linkMatch && linkMatch[1]) {
+      const decoded = decodeGoogleRssUrl(linkMatch[1].trim());
+      if (decoded && !decoded.includes('google.com') && !decoded.includes('search.naver.com')) {
+        return decoded;
+      }
+    }
+  } catch (e) {}
+
+  // Fallback to Naver Search URL if no article link could be resolved
+  return `https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=${encodeURIComponent(keyword)}`;
+}
+
 /**
  * Scrapes Real-Time Korean Top 10 Search Rankings.
  * Uses atomic file write and last-known-good fallback on failure.
@@ -97,12 +196,12 @@ async function scrapeRealtimeRankings() {
 
       const keyword = String(raw.keyword).trim();
       const rank = i + 1;
-      const searchUrl = `https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=${encodeURIComponent(keyword)}`;
+      const articleUrl = await getDirectArticleUrl(keyword);
 
       cleanRankings.push({
         rank: rank,
         keyword: keyword,
-        url: searchUrl
+        url: articleUrl
       });
     }
 
