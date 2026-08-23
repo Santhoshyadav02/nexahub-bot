@@ -353,6 +353,14 @@ class SourceRegistry {
     return this.posts.find(p => p.id === postId || p.unique_hash === postId);
   }
 
+  getLatestRealMessageId(keyword) {
+    if (!keyword) return 0;
+    const posts = this.getPostsForKeyword(keyword);
+    const realPosts = posts.filter(p => p.message_id && parseInt(p.message_id, 10) < 10000);
+    if (realPosts.length === 0) return 0;
+    return Math.max(...realPosts.map(p => parseInt(p.message_id, 10)));
+  }
+
   getAllSources() {
     return this.sources;
   }

@@ -151,21 +151,40 @@ class MTProtoChannelReader {
           const fullChatId = rawChatId.startsWith("-100") ? rawChatId : `-100${rawChatId}`;
           channelReport.chat_id = fullChatId;
 
-          const history = await this.client.invoke(
-            new Api.messages.GetHistory({
+          const lastProcessedMsgId = sourceRegistry.getLatestRealMessageId(ch.name);
+          const parsedPosts = [];
+          let offsetId = 0;
+          let hasMore = true;
+
+          while (hasMore) {
+            const historyParams = {
               peer: chatEntity,
-              limit: limit,
-            })
-          );
+              limit: Math.max(limit, 50),
+            };
 
-          const msgs = history.messages || [];
-          channelReport.posts_found = msgs.length;
-          channelReport.history_status = "SUCCESS";
+            if (lastProcessedMsgId > 0) {
+              historyParams.minId = lastProcessedMsgId;
+            }
+            if (offsetId > 0) {
+              historyParams.offsetId = offsetId;
+            }
 
-          if (msgs.length > 0) {
-            const parsedPosts = [];
+            const history = await this.client.invoke(
+              new Api.messages.GetHistory(historyParams)
+            );
+
+            const msgs = history.messages || [];
+            if (msgs.length === 0) {
+              hasMore = false;
+              break;
+            }
+
+            let validCountInBatch = 0;
             for (const m of msgs) {
               if (m instanceof Api.MessageEmpty) continue;
+              if (lastProcessedMsgId > 0 && m.id <= lastProcessedMsgId) continue;
+
+              validCountInBatch++;
 
               let mediaType = "text";
               let durationStr = null;
@@ -219,41 +238,55 @@ class MTProtoChannelReader {
               parsedPosts.push(postObj);
             }
 
-            channelReport.posts = parsedPosts;
-            if (parsedPosts.length > 0) {
-              const top = parsedPosts[0];
-              channelReport.latest_msg_id = top.message_id;
-              channelReport.latest_date = new Date(top.date * 1000).toISOString();
-              channelReport.media_type = top.media_type;
-              channelReport.latest_caption = top.caption || top.title;
-
-              if (saveToDisk) {
-                const postsBefore = sourceRegistry.getPostsForKeyword(ch.name);
-                channelReport.existing_before = postsBefore.length;
-
-                let newCount = 0;
-                let insertedCount = 0;
-                let skippedCount = 0;
-
-                // Sort by message_id ascending so newest post is unshifted last to position 0
-                const sortedMsgs = [...parsedPosts].sort((a, b) => a.message_id - b.message_id);
-                for (const p of sortedMsgs) {
-                  const res = sourceRegistry.processChannelPost(p, ch.name);
-                  if (res && res.isNew) {
-                    newCount++;
-                    insertedCount++;
-                  } else {
-                    skippedCount++;
-                  }
-                }
-
-                const postsAfter = sourceRegistry.getPostsForKeyword(ch.name);
-                channelReport.fetched = parsedPosts.length;
-                channelReport.new_posts = newCount;
-                channelReport.inserted = insertedCount;
-                channelReport.skipped = skippedCount;
-                channelReport.existing_after = postsAfter.length;
+            if (lastProcessedMsgId === 0 || msgs.length < Math.max(limit, 50) || validCountInBatch === 0) {
+              hasMore = false;
+            } else {
+              const minIdInBatch = Math.min(...msgs.map(m => m.id));
+              if (minIdInBatch <= lastProcessedMsgId + 1 || (offsetId > 0 && minIdInBatch >= offsetId)) {
+                hasMore = false;
+              } else {
+                offsetId = minIdInBatch;
               }
+            }
+          }
+
+          channelReport.posts_found = parsedPosts.length;
+          channelReport.history_status = "SUCCESS";
+
+          channelReport.posts = parsedPosts;
+          if (parsedPosts.length > 0) {
+            const top = parsedPosts[0];
+            channelReport.latest_msg_id = top.message_id;
+            channelReport.latest_date = new Date(top.date * 1000).toISOString();
+            channelReport.media_type = top.media_type;
+            channelReport.latest_caption = top.caption || top.title;
+
+            if (saveToDisk) {
+              const postsBefore = sourceRegistry.getPostsForKeyword(ch.name);
+              channelReport.existing_before = postsBefore.length;
+
+              let newCount = 0;
+              let insertedCount = 0;
+              let skippedCount = 0;
+
+              // Sort by message_id ascending so newest post is unshifted last to position 0
+              const sortedMsgs = [...parsedPosts].sort((a, b) => a.message_id - b.message_id);
+              for (const p of sortedMsgs) {
+                const res = sourceRegistry.processChannelPost(p, ch.name);
+                if (res && res.isNew) {
+                  newCount++;
+                  insertedCount++;
+                } else {
+                  skippedCount++;
+                }
+              }
+
+              const postsAfter = sourceRegistry.getPostsForKeyword(ch.name);
+              channelReport.fetched = parsedPosts.length;
+              channelReport.new_posts = newCount;
+              channelReport.inserted = insertedCount;
+              channelReport.skipped = skippedCount;
+              channelReport.existing_after = postsAfter.length;
             }
           }
         }
