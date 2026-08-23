@@ -67,6 +67,7 @@ class MTProtoChannelReader {
         return true;
       } catch (err) {
         console.error("❌ MTProto client connection error:", err.message);
+        try { await this.client.disconnect(); } catch (e) {}
         return false;
       } finally {
         this.connectingPromise = null;
@@ -297,7 +298,7 @@ class MTProtoChannelReader {
           console.warn("⚠️ MTProto CONNECTION LOST during channel sync:", err.message);
           console.log("🔄 RECONNECTING MTProto client...");
           try {
-            await this.client.connect();
+            await this.connect();
             console.log("✅ MTProto RECONNECTED");
           } catch (recErr) {
             console.error("❌ MTProto reconnection failed:", recErr.message);
