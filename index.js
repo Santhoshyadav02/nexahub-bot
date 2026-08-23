@@ -2013,6 +2013,33 @@ async function getBreakingNewsKeyboard() {
   return { inline_keyboard: rows };
 }
 
+async function getCategoryHubKeyboard() {
+  const rows = [
+    [
+      { text: "🎮 게임 플레이", callback_data: "cat:games" },
+      { text: "🤖 AI", callback_data: "cat:ai_tools" }
+    ],
+    [
+      { text: "📚 단편 소설", callback_data: "cat:stories" },
+      { text: "🔬 학술 논문", callback_data: "cat:papers" }
+    ],
+    [
+      { text: "🔓 콘텐츠", callback_data: "cat:opening_up" },
+      { text: "🍴 미식 레시피", callback_data: "cat:food_source" }
+    ],
+    [
+      { text: "💰 재테크 & 투자", callback_data: "cat:finance" },
+      { text: "🔞 성인 콘텐츠", callback_data: "cat:adult" }
+    ],
+    [
+      { text: "🔙 뒤로", callback_data: "menu" },
+      { text: "🏠 홈으로 돌아가기", callback_data: "menu" }
+    ]
+  ];
+
+  return { inline_keyboard: rows };
+}
+
 async function getTrendingKeyboard() {
   const rows = [];
 
@@ -2037,27 +2064,10 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. Navigation Buttons to Dedicated Popular & Breaking News Screens
+  // 2. Navigation Buttons to Dedicated Popular, Breaking News & Content Hub Screens
   rows.push([{ text: "🔥 인기 콘텐츠", callback_data: "screen:popular" }]);
   rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
-
-  // 3. 8 Permanent Category Buttons (2 per row) directly below Navigation Buttons
-  rows.push([
-    { text: "🎮 게임 플레이", callback_data: "cat:games" },
-    { text: "🤖 AI", callback_data: "cat:ai_tools" }
-  ]);
-  rows.push([
-    { text: "📚 단편 소설", callback_data: "cat:stories" },
-    { text: "🔬 학술 논문", callback_data: "cat:papers" }
-  ]);
-  rows.push([
-    { text: "🔓 콘텐츠", callback_data: "cat:opening_up" },
-    { text: "🍴 미식 레시피", callback_data: "cat:food_source" }
-  ]);
-  rows.push([
-    { text: "💰 재테크 & 투자", callback_data: "cat:finance" },
-    { text: "🔞 성인 콘텐츠", callback_data: "cat:adult" }
-  ]);
+  rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
 
   return { inline_keyboard: rows };
 }
@@ -2592,6 +2602,18 @@ bot.on("callback_query", async (query) => {
       } else {
         await sendMessageSafe(chatId, text, opts);
       }
+    } else if (data === "screen:categories") {
+      const keyboard = await getCategoryHubKeyboard();
+      const text = `📂 <b>콘텐츠 허브</b>\n\n다양한 콘텐츠를 카테고리별로 확인하세요. 👇`;
+      const opts = {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, text, opts);
+      } else {
+        await sendMessageSafe(chatId, text, opts);
+      }
     } else if (data === "refresh_trending") {
       const combinedKeyboard = await getTrendingKeyboard();
       const text = `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`;
@@ -2751,6 +2773,7 @@ module.exports = {
   getTrendingKeyboard,
   getPopularKeyboard,
   getBreakingNewsKeyboard,
+  getCategoryHubKeyboard,
   getPersistentKeyboard,
   getPersistentNavigationKeyboard,
   clearUserHistory,
