@@ -1972,17 +1972,6 @@ async function getMainKeyboard() {
   return { inline_keyboard: gridRows };
 }
 
-async function getPopularKeyboard() {
-  const mainKeys = (await getMainKeyboard()).inline_keyboard;
-  const rows = [...mainKeys];
-
-  // Action buttons at bottom of Popular screen
-  rows.push([{ text: "🔄 새로고침", callback_data: "screen:popular" }]);
-  rows.push([{ text: "🏠 홈으로 돌아가기", callback_data: "menu" }]);
-
-  return { inline_keyboard: rows };
-}
-
 async function getBreakingNewsKeyboard() {
   const breaking = getBreakingNews();
   const rows = [];
@@ -2064,10 +2053,13 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. Navigation Buttons to Dedicated Popular, Breaking News & Content Hub Screens
-  rows.push([{ text: "🔥 인기 콘텐츠", callback_data: "screen:popular" }]);
+  // 2. Navigation Buttons: Breaking News & Content Hub
   rows.push([{ text: "📰 속보", callback_data: "screen:breaking" }]);
   rows.push([{ text: "📂 콘텐츠 허브", callback_data: "screen:categories" }]);
+
+  // 3. 20 HOT TOPICS Cards (4 rows x 5 columns) directly on Home screen
+  const mainKeys = (await getMainKeyboard()).inline_keyboard;
+  rows.push(...mainKeys);
 
   return { inline_keyboard: rows };
 }
@@ -2578,18 +2570,6 @@ bot.on("callback_query", async (query) => {
       } else {
         await sendMessageSafe(chatId, text, opts);
       }
-    } else if (data === "screen:popular") {
-      const keyboard = await getPopularKeyboard();
-      const text = `🔥 <b>인기 콘텐츠</b>\n\n실시간 인기 주제 20개 👇`;
-      const opts = {
-        parse_mode: "HTML",
-        reply_markup: keyboard,
-      };
-      if (messageId) {
-        await editMessageTextSafe(chatId, messageId, text, opts);
-      } else {
-        await sendMessageSafe(chatId, text, opts);
-      }
     } else if (data === "screen:breaking") {
       const keyboard = await getBreakingNewsKeyboard();
       const text = `📰 <b>속보</b>\n\n최신 속보 뉴스를 빠르게 확인하세요. 👇`;
@@ -2771,7 +2751,6 @@ module.exports = {
   translateText,
   getMainKeyboard,
   getTrendingKeyboard,
-  getPopularKeyboard,
   getBreakingNewsKeyboard,
   getCategoryHubKeyboard,
   getPersistentKeyboard,
