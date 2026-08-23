@@ -186,7 +186,7 @@ async function translateText(text, targetLang = "ko") {
       });
     });
 
-    if (fallbackTranslated && fallbackTranslated !== text) {
+    if (fallbackTranslated && fallbackTranslated !== text && !fallbackTranslated.includes("MYMEMORY WARNING") && !fallbackTranslated.includes("INVALID") && !fallbackTranslated.includes("QUOTA")) {
       translationCache.set(cacheKey, fallbackTranslated);
       return fallbackTranslated;
     }
@@ -1744,6 +1744,19 @@ function getBreakingNews() {
   return [];
 }
 
+function parseNewsItem(item) {
+  if (!item) return { title: "", url: "" };
+  if (typeof item === "object" && item !== null) {
+    const title = typeof item.title === "string" ? item.title : (typeof item.name === "string" ? item.name : "");
+    const url = typeof item.url === "string" ? item.url : (typeof item.link === "string" ? item.link : "");
+    return { title, url };
+  }
+  if (typeof item === "string") {
+    return { title: item, url: `https://www.google.com/search?q=${encodeURIComponent(item)}` };
+  }
+  return { title: String(item), url: "" };
+}
+
 const TARGET_CHANNELS = [
   "Romantic Vibe",
   "Dating",
@@ -1801,60 +1814,32 @@ async function formatTrendingCardLabel(rawTitle, isVideoCard = false, cardIndex 
       videoSubject = "뮤즈 업데이트";
     } else if (lowerVideo.includes("high-profile") || lowerVideo.includes("화제")) {
       videoSubject = "화제의 영상";
-    } else if (titleText.length >= 2 && !/^\d+$/.test(titleText)) {
+    } else if (titleText.length >= 2 && !/^\d+$/.test(titleText) && /[\uac00-\ud7af]/.test(titleText)) {
       videoSubject = smartShortenTitle(titleText, 18);
     } else {
-      videoSubject = channelKeyword || "트렌딩 동영상";
+      videoSubject = "";
     }
 
-    // Assign semantic emoji strictly based on the actual title content
-    let emoji = "🎬";
-    const lowerSub = videoSubject.toLowerCase();
-    if (lowerSub.includes("셀레나") || lowerSub.includes("음악")) emoji = "🎵";
-    else if (lowerSub.includes("제니")) emoji = "✨";
-    else if (lowerSub.includes("강남")) emoji = "🏙️";
-    else if (lowerSub.includes("스토리") || lowerSub.includes("소설")) emoji = "📖";
-    else if (lowerSub.includes("하녀") || lowerSub.includes("커플") || lowerSub.includes("남편")) emoji = "❤️";
-    else if (lowerSub.includes("라이브")) emoji = "🔴";
-    else if (lowerSub.includes("화제")) emoji = "🎬";
-    else if (lowerSub.includes("뮤즈")) emoji = "🎨";
-    else emoji = "🎥";
+    if (videoSubject && /[\uac00-\ud7af]/.test(videoSubject)) {
+      let emoji = "🎬";
+      const lowerSub = videoSubject.toLowerCase();
+      if (lowerSub.includes("셀레나") || lowerSub.includes("음악")) emoji = "🎵";
+      else if (lowerSub.includes("제니")) emoji = "✨";
+      else if (lowerSub.includes("강남")) emoji = "🏙️";
+      else if (lowerSub.includes("스토리") || lowerSub.includes("소설")) emoji = "📖";
+      else if (lowerSub.includes("하녀") || lowerSub.includes("커플") || lowerSub.includes("남편")) emoji = "❤️";
+      else if (lowerSub.includes("라이브")) emoji = "🔴";
+      else if (lowerSub.includes("화제")) emoji = "🎬";
+      else if (lowerSub.includes("뮤즈")) emoji = "🎨";
+      else emoji = "🎥";
 
-    return `${emoji} ${videoSubject}`;
+      return `${emoji} ${videoSubject}`;
+    }
+    return "";
   }
 
-  // Keyword Cards (Cards 1-10)
-  if (!englishTitle) {
-    englishTitle = `Trend ${cardIndex + 1}`;
-  }
-
-  const lower = englishTitle.toLowerCase();
-  let emoji = "🔥";
-
-  // Semantic Emoji Rules
-  if (lower.includes("diamondback")) emoji = "⚾";
-  else if (lower.includes("son") || lower.includes("soccer") || lower.includes("football") || lower.includes("world cup") || lower.includes("psg") || lower.includes("sports")) emoji = "⚽";
-  else if (lower.includes("busan") || lower.includes("pohang") || lower.includes("ocean") || lower.includes("sea")) emoji = "🌊";
-  else if (lower.includes("seoul") || lower.includes("hongdae") || lower.includes("gangnam")) emoji = "🌆";
-  else if (lower.includes("bus")) emoji = "🚌";
-  else if (lower.includes("flood") || lower.includes("rain") || lower.includes("storm") || lower.includes("weather")) emoji = "🌧️";
-  else if (lower.includes("missile") || lower.includes("war") || lower.includes("defense") || lower.includes("attack")) emoji = "🚨";
-  else if (lower.includes("lg") || lower.includes("samsung") || lower.includes("hynix") || lower.includes("tech") || lower.includes("computer")) emoji = "💻";
-  else if (lower.includes("bank") || lower.includes("stock") || lower.includes("finance") || lower.includes("money") || lower.includes("market")) emoji = "💰";
-  else if (lower.includes("ai") || lower.includes("robot")) emoji = "🤖";
-  else if (lower.includes("siwoo") || lower.includes("dating") || lower.includes("romance") || lower.includes("love") || lower.includes("crotch") || lower.includes("mosa") || lower.includes("hostess") || lower.includes("concubine") || lower.includes("muse")) emoji = "❤️";
-  else if (lower.includes("music") || lower.includes("dance") || lower.includes("song") || lower.includes("kpop") || lower.includes("sing")) emoji = "🎵";
-  else if (lower.includes("trump") || lower.includes("news") || lower.includes("election") || lower.includes("politics") || lower.includes("democrat")) emoji = "📰";
-  else if (lower.includes("food") || lower.includes("eat") || lower.includes("dish")) emoji = "🍜";
-  else if (lower.includes("migration") || lower.includes("world") || lower.includes("global")) emoji = "🌎";
-  else if (lower.includes("korea")) emoji = "🇰🇷";
-  else {
-    const DEFAULT_EMOJIS = ["📈", "✨", "🎯", "💬", "⭐", "🔥", "🌟", "👀", "📱", "🌎"];
-    emoji = DEFAULT_EMOJIS[cardIndex % DEFAULT_EMOJIS.length];
-  }
-
-  const cleanLabel = smartShortenTitle(englishTitle, 18);
-  return `${emoji} ${cleanLabel}`;
+  const cleanLabel = smartShortenTitle(titleText, 18);
+  return cleanLabel;
 }
 
 function smartShortenTitle(str, maxLen = 18) {
@@ -1904,6 +1889,19 @@ const CARD_1_TO_10_LABELS = [
   "👀 연예계 스캔들"
 ];
 
+const CARD_11_TO_20_LABELS = [
+  "🎬 로맨스 VOD",
+  "💖 연애 클립",
+  "🌸 심쿵 로맨스",
+  "🔥 바이럴 영상",
+  "🚨 모자이크 이슈",
+  "🐰 코스프레 데이트",
+  "🍸 호스테스 이슈",
+  "👑 후궁 이야기",
+  "🌸 사키 미즈미",
+  "🎨 뮤즈 컬렉션"
+];
+
 async function getMainKeyboard() {
   // 1. CARDS 1–10: Live Trending Keywords (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
   const card1to10Buttons = [];
@@ -1917,9 +1915,10 @@ async function getMainKeyboard() {
     });
   }
 
-  // 2. CARDS 11–20: TRENDING VIDEOS (Prefer 10 UNIQUE actual stored video posts)
+  // 2. CARDS 11–20: TRENDING VIDEOS (Korean Display Labels -> Direct Fixed Channel Callback)
   const card11to20Buttons = [];
   const usedVideoSignatures = new Set();
+  const rawEnglishNames = ["romantic vibe", "dating", "romance", "crotch", "mosa", "bunny girl cosplay date", "lustful hostess", "concubine", "saki mizumi", "a muse", "jun ko"];
 
   for (let i = 0; i < 10; i++) {
     const channelKeyword = TARGET_CHANNELS[i] || "Dating";
@@ -1948,7 +1947,13 @@ async function getMainKeyboard() {
     if (selectedPost && selectedPost.title) {
       textToFormat = selectedPost.title;
     }
-    const label = await formatTrendingCardLabel(textToFormat, true, i, channelKeyword);
+    
+    let label = await formatTrendingCardLabel(textToFormat, true, i, channelKeyword);
+    const cleanLabelLower = label ? label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱🎨🍸👑🐰💖]+/gu, "").trim().toLowerCase() : "";
+
+    if (!label || !/[\uac00-\ud7af]/.test(label) || rawEnglishNames.some(name => cleanLabelLower.includes(name))) {
+      label = CARD_11_TO_20_LABELS[i] || "🎬 트렌딩 동영상";
+    }
 
     card11to20Buttons.push({
       text: label,
@@ -1972,11 +1977,21 @@ async function getTrendingKeyboard() {
   const rows = [...mainKeys];
 
   // 1. Breaking News (if any)
-  if (breaking.length > 0) {
+  if (breaking && breaking.length > 0) {
     rows.push([{ text: "📰 속보", callback_data: "none" }]);
-    for (const news of breaking) {
-      const displayNews = await translateText(news, "ko");
-      rows.push([{ text: `📰 ${displayNews}`, url: `https://www.google.com/search?q=${encodeURIComponent(news)}` }]);
+    for (let i = 0; i < breaking.length; i++) {
+      const { title: rawTitle } = parseNewsItem(breaking[i]);
+      if (!rawTitle) continue;
+
+      const translatedTitle = await translateText(rawTitle, "ko");
+      const cleanDisplay = (typeof translatedTitle === "string" && translatedTitle.length > 0 && !translatedTitle.includes("[object Object]"))
+        ? translatedTitle
+        : rawTitle;
+
+      rows.push([{
+        text: `📰 ${cleanDisplay}`,
+        callback_data: `news_art:${i}`
+      }]);
     }
   }
 
@@ -2034,8 +2049,8 @@ function formatChannelList(channels, topicName) {
 }
 
 async function renderNewsArticlePage(chatId, articleIndex = 0, messageId = null) {
-  const news = await scraper.scrapeBreakingNews();
-  if (!news || news.length === 0) {
+  const breaking = getBreakingNews();
+  if (!breaking || breaking.length === 0) {
     const text = "📰 <b>속보 뉴스</b>\n\n현재 표시할 최신 뉴스 속보가 없습니다.";
     const opts = {
       parse_mode: "HTML",
@@ -2049,23 +2064,30 @@ async function renderNewsArticlePage(chatId, articleIndex = 0, messageId = null)
     return await sendMessageSafe(chatId, text, opts);
   }
 
-  const idx = Math.max(0, Math.min(articleIndex, news.length - 1));
-  const item = news[idx];
-  const translatedTitle = await translateText(item.title, "ko");
+  const idx = Math.max(0, Math.min(articleIndex, breaking.length - 1));
+  const { title: rawTitle, url: originalUrl } = parseNewsItem(breaking[idx]);
+  const translatedTitle = await translateText(rawTitle, "ko");
+  const displayTitle = (typeof translatedTitle === "string" && translatedTitle.length > 0 && !translatedTitle.includes("[object Object]"))
+    ? translatedTitle
+    : rawTitle;
 
   const text =
-    `📰 <b>속보 상세 뉴스 [ ${idx + 1} / ${news.length} ]</b>\n\n` +
-    `📌 <b>${escapeHTML(translatedTitle)}</b>\n\n` +
-    `💡 버튼을 클릭하여 원문 기사를 확인하거나 다른 속보를 둘러보세요.`;
+    `📰 <b>속보 상세 뉴스 [ ${idx + 1} / ${breaking.length} ]</b>\n\n` +
+    `📌 <b>${escapeHTML(displayTitle)}</b>\n\n` +
+    `💡 아래 버튼을 클릭하여 번역된 원문 기사를 확인하거나 다른 속보를 둘러보세요.`;
+
+  const googleTranslateUrl = originalUrl
+    ? `https://translate.google.com/translate?sl=auto&tl=ko&u=${encodeURIComponent(originalUrl)}`
+    : `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
 
   const inline_keyboard = [];
-  inline_keyboard.push([{ text: "🔗 원문 보기", url: item.url }]);
+  inline_keyboard.push([{ text: "🔗 원문 보기 (한국어 번역)", url: googleTranslateUrl }]);
 
   const navRow = [];
   if (idx > 0) {
     navRow.push({ text: "⬅️ 이전 속보", callback_data: `news_art:${idx - 1}` });
   }
-  if (idx < news.length - 1) {
+  if (idx < breaking.length - 1) {
     navRow.push({ text: "다음 속보 ➡️", callback_data: `news_art:${idx + 1}` });
   }
   if (navRow.length > 0) inline_keyboard.push(navRow);
