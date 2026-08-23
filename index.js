@@ -1988,13 +1988,11 @@ async function getTrendingKeyboard() {
         ? translatedTitle
         : rawTitle;
 
-      const googleTranslateUrl = originalUrl
-        ? `https://translate.google.com/translate?sl=auto&tl=ko&u=${encodeURIComponent(originalUrl)}`
-        : `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
+      const targetUrl = originalUrl || `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
 
       rows.push([{
         text: `📰 ${cleanDisplay}`,
-        url: googleTranslateUrl
+        url: targetUrl
       }]);
     }
   }
