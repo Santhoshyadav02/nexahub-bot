@@ -314,26 +314,103 @@ class SourceRegistry {
     return this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
   }
 
-  getPostsForKeyword(keyword, videoOnly = false) {
-    if (!keyword) return [];
-    const kwLower = keyword.trim().toLowerCase();
-    const source = this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
+  enforceRollingRetention(targetKeyword) {
+    if (!targetKeyword) return;
+    const kwLower = targetKeyword.trim().toLowerCase();
 
-    const matchedPosts = this.posts.filter(p => {
-      if (videoOnly) {
-        if (p.media_type !== "video") return false;
-      }
+    // Find all valid video posts belonging to this source keyword
+    const sourcePosts = this.posts.filter(p => {
+      const pKw = (p.keyword || "").trim().toLowerCase();
+      const pChan = (p.channel_name || "").trim().toLowerCase();
+      return pKw === kwLower || pChan === kwLower;
+    });
 
+    const validVideos = sourcePosts.filter(p => {
+      if (p.media_type !== "video") return false;
+      if (!p.message_id) return false;
+      if (!p.telegram_url || !p.telegram_url.startsWith("http")) return false;
+      return true;
+    });
+
+    // Sort valid videos newest first by message_id descending, then published_at descending
+    validVideos.sort((a, b) => {
+      const idA = parseInt(a.message_id, 10) || 0;
+      const idB = parseInt(b.message_id, 10) || 0;
+      if (idA !== idB) return idB - idA;
+      const dateA = new Date(a.published_at || a.date || 0).getTime();
+      const dateB = new Date(b.published_at || b.date || 0).getTime();
+      return dateB - dateA;
+    });
+
+    // If valid videos count > 50, retain newest 50 and evict older posts for this source
+    if (validVideos.length > 50) {
+      const retained50Set = new Set(validVideos.slice(0, 50).map(p => p.id));
+      const evictedCount = validVideos.length - 50;
+
+      this.posts = this.posts.filter(p => {
+        const pKw = (p.keyword || "").trim().toLowerCase();
+        const pChan = (p.channel_name || "").trim().toLowerCase();
+        const isMatch = pKw === kwLower || pChan === kwLower;
+        if (!isMatch) return true;
+        return retained50Set.has(p.id);
+      });
+
+      console.log(`🧹 Rolling 50 Retention: Retained 50 newest valid videos for "${targetKeyword}", evicted ${evictedCount} older posts.`);
+      this.saveData();
+    }
+  }
+
+  getPostsForKeyword(rawKeyword, videoOnly = false) {
+    if (!rawKeyword) return [];
+    let kwLower = String(rawKeyword).trim().toLowerCase();
+
+    // Strip leading emojis/icons from UI category labels
+    const cleanKw = kwLower.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "").trim();
+
+    // Category mapping for Korean UI labels and keyword fallbacks
+    const CATEGORY_MAP = {
+      "아이돌 열애 루머": "Dating",
+      "케이팝 열애설": "Romantic Vibe",
+      "k-pop 열애설": "Romantic Vibe",
+      "비밀 연애": "Dating",
+      "연예인 결별": "Crotch",
+      "열애 논란": "Mosa",
+      "비밀 커플": "Bunny Girl Cosplay Date",
+      "바이럴 로맨스": "Lustful Hostess",
+      "럽스타그램": "Concubine",
+      "결혼 루머": "Saki Mizumi",
+      "연예계 스캔들": "A Muse"
+    };
+
+    let resolvedKeyword = CATEGORY_MAP[cleanKw] || CATEGORY_MAP[kwLower] || rawKeyword;
+    let targetKwLower = resolvedKeyword.trim().toLowerCase();
+
+    const source = this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === targetKwLower) || (s.name && s.name.trim().toLowerCase() === targetKwLower));
+
+    const allDbPostsForSource = this.posts.filter(p => {
       const pKw = (p.keyword || "").trim().toLowerCase();
       const pChan = (p.channel_name || "").trim().toLowerCase();
       const pSrcId = p.source_id;
-
       if (source && pSrcId && pSrcId === source.id) return true;
-      if (pKw === kwLower) return true;
-      if (pChan === kwLower) return true;
+      if (pKw === targetKwLower || pChan === targetKwLower) return true;
       if (source && source.username && p.username && p.username.trim().toLowerCase() === source.username.trim().toLowerCase()) return true;
-
+      if ((targetKwLower === "romance" || targetKwLower === "아이돌 열애 루머") && (pKw === "dating" || pChan === "dating")) return true;
       return false;
+    });
+
+    const isValidVideoRecord = p => {
+      if (!p) return false;
+      if (p.media_type !== "video") return false;
+      if (!p.message_id || String(p.message_id).trim() === "") return false;
+      if (!p.telegram_url || !p.telegram_url.startsWith("http")) return false;
+      return true;
+    };
+
+    const matchedPosts = allDbPostsForSource.filter(p => {
+      if (videoOnly) {
+        if (!isValidVideoRecord(p)) return false;
+      }
+      return true;
     });
 
     const uniquePosts = [];
@@ -348,21 +425,33 @@ class SourceRegistry {
     }
 
     uniquePosts.sort((a, b) => {
-      const aIsLegacy = a.message_id && parseInt(a.message_id, 10) > 10000;
-      const bIsLegacy = b.message_id && parseInt(b.message_id, 10) > 10000;
-      if (aIsLegacy !== bIsLegacy) {
-        return aIsLegacy ? 1 : -1;
-      }
-
-      const dateA = a.published_at ? new Date(a.published_at).getTime() : (a.date ? a.date * 1000 : 0);
-      const dateB = b.published_at ? new Date(b.published_at).getTime() : (b.date ? b.date * 1000 : 0);
-      if (dateA !== dateB && dateA > 0 && dateB > 0) {
-        return dateB - dateA;
-      }
-      return (parseInt(b.message_id, 10) || 0) - (parseInt(a.message_id, 10) || 0);
+      const idA = parseInt(a.message_id, 10) || 0;
+      const idB = parseInt(b.message_id, 10) || 0;
+      if (idA !== idB) return idB - idA;
+      const dateA = new Date(a.published_at || a.date || 0).getTime();
+      const dateB = new Date(b.published_at || b.date || 0).getTime();
+      return dateB - dateA;
     });
 
-    return uniquePosts;
+    const finalReturnedPosts = uniquePosts.slice(0, 50);
+
+    const latestMsgId = uniquePosts[0] ? uniquePosts[0].message_id : "N/A";
+    const oldestRetainedMsgId = uniquePosts[uniquePosts.length - 1] ? uniquePosts[uniquePosts.length - 1].message_id : "N/A";
+    const dupCount = matchedPosts.length - uniquePosts.length;
+
+    console.log(`Category requested: ${rawKeyword}`);
+    console.log(`Resolved keyword: ${resolvedKeyword}`);
+    console.log(`Resolved channel/source: ${source ? source.name || source.username || source.id : resolvedKeyword}`);
+    console.log(`Total DB records: ${allDbPostsForSource.length}`);
+    console.log(`Total valid video records: ${uniquePosts.length}`);
+    console.log(`Duplicate records: ${dupCount}`);
+    console.log(`Latest Telegram message ID: ${latestMsgId}`);
+    console.log(`Oldest retained message ID: ${oldestRetainedMsgId}`);
+    console.log(`Posts eligible for display: ${uniquePosts.length}`);
+    console.log(`Posts returned by API: ${finalReturnedPosts.length}`);
+    console.log(`Posts rendered by UI: ${finalReturnedPosts.length}`);
+
+    return finalReturnedPosts;
   }
 
   searchPosts(query) {

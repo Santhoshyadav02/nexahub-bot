@@ -1657,6 +1657,16 @@ async function renderCategoryResources(chatId, catKey, page = 1, messageId = nul
 async function renderTopicPosts(chatId, topicKey, page = 1, messageId = null) {
   const posts = sourceRegistry.getPostsForKeyword(topicKey, true);
   const displayTopicName = TOPIC_NAMES[topicKey] || topicKey;
+  const resolvedSourceObj = sourceRegistry.getSourceByKeyword(topicKey);
+  const resolvedSourceName = resolvedSourceObj ? (resolvedSourceObj.name || resolvedSourceObj.keyword) : topicKey;
+
+  console.log("[ROLLING50]");
+  console.log(`Requested category: ${topicKey}`);
+  console.log(`Resolved source: ${resolvedSourceName}`);
+  console.log(`DB valid videos: ${posts.length}`);
+  console.log(`API returned: ${posts.length}`);
+  console.log(`UI cards generated: ${posts.length}`);
+
   return await renderHyperlinkListPostView(chatId, displayTopicName, posts, page, `topic_page:${topicKey}`, messageId);
 }
 
