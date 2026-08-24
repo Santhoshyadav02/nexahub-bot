@@ -1976,6 +1976,8 @@ async function getBreakingNewsKeyboard() {
   const breaking = getBreakingNews();
   const rows = [];
 
+  rows.push([{ text: "📰 속보", callback_data: "none" }]);
+
   if (breaking && breaking.length > 0) {
     for (let i = 0; i < breaking.length; i++) {
       const { title: rawTitle, url: originalUrl } = parseNewsItem(breaking[i]);
@@ -1997,6 +1999,27 @@ async function getBreakingNewsKeyboard() {
 
   // Action buttons at bottom of Breaking News screen
   rows.push([{ text: "🔄 새로고침", callback_data: "screen:breaking" }]);
+
+  // Additional category cards section
+  rows.push(
+    [
+      { text: "🎮 게임 플레이", callback_data: "cat:games" },
+      { text: "🤖 AI", callback_data: "cat:ai_tools" }
+    ],
+    [
+      { text: "📚 단편 소설", callback_data: "cat:stories" },
+      { text: "🔬 학술 논문", callback_data: "cat:papers" }
+    ],
+    [
+      { text: "🔓 콘텐츠", callback_data: "cat:opening_up" },
+      { text: "🍴 미식 레시피", callback_data: "cat:food_source" }
+    ],
+    [
+      { text: "💰 재테크 & 투자", callback_data: "cat:finance" },
+      { text: "🔞 성인 콘텐츠", callback_data: "cat:adult" }
+    ]
+  );
+
   rows.push([{ text: "🏠 홈으로 돌아가기", callback_data: "menu" }]);
 
   return { inline_keyboard: rows };
