@@ -2055,7 +2055,7 @@ async function getCategoryHubKeyboard() {
 async function getTrendingKeyboard() {
   const rows = [];
 
-  // 1. 🔥 실시간 검색어 TOP 10 (UNTOUCHED SEPARATE RANKING SECTION)
+  // 1. 🔥 실시간 검색어 TOP 10 ⚡
   const rankingData = rankingScraper.getLocalRankings();
   const rankings = (rankingData && Array.isArray(rankingData.rankings)) ? rankingData.rankings : [];
 
@@ -2076,16 +2076,58 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. 🔥 인기 주제 Section Header & 20 Cards (4 rows x 5 columns) directly below TOP 10 & 🔄 순위 새로고침
+  // 2. 🔥 인기 주제 Section Header & 20 Cards (4 rows x 5 columns)
   rows.push([{ text: "🔥 인기 주제", callback_data: "none" }]);
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
   rows.push(...mainKeys);
 
-  // 3. Navigation Buttons directly below Cards 1–20: Breaking News & Content Hub (Side-by-Side)
-  rows.push([
-    { text: "📰 속보", callback_data: "screen:breaking" },
-    { text: "📂 콘텐츠 허브", callback_data: "screen:categories" }
-  ]);
+  // 3. 📰 속보 Header & Scraped Breaking News List (5) & 🔄 새로고침
+  const breaking = getBreakingNews();
+  rows.push([{ text: "📰 속보", callback_data: "none" }]);
+
+  if (breaking && breaking.length > 0) {
+    for (let i = 0; i < breaking.length; i++) {
+      const { title: rawTitle, url: originalUrl } = parseNewsItem(breaking[i]);
+      if (!rawTitle) continue;
+
+      const translatedTitle = await translateText(rawTitle, "ko");
+      const cleanDisplay = (typeof translatedTitle === "string" && translatedTitle.length > 0 && !translatedTitle.includes("[object Object]"))
+        ? translatedTitle
+        : rawTitle;
+
+      const targetUrl = originalUrl || `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
+
+      rows.push([{
+        text: `📰 ${cleanDisplay}`,
+        url: targetUrl
+      }]);
+    }
+  }
+  rows.push([{ text: "🔄 새로고침", callback_data: "refresh_trending" }]);
+
+  // 4. 📂 콘텐츠 허브 Header & 8 Category Cards (4 rows x 2 columns)
+  rows.push([{ text: "📂 콘텐츠 허브", callback_data: "none" }]);
+  rows.push(
+    [
+      { text: "🎮 게임 플레이", callback_data: "cat:games" },
+      { text: "🤖 AI", callback_data: "cat:ai_tools" }
+    ],
+    [
+      { text: "📚 단편 소설", callback_data: "cat:stories" },
+      { text: "🔬 학술 논문", callback_data: "cat:papers" }
+    ],
+    [
+      { text: "🔓 콘텐츠", callback_data: "cat:opening_up" },
+      { text: "🍴 미식 레시피", callback_data: "cat:food_source" }
+    ],
+    [
+      { text: "💰 재테크 & 투자", callback_data: "cat:finance" },
+      { text: "🔞 성인 콘텐츠", callback_data: "cat:adult" }
+    ]
+  );
+
+  // 5. 🏠 홈으로 돌아가기
+  rows.push([{ text: "🏠 홈으로 돌아가기", callback_data: "menu" }]);
 
   return { inline_keyboard: rows };
 }
