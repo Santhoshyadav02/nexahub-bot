@@ -2055,12 +2055,12 @@ async function getCategoryHubKeyboard() {
 async function getTrendingKeyboard() {
   const rows = [];
 
-  // 1. 🔥 실시간 검색어 TOP 10 ⚡
+  // 1. 🔥 실시간 검색어 상위 10 ⚡
   const rankingData = rankingScraper.getLocalRankings();
   const rankings = (rankingData && Array.isArray(rankingData.rankings)) ? rankingData.rankings : [];
 
   if (rankings.length > 0) {
-    rows.push([{ text: "🔥 실시간 검색어 TOP 10 ⚡", callback_data: "none" }]);
+    rows.push([{ text: "🔥 실시간 검색어 상위 10 ⚡", callback_data: "none" }]);
     const rankEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
     for (let i = 0; i < Math.min(10, rankings.length); i++) {
       const item = rankings[i];
@@ -2632,7 +2632,7 @@ bot.on("callback_query", async (query) => {
         console.error("Refresh rankings error:", e.message);
       }
       const combinedKeyboard = await getTrendingKeyboard();
-      const text = `🔥 <b>실시간 검색어 TOP 10 & 핫 토픽</b>\n\n실시간 이슈 키워드와 인기 주제를 탐색하세요 👇`;
+      const text = `🔥 <b>실시간 검색어 상위 10 & 핫 토픽</b>\n\n실시간 이슈 키워드와 인기 주제를 탐색하세요 👇`;
       const opts = {
         parse_mode: "HTML",
         reply_markup: combinedKeyboard,
