@@ -237,10 +237,12 @@ class SourceRegistry {
       mediaType = "photo";
     }
 
-    let displayTitle = text.split("\n")[0] || `${source ? source.name : "Post"} Update`;
-    displayTitle = displayTitle.trim();
-    if (displayTitle.length > 80) {
-      displayTitle = displayTitle.substring(0, 77) + "...";
+    let rawTextTitle = text.split("\n")[0] ? text.split("\n")[0].trim() : "";
+    let displayTitle = "";
+    if (rawTextTitle.length > 0) {
+      displayTitle = rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle;
+    } else {
+      displayTitle = `${source ? source.name : (msg.chat ? msg.chat.title : "Post")} Post #${messageId}`;
     }
 
     let icon = "🎬 ";
@@ -314,13 +316,54 @@ class SourceRegistry {
   getSourceByKeyword(keyword) {
     if (!keyword) return null;
     const kwLower = keyword.trim().toLowerCase();
-    return this.sources.find(s => s.keyword.trim().toLowerCase() === kwLower || s.name.trim().toLowerCase() === kwLower);
+    return this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
   }
 
   getPostsForKeyword(keyword) {
     if (!keyword) return [];
     const kwLower = keyword.trim().toLowerCase();
-    return this.posts.filter(p => p.keyword.trim().toLowerCase() === kwLower || p.channel_name.trim().toLowerCase() === kwLower);
+    const source = this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
+
+    const matchedPosts = this.posts.filter(p => {
+      const pKw = (p.keyword || "").trim().toLowerCase();
+      const pChan = (p.channel_name || "").trim().toLowerCase();
+      const pSrcId = p.source_id;
+
+      if (source && pSrcId && pSrcId === source.id) return true;
+      if (pKw === kwLower) return true;
+      if (pChan === kwLower) return true;
+      if (source && source.username && p.username && p.username.trim().toLowerCase() === source.username.trim().toLowerCase()) return true;
+
+      return false;
+    });
+
+    const uniquePosts = [];
+    const seenKeys = new Set();
+
+    for (const p of matchedPosts) {
+      const uid = p.unique_hash || (p.chat_id && p.message_id ? `${p.chat_id}_${p.message_id}` : p.telegram_url || p.id);
+      if (!seenKeys.has(uid)) {
+        seenKeys.add(uid);
+        uniquePosts.push(p);
+      }
+    }
+
+    uniquePosts.sort((a, b) => {
+      const aIsLegacy = a.message_id && parseInt(a.message_id, 10) > 10000;
+      const bIsLegacy = b.message_id && parseInt(b.message_id, 10) > 10000;
+      if (aIsLegacy !== bIsLegacy) {
+        return aIsLegacy ? 1 : -1;
+      }
+
+      const dateA = a.published_at ? new Date(a.published_at).getTime() : (a.date ? a.date * 1000 : 0);
+      const dateB = b.published_at ? new Date(b.published_at).getTime() : (b.date ? b.date * 1000 : 0);
+      if (dateA !== dateB && dateA > 0 && dateB > 0) {
+        return dateB - dateA;
+      }
+      return (parseInt(b.message_id, 10) || 0) - (parseInt(a.message_id, 10) || 0);
+    });
+
+    return uniquePosts;
   }
 
   searchPosts(query) {
