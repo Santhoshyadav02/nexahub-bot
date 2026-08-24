@@ -238,12 +238,7 @@ class SourceRegistry {
     }
 
     let rawTextTitle = text.split("\n")[0] ? text.split("\n")[0].trim() : "";
-    let displayTitle = "";
-    if (rawTextTitle.length > 0) {
-      displayTitle = rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle;
-    } else {
-      displayTitle = `${source ? source.name : (msg.chat ? msg.chat.title : "Post")} Post #${messageId}`;
-    }
+    let displayTitle = rawTextTitle.length > 0 ? (rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle) : "제목 없음";
 
     let icon = "🎬 ";
     if (mediaType === "video") {
@@ -252,7 +247,7 @@ class SourceRegistry {
       icon = "🖼️ ";
     }
 
-    const fullTitle = `${icon}${displayTitle}`;
+    const fullTitle = displayTitle === "제목 없음" ? `${icon}제목 없음` : `${icon}${displayTitle}`;
 
     let cleanChatId = chatId.startsWith("-100") ? chatId.substring(4) : chatId.replace("-", "");
     let inviteUrl = source ? source.invite_url : null;
@@ -319,12 +314,16 @@ class SourceRegistry {
     return this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
   }
 
-  getPostsForKeyword(keyword) {
+  getPostsForKeyword(keyword, videoOnly = false) {
     if (!keyword) return [];
     const kwLower = keyword.trim().toLowerCase();
     const source = this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
 
     const matchedPosts = this.posts.filter(p => {
+      if (videoOnly) {
+        if (p.media_type !== "video") return false;
+      }
+
       const pKw = (p.keyword || "").trim().toLowerCase();
       const pChan = (p.channel_name || "").trim().toLowerCase();
       const pSrcId = p.source_id;

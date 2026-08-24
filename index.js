@@ -1236,6 +1236,28 @@ async function sendVideoSafe(chatId, video, options = {}) {
   }
 }
 
+async function copyMessageSafe(chatId, fromChatId, messageId, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
+  try {
+    const res = await bot.copyMessage(chatId, fromChatId, messageId, cleanOpts);
+    if (res && res.message_id) trackMessage(chatId, res.message_id);
+    return res;
+  } catch (err) {
+    auditTelegramError("copyMessageSafe", chatId, err, `from:${fromChatId}:${messageId}`, cleanOpts);
+  }
+}
+
+async function forwardMessageSafe(chatId, fromChatId, messageId, options = {}) {
+  const cleanOpts = sanitizeTelegramPayload(options);
+  try {
+    const res = await bot.forwardMessage(chatId, fromChatId, messageId, cleanOpts);
+    if (res && res.message_id) trackMessage(chatId, res.message_id);
+    return res;
+  } catch (err) {
+    auditTelegramError("forwardMessageSafe", chatId, err, `from:${fromChatId}:${messageId}`, cleanOpts);
+  }
+}
+
 async function answerCallbackQuerySafe(queryId, options = {}) {
   const cleanOpts = sanitizeTelegramPayload(options);
   try {
@@ -1374,8 +1396,8 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   pageItems.forEach((p, index) => {
     const itemNumber = startIndex + index + 1;
     let displayTitle = String(p.title || p.name || "").trim();
-    if (!displayTitle) {
-      displayTitle = "텔레그램 리소스";
+    if (!displayTitle || (displayTitle.includes("Update") && !displayTitle.includes("#"))) {
+      displayTitle = "🎬 제목 없음";
     }
 
     let icon = "";
@@ -1472,7 +1494,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     items = category ? category.items : [];
   } else if (callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:")) {
     const topicKey = callbackPrefix.split(":")[1];
-    items = sourceRegistry.getPostsForKeyword(topicKey);
+    items = sourceRegistry.getPostsForKeyword(topicKey, true);
     title = TOPIC_NAMES[topicKey] || topicKey;
   }
 
@@ -1568,35 +1590,47 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     }
   }
 
-  // If file_id or direct media is available, send actual video/photo via sendVideoSafe / sendPhotoSafe
+  const fromChatId = item.chat_id || (item.username ? `@${item.username}` : null) || (item.chat ? (item.chat.id || (item.chat.username ? `@${item.chat.username}` : null)) : null);
+
+  // 1. Send via cached Telegram Bot API file_id if available
   if (cachedFileId) {
     if (item.media_type === "photo") {
-      return await sendPhotoSafe(chatId, cachedFileId, {
+      const res = await sendPhotoSafe(chatId, cachedFileId, {
         caption: detailText,
         parse_mode: "HTML",
         reply_markup: { inline_keyboard }
       });
+      if (res) return res;
     } else {
-      return await sendVideoSafe(chatId, cachedFileId, {
+      const res = await sendVideoSafe(chatId, cachedFileId, {
         caption: detailText,
         parse_mode: "HTML",
         reply_markup: { inline_keyboard }
       });
+      if (res) return res;
     }
   }
 
-  // For public video posts with direct post URL, attempt sendVideoSafe with postUrl
-  if (item.media_type === "video" && postUrl) {
+  // 2. Native Telegram Playable Video Delivery via copyMessage
+  if (item.media_type === "video" && fromChatId && item.message_id) {
     try {
-      const res = await sendVideoSafe(chatId, postUrl, {
+      const res = await copyMessageSafe(chatId, fromChatId, parseInt(item.message_id, 10), {
         caption: detailText,
         parse_mode: "HTML",
         reply_markup: { inline_keyboard }
       });
-      if (res && res.video && res.video.file_id) {
-        saveVideoCache(item.id || item.unique_hash, res.video.file_id);
+      if (res) {
+        if (res.video && res.video.file_id) {
+          saveVideoCache(item.id || item.unique_hash, res.video.file_id);
+        }
+        return res;
       }
-      if (res) return res;
+    } catch (e) {}
+
+    // Fallback: Native forwardMessage
+    try {
+      const fwdRes = await forwardMessageSafe(chatId, fromChatId, parseInt(item.message_id, 10));
+      if (fwdRes) return fwdRes;
     } catch (e) {}
   }
 
@@ -1621,7 +1655,7 @@ async function renderCategoryResources(chatId, catKey, page = 1, messageId = nul
 }
 
 async function renderTopicPosts(chatId, topicKey, page = 1, messageId = null) {
-  const posts = sourceRegistry.getPostsForKeyword(topicKey);
+  const posts = sourceRegistry.getPostsForKeyword(topicKey, true);
   const displayTopicName = TOPIC_NAMES[topicKey] || topicKey;
   return await renderHyperlinkListPostView(chatId, displayTopicName, posts, page, `topic_page:${topicKey}`, messageId);
 }
@@ -2745,8 +2779,81 @@ bot.on("message", async (msg) => {
   try {
     const chatId = msg.chat.id;
     const text = msg.text;
-    if (msg.message_id) trackMessage(chatId, msg.message_id);
     if (!text) return;
+
+    if (text.startsWith("/inspect_videos")) {
+      const adminIdStr = String(process.env.ADMIN_USER_ID || process.env.TELEGRAM_ADMIN_ID || "").trim();
+      const senderIdStr = String(msg.from ? msg.from.id : (msg.chat ? msg.chat.id : "")).trim();
+
+      if (!adminIdStr || !senderIdStr || senderIdStr !== adminIdStr) {
+        return await sendMessageSafe(chatId, "⛔ Unauthorized access.");
+      }
+
+      const allPosts = sourceRegistry.getPostsForKeyword("Dating", false) || [];
+      const videoPosts = sourceRegistry.getPostsForKeyword("Dating", true) || [];
+
+      const totalPosts = allPosts.length;
+      const totalVideos = videoPosts.length;
+      const totalPhotos = allPosts.filter(p => p.media_type === "photo").length;
+      const totalText = allPosts.filter(p => p.media_type === "text" && !p.duration && !p.video_file_id).length;
+      const totalDocs = allPosts.filter(p => p.media_type === "file").length;
+
+      const first60VideoIds = videoPosts.slice(0, 60).map(p => p.message_id);
+
+      const p1 = videoPosts.slice(0, 10);
+      const p2 = videoPosts.slice(10, 20);
+      const p3 = videoPosts.slice(20, 30);
+      const p4 = videoPosts.slice(30, 40);
+      const p5 = videoPosts.slice(40, 50);
+
+      const all50Ids = videoPosts.slice(0, 50).map(p => p.message_id);
+      const unique50Ids = new Set(all50Ids);
+      const dups = all50Ids.length - unique50Ids.size;
+
+      const wrongChannelCount = videoPosts.slice(0, 50).filter(p => p.channel_username && p.channel_username.toLowerCase() !== "cccsefk" && p.keyword !== "Dating").length;
+      const syntheticTitles = videoPosts.slice(0, 50).filter(p => p.title && (p.title.includes("Update") || p.title.includes("Post #")) && !p.title.includes("제목 없음"));
+
+      // Chunk 1: Overview Summary
+      const summaryMsg =
+        `📊 <b>PRODUCTION VIDEO INGESTION AUDIT SUMMARY</b>\n` +
+        `Target: <b>@cccsefk (Dating)</b>\n\n` +
+        `1. Total Stored Posts: <b>${totalPosts}</b>\n` +
+        `2. Total Real Videos (media_type === "video"): <b>${totalVideos}</b>\n` +
+        `3. Total Photos: <b>${totalPhotos}</b>\n` +
+        `4. Total Text-Only Posts: <b>${totalText}</b>\n` +
+        `5. Total Non-Video Documents: <b>${totalDocs}</b>\n\n` +
+        `6. First 60 Real Video Message IDs:\n` +
+        `<code>${first60VideoIds.join(", ") || "None"}</code>\n\n` +
+        `7. Audit Checks:\n` +
+        `• Duplicates Count (0..49): <b>${dups}</b> (Must be 0)\n` +
+        `• Wrong Channel Leaks: <b>${wrongChannelCount}</b> (Must be 0)\n` +
+        `• Synthetic Title Leaks: <b>${syntheticTitles.length}</b> (Must be 0)`;
+
+      await sendMessageSafe(chatId, summaryMsg, { parse_mode: "HTML" });
+
+      // Chunk 2: Pages 1 & 2 Breakdown
+      const chunk2Msg =
+        `📑 <b>PAGES 1 & 2 BREAKDOWN (Indexes 0..19)</b>\n\n` +
+        `<b>Page 1 (0..9) Message IDs:</b>\n<code>${p1.map(p => p.message_id).join(", ") || "None"}</code>\n\n` +
+        `<b>Page 2 (10..19) Message IDs:</b>\n<code>${p2.map(p => p.message_id).join(", ") || "None"}</code>\n\n` +
+        `<b>Page 1 Details:</b>\n` + (p1.map((p, idx) => `• #${idx + 1} | MsgID: ${p.message_id} | ${escapeHTML(p.title)} | ${p.duration || "N/A"}`).join("\n") || "None") +
+        `\n\n<b>Page 2 Details:</b>\n` + (p2.map((p, idx) => `• #${idx + 11} | MsgID: ${p.message_id} | ${escapeHTML(p.title)} | ${p.duration || "N/A"}`).join("\n") || "None");
+
+      await sendMessageSafe(chatId, chunk2Msg, { parse_mode: "HTML" });
+
+      // Chunk 3: Pages 3, 4 & 5 Breakdown
+      const chunk3Msg =
+        `📑 <b>PAGES 3, 4 & 5 BREAKDOWN (Indexes 20..49)</b>\n\n` +
+        `<b>Page 3 (20..29) Message IDs:</b>\n<code>${p3.map(p => p.message_id).join(", ") || "None"}</code>\n\n` +
+        `<b>Page 4 (30..39) Message IDs:</b>\n<code>${p4.map(p => p.message_id).join(", ") || "None"}</code>\n\n` +
+        `<b>Page 5 (40..49) Message IDs:</b>\n<code>${p5.map(p => p.message_id).join(", ") || "None"}</code>\n\n` +
+        `<b>Page 3 Details:</b>\n` + (p3.map((p, idx) => `• #${idx + 21} | MsgID: ${p.message_id} | ${escapeHTML(p.title)} | ${p.duration || "N/A"}`).join("\n") || "None") +
+        `\n\n<b>Page 4 Details:</b>\n` + (p4.map((p, idx) => `• #${idx + 31} | MsgID: ${p.message_id} | ${escapeHTML(p.title)} | ${p.duration || "N/A"}`).join("\n") || "None") +
+        `\n\n<b>Page 5 Details:</b>\n` + (p5.map((p, idx) => `• #${idx + 41} | MsgID: ${p.message_id} | ${escapeHTML(p.title)} | ${p.duration || "N/A"}`).join("\n") || "None");
+
+      await sendMessageSafe(chatId, chunk3Msg, { parse_mode: "HTML" });
+      return;
+    }
 
     if (text === "🏠 Home" || text === "🏠 홈") {
       const combinedKeyboard = await getTrendingKeyboard();

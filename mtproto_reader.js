@@ -99,6 +99,14 @@ class MTProtoChannelReader {
 
     console.log("📡 MTProto client: SYNC START");
 
+    let dialogs = [];
+    try {
+      dialogs = await this.client.getDialogs({ limit: 100 });
+      console.log(`📋 MTProto entity cache prefilled with ${dialogs.length} dialogs.`);
+    } catch (e) {
+      console.warn("⚠️ getDialogs error during entity cache prefill:", e.message);
+    }
+
     for (let idx = 0; idx < TARGET_CHANNELS.length; idx++) {
       const ch = TARGET_CHANNELS[idx];
       const channelReport = {
@@ -134,6 +142,21 @@ class MTProtoChannelReader {
           } catch (e) {}
         }
 
+        if (!chatEntity && dialogs.length > 0) {
+          const foundDialog = dialogs.find(d => {
+            const ent = d.entity;
+            if (!ent) return false;
+            if (ent.username && ch.username && ent.username.toLowerCase() === ch.username.toLowerCase()) return true;
+            if (ent.title && ch.name && ent.title.toLowerCase() === ch.name.toLowerCase()) return true;
+            if (ent.id && ch.chat_id && String(ent.id).includes(String(ch.chat_id).replace("-100", ""))) return true;
+            return false;
+          });
+          if (foundDialog) {
+            chatEntity = foundDialog.entity;
+            channelReport.access = "YES";
+          }
+        }
+
         if (!chatEntity && ch.hash) {
           const inviteInfo = await this.client.invoke(
             new Api.messages.CheckChatInvite({ hash: ch.hash })
@@ -156,16 +179,14 @@ class MTProtoChannelReader {
           const parsedPosts = [];
           let offsetId = 0;
           let hasMore = true;
+          let videosFoundCount = 0;
 
-          while (hasMore) {
+          while (hasMore && videosFoundCount < limit) {
             const historyParams = {
               peer: chatEntity,
-              limit: Math.max(limit, 50),
+              limit: 100,
             };
 
-            if (lastProcessedMsgId > 0) {
-              historyParams.minId = lastProcessedMsgId;
-            }
             if (offsetId > 0) {
               historyParams.offsetId = offsetId;
             }
@@ -183,25 +204,35 @@ class MTProtoChannelReader {
             let validCountInBatch = 0;
             for (const m of msgs) {
               if (m instanceof Api.MessageEmpty) continue;
-              if (lastProcessedMsgId > 0 && m.id <= lastProcessedMsgId) continue;
 
               validCountInBatch++;
 
               let mediaType = "text";
               let durationStr = null;
+              let videoFileId = null;
 
               if (m.media instanceof Api.MessageMediaDocument) {
-                mediaType = "video";
-                channelReport.num_videos++;
                 const doc = m.media.document;
+                let videoAttr = null;
                 if (doc && doc.attributes) {
-                  const videoAttr = doc.attributes.find(a => a instanceof Api.DocumentAttributeVideo);
-                  if (videoAttr && videoAttr.duration) {
+                  videoAttr = doc.attributes.find(a => a instanceof Api.DocumentAttributeVideo);
+                }
+
+                if (videoAttr) {
+                  mediaType = "video";
+                  videosFoundCount++;
+                  channelReport.num_videos++;
+                  if (doc.id) {
+                    videoFileId = String(doc.id);
+                  }
+                  if (videoAttr.duration) {
                     const dur = Math.floor(videoAttr.duration);
                     const mins = Math.floor(dur / 60);
                     const secs = dur % 60;
                     durationStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
                   }
+                } else {
+                  mediaType = "file";
                 }
               } else if (m.media instanceof Api.MessageMediaPhoto) {
                 mediaType = "photo";
@@ -211,11 +242,8 @@ class MTProtoChannelReader {
               }
 
               const textContent = m.message || "";
-              let titleText = textContent.split("\n")[0] || `${ch.name} Post ${m.id}`;
-              titleText = titleText.trim();
-              if (titleText.length > 80) {
-                titleText = titleText.substring(0, 77) + "...";
-              }
+              let rawTextTitle = textContent.split("\n")[0] ? textContent.split("\n")[0].trim() : "";
+              let titleText = rawTextTitle.length > 0 ? (rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle) : "제목 없음";
 
               let icon = "🎬 ";
               if (mediaType === "video") {
@@ -224,7 +252,7 @@ class MTProtoChannelReader {
                 icon = "🖼️ ";
               }
 
-              const fullTitle = `${icon}${titleText}`;
+              const fullTitle = titleText === "제목 없음" ? `${icon}제목 없음` : `${icon}${titleText}`;
               const postObj = {
                 message_id: m.id,
                 date: m.date,
@@ -232,6 +260,8 @@ class MTProtoChannelReader {
                 caption: textContent,
                 text: textContent,
                 media_type: mediaType,
+                duration: durationStr,
+                video_file_id: videoFileId,
                 title: fullTitle,
                 telegram_url: ch.username ? `https://t.me/${ch.username}/${m.id}` : `https://t.me/c/${fullChatId.substring(4)}/${m.id}`
               };
@@ -239,11 +269,11 @@ class MTProtoChannelReader {
               parsedPosts.push(postObj);
             }
 
-            if (lastProcessedMsgId === 0 || msgs.length < Math.max(limit, 50) || validCountInBatch === 0) {
+            if (msgs.length < 100 || validCountInBatch === 0) {
               hasMore = false;
             } else {
               const minIdInBatch = Math.min(...msgs.map(m => m.id));
-              if (minIdInBatch <= lastProcessedMsgId + 1 || (offsetId > 0 && minIdInBatch >= offsetId)) {
+              if (offsetId > 0 && minIdInBatch >= offsetId) {
                 hasMore = false;
               } else {
                 offsetId = minIdInBatch;
@@ -324,9 +354,20 @@ class MTProtoChannelReader {
       if (post.username) {
         try { chatEntity = await this.client.getEntity(post.username); } catch (e) {}
       }
-      if (!chatEntity && post.chat_id) {
-        try { chatEntity = await this.client.getEntity(post.chat_id); } catch (e) {}
+      if (!chatEntity) {
+        try {
+          const dialogs = await this.client.getDialogs({ limit: 100 });
+          const found = dialogs.find(d => {
+            const ent = d.entity;
+            if (!ent) return false;
+            if (ent.username && post.username && ent.username.toLowerCase() === post.username.toLowerCase()) return true;
+            if (ent.id && post.chat_id && String(ent.id).includes(String(post.chat_id).replace("-100", ""))) return true;
+            return false;
+          });
+          if (found) chatEntity = found.entity;
+        } catch (e) {}
       }
+
       if (chatEntity) {
         const msgs = await this.client.getMessages(chatEntity, { ids: [parseInt(post.message_id, 10)] });
         if (msgs && msgs[0] && msgs[0].media) {
