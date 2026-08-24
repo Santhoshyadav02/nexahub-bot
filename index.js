@@ -1878,7 +1878,7 @@ function smartShortenTitle(str, maxLen = 18) {
 }
 
 const CARD_1_TO_10_LABELS = [
-  "🔥 K-Pop 열애설",
+  "🔥 케이팝 열애설",
   "💋 비밀 연애",
   "👀 아이돌 열애 루머",
   "💔 연예인 결별",
@@ -2053,8 +2053,8 @@ async function getTrendingKeyboard() {
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
-  // 2. 🔥 HOT TOPICS Section Header & 20 Cards (4 rows x 5 columns) directly below TOP 10 & 🔄 순위 새로고침
-  rows.push([{ text: "🔥 HOT TOPICS", callback_data: "none" }]);
+  // 2. 🔥 인기 주제 Section Header & 20 Cards (4 rows x 5 columns) directly below TOP 10 & 🔄 순위 새로고침
+  rows.push([{ text: "🔥 인기 주제", callback_data: "none" }]);
   const mainKeys = (await getMainKeyboard()).inline_keyboard;
   rows.push(...mainKeys);
 
@@ -2348,7 +2348,7 @@ const CATEGORIES = {
 };
 
 const TOPIC_NAMES = {
-  "Romantic Vibe": "🔥 K-Pop 열애설",
+  "Romantic Vibe": "🔥 케이팝 열애설",
   "Dating": "💋 비밀 연애",
   "Romance": "👀 아이돌 열애 루머",
   "Crotch": "💔 연예인 결별",
