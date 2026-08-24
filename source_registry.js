@@ -104,7 +104,7 @@ class SourceRegistry {
     }
   }
 
-  applyRollingRetention(maxPerTopic = 20) {
+  applyRollingRetention(maxPerTopic = 50) {
     const retainedPosts = [];
     const grouped = {};
 
@@ -148,7 +148,7 @@ class SourceRegistry {
 
   saveData() {
     try {
-      this.applyRollingRetention(20);
+      this.applyRollingRetention(50);
       const payload = {
         updated_at: new Date().toISOString(),
         sources: this.sources,

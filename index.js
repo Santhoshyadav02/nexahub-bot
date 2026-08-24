@@ -1359,8 +1359,8 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
   const isTopicView = callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:");
   const itemsPerPage = 10;
-  const maxTotalPages = isTopicView ? 2 : 3;
-  const maxItemsCap = isTopicView ? 20 : 30;
+  const maxTotalPages = isTopicView ? 5 : 5;
+  const maxItemsCap = isTopicView ? 50 : 50;
 
   const maxUiItems = (items || []).slice(0, maxItemsCap);
   const totalPages = Math.min(maxTotalPages, Math.ceil(maxUiItems.length / itemsPerPage));
@@ -2062,17 +2062,24 @@ async function getTrendingKeyboard() {
   if (rankings.length > 0) {
     rows.push([{ text: "🔥 실시간 검색어 상위 10 ⚡", callback_data: "none" }]);
     const rankEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+    const rankingButtons = [];
     for (let i = 0; i < Math.min(10, rankings.length); i++) {
       const item = rankings[i];
       if (!item || !item.keyword) continue;
       const emoji = rankEmojis[i] || `${i + 1}️⃣`;
       const targetUrl = item.url || `https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(item.keyword)}`;
 
-      rows.push([{
+      rankingButtons.push({
         text: `${emoji} ${item.keyword}`,
         url: targetUrl
-      }]);
+      });
     }
+
+    // Pair ranking buttons: 2 per row (1 line = 2 ranking cards)
+    for (let i = 0; i < rankingButtons.length; i += 2) {
+      rows.push(rankingButtons.slice(i, i + 2));
+    }
+
     rows.push([{ text: "🔄 순위 새로고침", callback_data: "refresh_rankings" }]);
   }
 
