@@ -318,11 +318,23 @@ class SourceRegistry {
     if (!targetKeyword) return;
     const kwLower = targetKeyword.trim().toLowerCase();
 
-    // Find all valid video posts belonging to this source keyword
+    const source = this.sources.find(s => 
+      (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || 
+      (s.name && s.name.trim().toLowerCase() === kwLower) ||
+      (s.username && s.username.trim().toLowerCase() === kwLower)
+    );
+
+    const targetKwLower = source ? source.keyword.trim().toLowerCase() : kwLower;
+
+    // Find all valid video posts belonging to this source
     const sourcePosts = this.posts.filter(p => {
       const pKw = (p.keyword || "").trim().toLowerCase();
       const pChan = (p.channel_name || "").trim().toLowerCase();
-      return pKw === kwLower || pChan === kwLower;
+      const pUser = (p.username || "").trim().toLowerCase();
+      const pSrcId = p.source_id;
+      if (source && pSrcId && pSrcId === source.id) return true;
+      if (source && source.username && pUser === source.username.trim().toLowerCase()) return true;
+      return pKw === targetKwLower || pChan === targetKwLower || pUser === targetKwLower;
     });
 
     const validVideos = sourcePosts.filter(p => {
@@ -350,7 +362,13 @@ class SourceRegistry {
       this.posts = this.posts.filter(p => {
         const pKw = (p.keyword || "").trim().toLowerCase();
         const pChan = (p.channel_name || "").trim().toLowerCase();
-        const isMatch = pKw === kwLower || pChan === kwLower;
+        const pUser = (p.username || "").trim().toLowerCase();
+        const pSrcId = p.source_id;
+        let isMatch = pKw === targetKwLower || pChan === targetKwLower || pUser === targetKwLower;
+        if (source) {
+          if (pSrcId && pSrcId === source.id) isMatch = true;
+          if (source.username && pUser === source.username.trim().toLowerCase()) isMatch = true;
+        }
         if (!isMatch) return true;
         return retained50Set.has(p.id);
       });
