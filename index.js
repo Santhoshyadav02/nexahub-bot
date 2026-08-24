@@ -1634,6 +1634,14 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     } catch (e) {}
   }
 
+  console.log("[VIDEO_DETAIL]");
+  console.log(`message_id=${item.message_id || "N/A"}`);
+  console.log(`media_type=${item.media_type}`);
+  console.log(`video_file_id=${cachedFileId || "N/A"}`);
+  console.log(`telegram_url=${postUrl}`);
+  console.log(`preview_result=${cachedFileId || fromChatId ? "SUCCESS" : "FALLBACK_TEXT"}`);
+  console.log(`join_url=${groupUrl}`);
+
   if (messageId) {
     return await editMessageTextSafe(chatId, messageId, detailText, opts);
   } else {
@@ -1656,16 +1664,16 @@ async function renderCategoryResources(chatId, catKey, page = 1, messageId = nul
 
 async function renderTopicPosts(chatId, topicKey, page = 1, messageId = null) {
   const posts = sourceRegistry.getPostsForKeyword(topicKey, true);
+  const allRegistryPosts = sourceRegistry.getPostsForKeyword(topicKey, false);
   const displayTopicName = TOPIC_NAMES[topicKey] || topicKey;
   const resolvedSourceObj = sourceRegistry.getSourceByKeyword(topicKey);
   const resolvedSourceName = resolvedSourceObj ? (resolvedSourceObj.name || resolvedSourceObj.keyword) : topicKey;
 
-  console.log("[ROLLING50]");
-  console.log(`Requested category: ${topicKey}`);
-  console.log(`Resolved source: ${resolvedSourceName}`);
-  console.log(`DB valid videos: ${posts.length}`);
-  console.log(`API returned: ${posts.length}`);
-  console.log(`UI cards generated: ${posts.length}`);
+  console.log("[TOPIC_FLOW]");
+  console.log(`requested_card=${topicKey}`);
+  console.log(`resolved_channel=${resolvedSourceName}`);
+  console.log(`real_video_count=${posts.length}`);
+  console.log(`list_count=${Math.min(10, posts.length)}`);
 
   return await renderHyperlinkListPostView(chatId, displayTopicName, posts, page, `topic_page:${topicKey}`, messageId);
 }

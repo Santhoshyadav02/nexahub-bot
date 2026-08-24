@@ -214,18 +214,30 @@ class MTProtoChannelReader {
               if (m.media instanceof Api.MessageMediaDocument) {
                 const doc = m.media.document;
                 let videoAttr = null;
-                if (doc && doc.attributes) {
-                  videoAttr = doc.attributes.find(a => a instanceof Api.DocumentAttributeVideo);
+                let isVideo = false;
+
+                if (doc) {
+                  const mime = (doc.mimeType || doc.mime_type || "").toLowerCase();
+                  if (mime.startsWith("video/")) {
+                    isVideo = true;
+                  }
+                  if (doc.attributes) {
+                    videoAttr = doc.attributes.find(a =>
+                      (a instanceof Api.DocumentAttributeVideo) ||
+                      (a && (a.className === "DocumentAttributeVideo" || a.CONSTRUCTOR_ID === 0xef02ce60))
+                    );
+                    if (videoAttr) isVideo = true;
+                  }
                 }
 
-                if (videoAttr) {
+                if (isVideo) {
                   mediaType = "video";
                   videosFoundCount++;
                   channelReport.num_videos++;
-                  if (doc.id) {
+                  if (doc && doc.id) {
                     videoFileId = String(doc.id);
                   }
-                  if (videoAttr.duration) {
+                  if (videoAttr && videoAttr.duration) {
                     const dur = Math.floor(videoAttr.duration);
                     const mins = Math.floor(dur / 60);
                     const secs = dur % 60;
@@ -233,6 +245,8 @@ class MTProtoChannelReader {
                   }
                 } else {
                   mediaType = "file";
+                  if (!channelReport.num_documents) channelReport.num_documents = 0;
+                  channelReport.num_documents++;
                 }
               } else if (m.media instanceof Api.MessageMediaPhoto) {
                 mediaType = "photo";

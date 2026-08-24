@@ -222,11 +222,13 @@ class SourceRegistry {
     const targetChannelName = source ? source.name : (msg.chat.title || "Telegram Channel");
 
     let text = msg.text || msg.caption || "";
-    let mediaType = "text";
-    let duration = null;
+    let mediaType = msg.media_type || "text";
+    let duration = msg.duration || null;
+    let videoFileId = msg.video_file_id || msg.file_id || null;
 
     if (msg.video) {
       mediaType = "video";
+      if (msg.video.file_id) videoFileId = msg.video.file_id;
       if (msg.video.duration) {
         const durSec = msg.video.duration;
         const mins = Math.floor(durSec / 60);
@@ -235,6 +237,8 @@ class SourceRegistry {
       }
     } else if (msg.photo) {
       mediaType = "photo";
+    } else if (msg.media_type === "video" || msg.video_file_id) {
+      mediaType = "video";
     }
 
     let rawTextTitle = text.split("\n")[0] ? text.split("\n")[0].trim() : "";
@@ -280,6 +284,7 @@ class SourceRegistry {
       caption: text,
       media_type: mediaType,
       duration: duration,
+      video_file_id: videoFileId,
       invite_url: inviteUrl,
       username: username,
       telegram_url: telegramUrl,
@@ -294,7 +299,11 @@ class SourceRegistry {
         ...postRecord,
         id: this.posts[existingPostIndex].id
       };
-      console.log(`🔄 Updated existing channel_post [${uniqueHash}] for keyword "${postRecord.keyword}"`);
+      console.log("[INGEST]");
+      console.log(`channel=${targetChannelName}`);
+      console.log(`message_id=${messageId}`);
+      console.log(`media_type=${mediaType}`);
+      console.log(`telegram_url=${telegramUrl}`);
       this.saveData();
       return { post: this.posts[existingPostIndex], isNew: false };
     } else {
@@ -302,7 +311,11 @@ class SourceRegistry {
       if (source) {
         source.last_checked_at = new Date().toISOString();
       }
-      console.log(`📥 Ingested NEW channel_post [${uniqueHash}] for keyword "${postRecord.keyword}": "${fullTitle}"`);
+      console.log("[INGEST]");
+      console.log(`channel=${targetChannelName}`);
+      console.log(`message_id=${messageId}`);
+      console.log(`media_type=${mediaType}`);
+      console.log(`telegram_url=${telegramUrl}`);
       this.saveData();
       return { post: postRecord, isNew: true };
     }
