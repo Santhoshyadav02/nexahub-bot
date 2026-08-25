@@ -21,6 +21,7 @@ class SourceRegistry {
   constructor() {
     this.sources = [];
     this.posts = [];
+    this.seenMessages = new Set();
     this.loadData();
   }
 
@@ -31,6 +32,12 @@ class SourceRegistry {
         const parsed = JSON.parse(raw);
         this.sources = parsed.sources || [];
         this.posts = parsed.posts || [];
+        this.seenMessages = new Set(parsed.seen_messages || []);
+        for (const p of this.posts) {
+          if (p.unique_hash) this.seenMessages.add(p.unique_hash);
+          if (p.chat_id && p.message_id) this.seenMessages.add(`${p.chat_id}_${p.message_id}`);
+          if (p.keyword && p.message_id) this.seenMessages.add(`${p.keyword}_${p.message_id}`);
+        }
       } else {
         this.initDefaultData();
       }
@@ -45,6 +52,7 @@ class SourceRegistry {
   initDefaultData() {
     this.sources = [];
     this.posts = [];
+    this.seenMessages = new Set();
     this.saveData();
   }
 
@@ -150,10 +158,12 @@ class SourceRegistry {
   saveData() {
     try {
       this.applyRollingRetention(50);
+      const seenArr = Array.from(this.seenMessages || []);
       const payload = {
         updated_at: new Date().toISOString(),
         sources: this.sources,
-        posts: this.posts
+        posts: this.posts,
+        seen_messages: seenArr.length > 5000 ? seenArr.slice(seenArr.length - 5000) : seenArr
       };
       fs.writeFileSync(DATA_FILE, JSON.stringify(payload, null, 2), "utf8");
     } catch (err) {
@@ -307,6 +317,9 @@ class SourceRegistry {
 
     const isDebug = process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug";
 
+    const msgKey1 = `${chatId}_${messageId}`;
+    const msgKey2 = `${targetResolvedKw}_${messageId}`;
+
     if (existingPostIndex !== -1) {
       this.posts[existingPostIndex] = {
         ...this.posts[existingPostIndex],
@@ -315,6 +328,11 @@ class SourceRegistry {
         video_file_id: videoFileId || this.posts[existingPostIndex].video_file_id || null,
         updated_at: new Date().toISOString()
       };
+      if (this.seenMessages) {
+        this.seenMessages.add(msgKey1);
+        this.seenMessages.add(msgKey2);
+        if (uniqueHash) this.seenMessages.add(uniqueHash);
+      }
       if (isDebug) {
         console.log("[INGEST]");
         console.log(`channel=${targetChannelName}`);
@@ -324,32 +342,44 @@ class SourceRegistry {
       }
       this.saveData();
       return { post: this.posts[existingPostIndex], isNew: false };
-    } else {
-      this.posts.unshift(postRecord);
-      // Enforce rolling 40 active posts cap per channel
-      const maxPostsPerChannel = 40;
-      const channelPosts = this.posts.filter(p => this.resolveKeyword(p.keyword) === targetResolvedKw);
-      if (channelPosts.length > maxPostsPerChannel) {
-        const postsToEvict = channelPosts.slice(maxPostsPerChannel);
-        const evictIds = new Set(postsToEvict.map(p => p.id));
-        this.posts = this.posts.filter(p => !evictIds.has(p.id));
-      }
-
-      if (source) {
-        source.last_checked_at = new Date().toISOString();
-      }
-      if (isDebug) {
-        console.log("[INGEST]");
-        console.log(`channel=${targetChannelName}`);
-        console.log(`message_id=${messageId}`);
-        console.log(`media_type=${mediaType}`);
-        console.log(`telegram_url=${telegramUrl}`);
-      } else if (!isStartupSync) {
-        console.log(`📥 [INGEST] channel=${targetChannelName} msgId=${messageId} type=${mediaType}`);
-      }
-      this.saveData();
-      return { post: postRecord, isNew: true };
     }
+
+    // Check if post was previously seen in history (evicted from 40-video display cache)
+    const wasSeenInHistory = this.seenMessages && (this.seenMessages.has(msgKey1) || this.seenMessages.has(msgKey2) || (uniqueHash && this.seenMessages.has(uniqueHash)));
+    if (wasSeenInHistory) {
+      return { post: null, isNew: false };
+    }
+
+    if (this.seenMessages) {
+      this.seenMessages.add(msgKey1);
+      this.seenMessages.add(msgKey2);
+      if (uniqueHash) this.seenMessages.add(uniqueHash);
+    }
+
+    this.posts.unshift(postRecord);
+    // Enforce rolling 40 active posts cap per channel
+    const maxPostsPerChannel = 40;
+    const channelPosts = this.posts.filter(p => this.resolveKeyword(p.keyword) === targetResolvedKw);
+    if (channelPosts.length > maxPostsPerChannel) {
+      const postsToEvict = channelPosts.slice(maxPostsPerChannel);
+      const evictIds = new Set(postsToEvict.map(p => p.id));
+      this.posts = this.posts.filter(p => !evictIds.has(p.id));
+    }
+
+    if (source) {
+      source.last_checked_at = new Date().toISOString();
+    }
+    if (isDebug) {
+      console.log("[INGEST]");
+      console.log(`channel=${targetChannelName}`);
+      console.log(`message_id=${messageId}`);
+      console.log(`media_type=${mediaType}`);
+      console.log(`telegram_url=${telegramUrl}`);
+    } else if (!isStartupSync) {
+      console.log(`📥 [INGEST] channel=${targetChannelName} msgId=${messageId} type=${mediaType}`);
+    }
+    this.saveData();
+    return { post: postRecord, isNew: true };
   }
 
   resolveKeyword(rawKeyword) {

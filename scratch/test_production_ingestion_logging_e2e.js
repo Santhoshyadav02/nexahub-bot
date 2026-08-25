@@ -159,6 +159,18 @@ async function runIdempotencyAndLoggingTests() {
   check(syncRes.length === 0 && capturedLogs.some(l => l.includes("already in progress")), "TEST 7: Concurrent MTProto sync blocked cleanly by isSyncing lock");
   reader.isSyncing = false;
 
+  // TEST 8: Evicted Historical Post (> 40 cap) Retained in seenMessages Index
+  const evictedMsgId = 1001; // First message inserted in TEST 1, evicted when 100 posts were loaded
+  const reIngestRes = sourceRegistry.processChannelPost({
+    chat: { id: "-10012345678", title: targetChannel, username: "cccsefk" },
+    message_id: evictedMsgId,
+    date: nowSec + 1,
+    video: { duration: 25, file_id: "BAACAgUAAxkBAAI_EVICTED_1001" },
+    caption: "Evicted Historical Video #1001"
+  }, targetChannel, true);
+
+  check(reIngestRes.isNew === false && reIngestRes.post === null, "TEST 8: Evicted historical post (> 40 cap) retained in seenMessages and NEVER re-ingested as new");
+
   console.log("\n==================================================");
   console.log(`📊 E2E IDEMPOTENCY & LOGGING RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log("==================================================");

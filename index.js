@@ -1520,7 +1520,13 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     title = TOPIC_NAMES[topicKey] || topicKey;
   }
 
-  const item = items[itemIndex];
+  let item = null;
+  if (typeof itemIndex === "string" && itemIndex.length > 5) {
+    item = sourceRegistry.getPostById(itemIndex);
+  }
+  if (!item) {
+    item = items[itemIndex];
+  }
   if (!item) {
     return await sendMessageSafe(chatId, "⚠️ 항목 상세 정보를 찾을 수 없습니다.", {
       reply_markup: { inline_keyboard: [[{ text: "🏠 홈", callback_data: "menu" }]] }
