@@ -37,10 +37,16 @@ function sanitizeUTF8(str) {
 
 const isMainModule = require.main === module;
 
-console.log(`🤖 [PID:${APP_PID}] [Host:${APP_HOST}] Main module initialized. isMainModule=${isMainModule}`);
+let enablePolling = false;
+if (isMainModule && !global.__botPollingInitialized) {
+  enablePolling = true;
+  global.__botPollingInitialized = true;
+}
+
+console.log(`🤖 [PID:${APP_PID}] [Host:${APP_HOST}] Main module initialized. isMainModule=${isMainModule}, enablePolling=${enablePolling}`);
 
 const bot = new TelegramBot(TOKEN, {
-  polling: isMainModule ? {
+  polling: enablePolling ? {
     params: {
       allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"]
     }
