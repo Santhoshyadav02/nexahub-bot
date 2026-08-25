@@ -505,25 +505,52 @@ class SourceRegistry {
   getPostsForKeyword(rawKeyword, videoOnly = false) {
     if (!rawKeyword) return [];
     const resolved = this.resolveKeyword(rawKeyword);
-    let targetKwLower = resolved.trim().toLowerCase();
+    const targetKwLower = resolved.trim().toLowerCase();
+    const rawKwLower = String(rawKeyword).trim().toLowerCase();
 
-    const source = this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === targetKwLower) || (s.name && s.name.trim().toLowerCase() === targetKwLower));
+    const source = this.sources.find(s =>
+      (s.keyword && s.keyword.trim().toLowerCase() === targetKwLower) ||
+      (s.name && s.name.trim().toLowerCase() === targetKwLower) ||
+      (s.username && s.username.trim().toLowerCase() === targetKwLower)
+    );
 
     const allDbPostsForSource = this.posts.filter(p => {
       const pKw = (p.keyword || "").trim().toLowerCase();
       const pChan = (p.channel_name || "").trim().toLowerCase();
+      const pUser = (p.username || "").trim().toLowerCase();
       const pSrcId = p.source_id;
+
       if (source && pSrcId && pSrcId === source.id) return true;
-      if (pKw === targetKwLower || pChan === targetKwLower) return true;
-      if (source && source.username && p.username && p.username.trim().toLowerCase() === source.username.trim().toLowerCase()) return true;
-      return false;
+      if (source && source.username && pUser === source.username.trim().toLowerCase()) return true;
+
+      const pKwResolved = this.resolveKeyword(p.keyword).trim().toLowerCase();
+      const pChanResolved = this.resolveKeyword(p.channel_name).trim().toLowerCase();
+
+      return (
+        pKw === targetKwLower || pChan === targetKwLower ||
+        pKw === rawKwLower || pChan === rawKwLower ||
+        pKwResolved === targetKwLower || pChanResolved === targetKwLower
+      );
     });
 
     const isValidVideoRecord = p => {
       if (!p) return false;
       if (p.media_type !== "video") return false;
       if (!p.message_id || String(p.message_id).trim() === "") return false;
-      if (!p.telegram_url || !p.telegram_url.startsWith("http")) return false;
+
+      let url = p.telegram_url;
+      if (!url || !url.startsWith("http")) {
+        if (p.username) {
+          url = `https://t.me/${p.username}/${p.message_id}`;
+        } else if (p.invite_url && p.invite_url.startsWith("http")) {
+          url = p.invite_url;
+        } else if (p.chat_id) {
+          const clean = String(p.chat_id).replace("-100", "").replace("-", "");
+          url = `https://t.me/c/${clean}/${p.message_id}`;
+        }
+      }
+      if (!url || !url.startsWith("http")) return false;
+      p.telegram_url = url;
       return true;
     };
 
