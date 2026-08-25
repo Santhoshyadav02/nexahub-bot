@@ -2525,7 +2525,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         const post = sourceRegistry.getPostById(videoId);
         if (post) {
           callbackPrefix = `topic_page:${post.keyword}`;
-          const posts = sourceRegistry.getPostsForKeyword(post.keyword);
+          const posts = sourceRegistry.getPostsForKeyword(post.keyword, true);
           const foundIdx = posts.findIndex(p => p.id === post.id || p.unique_hash === post.unique_hash);
           itemIdx = foundIdx !== -1 ? foundIdx : 0;
           page = Math.floor(itemIdx / 8) + 1;
