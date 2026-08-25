@@ -90,14 +90,20 @@ class MTProtoChannelReader {
   }
 
   async syncAllChannels(limit = 10, saveToDisk = false) {
-    const results = [];
-    const connected = await this.connect();
-    if (!connected) {
-      console.warn("⚠️ Cannot run MTProto sync: Client not connected.");
-      return results;
+    if (this.isSyncing) {
+      console.log("ℹ️ MTProto sync already in progress. Skipping concurrent sync request.");
+      return [];
     }
+    this.isSyncing = true;
+    try {
+      const results = [];
+      const connected = await this.connect();
+      if (!connected) {
+        console.warn("⚠️ Cannot run MTProto sync: Client not connected.");
+        return results;
+      }
 
-    console.log("📡 MTProto client: SYNC START");
+      console.log("📡 MTProto client: SYNC START");
 
     let dialogs = [];
     try {
@@ -309,7 +315,7 @@ class MTProtoChannelReader {
               // Sort by message_id ascending so newest post is unshifted last to position 0
               const sortedMsgs = [...parsedPosts].sort((a, b) => a.message_id - b.message_id);
               for (const p of sortedMsgs) {
-                const res = sourceRegistry.processChannelPost(p, ch.name);
+                const res = sourceRegistry.processChannelPost(p, ch.name, true);
                 if (res && res.isNew) {
                   newCount++;
                   insertedCount++;
@@ -324,6 +330,8 @@ class MTProtoChannelReader {
               channelReport.inserted = insertedCount;
               channelReport.skipped = skippedCount;
               channelReport.existing_after = postsAfter.length;
+
+              console.log(`📦 [SYNC] channel=${ch.name} historical posts loaded=${channelReport.inserted}`);
             }
           }
         }
@@ -345,9 +353,12 @@ class MTProtoChannelReader {
       results.push(channelReport);
     }
 
-    console.log("📡 MTProto client: SYNC COMPLETE");
-    console.log("📡 MTProto client: STILL CONNECTED");
-    return results;
+      console.log("📡 MTProto client: SYNC COMPLETE");
+      console.log("📡 MTProto client: STILL CONNECTED");
+      return results;
+    } finally {
+      this.isSyncing = false;
+    }
   }
 
   async resolveMediaForPost(post) {

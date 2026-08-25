@@ -211,7 +211,7 @@ class SourceRegistry {
     return source;
   }
 
-  processChannelPost(msg, explicitKeyword = null) {
+  processChannelPost(msg, explicitKeyword = null, isStartupSync = false) {
     if (!msg || !msg.chat) return null;
 
     const chatId = String(msg.chat.id);
@@ -314,7 +314,7 @@ class SourceRegistry {
         console.log(`message_id=${messageId}`);
         console.log(`media_type=${mediaType}`);
         console.log(`telegram_url=${telegramUrl}`);
-      } else {
+      } else if (!isStartupSync) {
         console.log(`📥 [INGEST] channel=${targetChannelName} msgId=${messageId} type=${mediaType}`);
       }
       this.saveData();
