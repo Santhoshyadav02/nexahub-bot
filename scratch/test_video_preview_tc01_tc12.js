@@ -30,7 +30,7 @@ async function runAllTestCases() {
     caption: "TC01/TC02 Test Video"
   }, "Dating");
 
-  const post1 = sourceRegistry.getPostById(1111);
+  const post1 = sourceRegistry.posts.find(p => String(p.message_id) === "1111");
   check(post1 && post1.video_file_id === validFileId, "TC01 & TC02: Valid video record and valid Bot API file_id present");
 
   // TC03 & TC04: Corrupted / Expired / Numeric MTProto file_id fallback & invalidation
