@@ -2588,23 +2588,12 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
     const firstName = msg.from.first_name || "there";
 
-    // Welcome image + text
-    await sendPhotoSafe(chatId, WELCOME_IMAGE, {
-      caption:
-        `📡 <b>NexaHub에 오신 것을 환영합니다, ${escapeHTML(firstName)}님!</b>\n\n` +
-        `🔍 텔레그램 리소스 검색 엔진입니다. 키워드를 전송하여 그룹, 채널, 동영상, 음악을 검색하세요.\n\n` +
-        `한국어 및 영어를 지원합니다.\n\n` +
-        `👇 탐색할 주제를 선택하세요!`,
-      parse_mode: "HTML",
-      reply_markup: getPersistentNavigationKeyboard()
-    });
-
-    // Topic buttons + Trending combined
-    await new Promise(r => setTimeout(r, 800));
-    
     const combinedKeyboard = await getTrendingKeyboard();
 
     await sendMessageSafe(chatId,
+      `📡 <b>NexaHub에 오신 것을 환영합니다, ${escapeHTML(firstName)}님!</b>\n\n` +
+      `🔍 텔레그램 리소스 검색 엔진입니다. 키워드를 전송하여 그룹, 채널, 동영상, 음악을 검색하세요.\n\n` +
+      `한국어 및 영어를 지원합니다.\n\n` +
       `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`,
       {
         parse_mode: "HTML",
