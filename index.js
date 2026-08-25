@@ -1396,6 +1396,10 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   pageItems.forEach((p, index) => {
     const itemNumber = startIndex + index + 1;
     let displayTitle = String(p.title || p.name || "").trim();
+
+    // Strip video duration brackets e.g. [0:13], [1:15], [12:34] from list item titles
+    displayTitle = displayTitle.replace(/\[\d+:\d+\]\s*/g, "").trim();
+
     if (!displayTitle || (displayTitle.includes("Update") && !displayTitle.includes("#"))) {
       displayTitle = "🎬 제목 없음";
     }

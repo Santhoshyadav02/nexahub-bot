@@ -203,7 +203,7 @@ function parseEmbedHTML(url, html) {
 
   let icon = "🎬 ";
   if (isVideo) {
-    icon = duration ? `▶️ [${duration}] ` : "▶️ ";
+    icon = "▶️ ";
   } else if (isPhoto) {
     icon = "🖼️ ";
   }

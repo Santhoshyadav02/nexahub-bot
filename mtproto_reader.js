@@ -261,7 +261,7 @@ class MTProtoChannelReader {
 
               let icon = "🎬 ";
               if (mediaType === "video") {
-                icon = durationStr ? `▶️ [${durationStr}] ` : "▶️ ";
+                icon = "▶️ ";
               } else if (mediaType === "photo") {
                 icon = "🖼️ ";
               }

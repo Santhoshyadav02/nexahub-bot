@@ -246,7 +246,7 @@ class SourceRegistry {
 
     let icon = "🎬 ";
     if (mediaType === "video") {
-      icon = duration ? `▶️ [${duration}] ` : "▶️ ";
+      icon = "▶️ ";
     } else if (mediaType === "photo") {
       icon = "🖼️ ";
     }
