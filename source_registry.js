@@ -39,6 +39,7 @@ class SourceRegistry {
       this.initDefaultData();
     }
     this.ensureInitialSources();
+    this.cleanSuspiciousFileIds();
   }
 
   initDefaultData() {
@@ -546,6 +547,47 @@ class SourceRegistry {
     const realPosts = posts.filter(p => p.message_id && parseInt(p.message_id, 10) < 10000);
     if (realPosts.length === 0) return 0;
     return Math.max(...realPosts.map(p => parseInt(p.message_id, 10)));
+  }
+
+  invalidateVideoFileId(identifier) {
+    if (!identifier) return;
+    const post = this.posts.find(p => p.id === identifier || p.unique_hash === identifier || String(p.message_id) === String(identifier) || p.video_file_id === identifier);
+    if (post) {
+      post.video_file_id = null;
+      if (post.file_id) post.file_id = null;
+      this.saveData();
+      if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+        console.log(`🧹 Invalidated video_file_id for post identifier: ${identifier}`);
+      }
+    }
+  }
+
+  updateVideoFileId(identifier, newFileId) {
+    if (!identifier || !newFileId) return;
+    const post = this.posts.find(p => p.id === identifier || p.unique_hash === identifier || String(p.message_id) === String(identifier));
+    if (post) {
+      post.video_file_id = newFileId;
+      this.saveData();
+      if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+        console.log(`💾 Updated valid video_file_id for post identifier: ${identifier}`);
+      }
+    }
+  }
+
+  cleanSuspiciousFileIds() {
+    let modified = false;
+    for (const p of this.posts) {
+      if (p.video_file_id) {
+        if (typeof p.video_file_id !== "string" || 
+            p.video_file_id.includes("LIVE_TEST") || 
+            p.video_file_id.includes("test_") || 
+            p.video_file_id.length < 20) {
+          p.video_file_id = null;
+          modified = true;
+        }
+      }
+    }
+    if (modified) this.saveData();
   }
 
   getAllSources() {

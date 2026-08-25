@@ -1181,10 +1181,35 @@ function auditTelegramError(funcName, chatId, err, text, options) {
   const errCode = err.code || (err.response && err.response.body ? err.response.body.error_code : "UNKNOWN");
   const errDesc = err.message || (err.response && err.response.body ? err.response.body.description : String(err));
 
+  // Ignore harmless Telegram API non-errors
+  if (errDesc.includes("message is not modified")) {
+    return;
+  }
+
+  // Handle file ID recovery and no-text-in-message notices quietly
+  const isFileIdErr = /wrong remote file identifier|can't unserialize it|Wrong padding|Wrong last symbol|invalid file identifier|file_id_invalid/i.test(errDesc);
+  const isNoTextErr = /there is no text in the message to edit|message to edit has no text/i.test(errDesc);
+
+  if (isFileIdErr) {
+    if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+      console.log(`⚠️ [FILE_ID RECOVERY TRIGGERED] Func:${funcName} | ChatID:${chatId} | ${errDesc}`);
+    }
+    return;
+  }
+
+  if (isNoTextErr) {
+    if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+      console.log(`ℹ️ [EDIT_TEXT NOTICE] Func:${funcName} | ChatID:${chatId} | ${errDesc}`);
+    }
+    return;
+  }
+
   console.error(`❌ [TELEGRAM API ERROR] Func:${funcName} | ChatID:${chatId} | Code:${errCode} | Error:${errDesc}`);
 
   if (options && options.reply_markup && Array.isArray(options.reply_markup.inline_keyboard)) {
-    console.error(`📋 [KEYBOARD AUDIT] Rows:${options.reply_markup.inline_keyboard.length}`);
+    if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+      console.log(`📋 [KEYBOARD AUDIT] Rows:${options.reply_markup.inline_keyboard.length}`);
+    }
     options.reply_markup.inline_keyboard.forEach((row, rIdx) => {
       if (!Array.isArray(row)) return;
       row.forEach((btn, cIdx) => {
@@ -1587,7 +1612,13 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     }
   }
 
-  const fromChatId = item.chat_id || (item.username ? `@${item.username}` : null) || (item.chat ? (item.chat.id || (item.chat.username ? `@${item.chat.username}` : null)) : null);
+  let fromChatId = item.chat_id || (item.username ? (item.username.startsWith("@") ? item.username : `@${item.username}`) : null);
+  if (!fromChatId && (item.keyword || item.channel_name)) {
+    const src = sourceRegistry.getSourceByKeyword(item.keyword || item.channel_name);
+    if (src) {
+      fromChatId = src.chat_id || (src.username ? (src.username.startsWith("@") ? src.username : `@${src.username}`) : null);
+    }
+  }
 
   // 1. Send via cached Telegram Bot API file_id if available
   if (cachedFileId) {
@@ -1606,10 +1637,15 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
       });
       if (res) return res;
     }
+
+    // If cachedFileId failed (res is null), invalidate cached file_id and proceed to native Telegram channel recovery
+    sourceRegistry.invalidateVideoFileId(item.id || item.unique_hash || item.message_id);
+    clearVideoCache(item.id || item.unique_hash);
+    cachedFileId = null;
   }
 
   // 2. Native Telegram Playable Video Delivery via copyMessage
-  if (item.media_type === "video" && fromChatId && item.message_id) {
+  if (fromChatId && item.message_id) {
     try {
       const res = await copyMessageSafe(chatId, fromChatId, parseInt(item.message_id, 10), {
         caption: detailText,
@@ -1617,8 +1653,10 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
         reply_markup: { inline_keyboard }
       });
       if (res) {
-        if (res.video && res.video.file_id) {
-          saveVideoCache(item.id || item.unique_hash, res.video.file_id);
+        const newFileId = (res.video && res.video.file_id) || (res.photo && Array.isArray(res.photo) && res.photo[res.photo.length - 1].file_id);
+        if (newFileId) {
+          sourceRegistry.updateVideoFileId(item.id || item.unique_hash || item.message_id, newFileId);
+          saveVideoCache(item.id || item.unique_hash, newFileId);
         }
         return res;
       }
@@ -1627,7 +1665,14 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     // Fallback: Native forwardMessage
     try {
       const fwdRes = await forwardMessageSafe(chatId, fromChatId, parseInt(item.message_id, 10));
-      if (fwdRes) return fwdRes;
+      if (fwdRes) {
+        const fwdFileId = (fwdRes.video && fwdRes.video.file_id) || (fwdRes.photo && Array.isArray(fwdRes.photo) && fwdRes.photo[fwdRes.photo.length - 1].file_id);
+        if (fwdFileId) {
+          sourceRegistry.updateVideoFileId(item.id || item.unique_hash || item.message_id, fwdFileId);
+          saveVideoCache(item.id || item.unique_hash, fwdFileId);
+        }
+        return fwdRes;
+      }
     } catch (e) {}
   }
 
@@ -2582,7 +2627,8 @@ bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
 
-    const messageId = query.message ? query.message.message_id : null;
+    const isMediaMsg = query.message && (query.message.video || query.message.photo || query.message.document || query.message.animation);
+    const messageId = (query.message && !isMediaMsg) ? query.message.message_id : null;
 
     if (data === "none") {
       return await bot.answerCallbackQuery(query.id).catch(() => {});
