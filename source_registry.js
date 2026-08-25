@@ -346,9 +346,6 @@ class SourceRegistry {
 
     // Check if post was previously seen in history (evicted from 40-video display cache)
     const wasSeenInHistory = this.seenMessages && (this.seenMessages.has(msgKey1) || this.seenMessages.has(msgKey2) || (uniqueHash && this.seenMessages.has(uniqueHash)));
-    if (wasSeenInHistory) {
-      return { post: null, isNew: false };
-    }
 
     if (this.seenMessages) {
       this.seenMessages.add(msgKey1);
@@ -356,13 +353,22 @@ class SourceRegistry {
       if (uniqueHash) this.seenMessages.add(uniqueHash);
     }
 
+    if (wasSeenInHistory) {
+      this.saveData();
+      return { post: null, isNew: false };
+    }
+
     this.posts.unshift(postRecord);
     // Enforce rolling 40 active posts cap per channel
     const maxPostsPerChannel = 40;
     const channelPosts = this.posts.filter(p => this.resolveKeyword(p.keyword) === targetResolvedKw);
+    let isRetainedInDisplay = true;
     if (channelPosts.length > maxPostsPerChannel) {
       const postsToEvict = channelPosts.slice(maxPostsPerChannel);
       const evictIds = new Set(postsToEvict.map(p => p.id));
+      if (evictIds.has(postRecord.id)) {
+        isRetainedInDisplay = false;
+      }
       this.posts = this.posts.filter(p => !evictIds.has(p.id));
     }
 
@@ -375,11 +381,11 @@ class SourceRegistry {
       console.log(`message_id=${messageId}`);
       console.log(`media_type=${mediaType}`);
       console.log(`telegram_url=${telegramUrl}`);
-    } else if (!isStartupSync) {
+    } else if (!isStartupSync && isRetainedInDisplay) {
       console.log(`📥 [INGEST] channel=${targetChannelName} msgId=${messageId} type=${mediaType}`);
     }
     this.saveData();
-    return { post: postRecord, isNew: true };
+    return { post: isRetainedInDisplay ? postRecord : null, isNew: isRetainedInDisplay };
   }
 
   resolveKeyword(rawKeyword) {

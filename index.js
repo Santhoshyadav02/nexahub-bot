@@ -49,9 +49,44 @@ const bot = new TelegramBot(TOKEN, {
 
 
 
-bot.on("polling_error", (error) => {
+let pollingConflictRetryTimer = null;
+
+bot.on("polling_error", async (error) => {
   const errMsg = String(error.message || error);
   const errCode = error.code || "";
+
+  if (errMsg.includes("409 Conflict") || errMsg.includes("terminated by other getUpdates request")) {
+    if (!isShuttingDown) {
+      console.log(`ℹ️ [PID:${APP_PID}] 409 Conflict: Another bot polling instance is currently active. Pausing polling to resolve conflict...`);
+      try {
+        if (bot.isPolling && bot.isPolling()) {
+          await bot.stopPolling({ cancel: true });
+        }
+      } catch (e) {}
+
+      if (!pollingConflictRetryTimer) {
+        pollingConflictRetryTimer = setTimeout(async () => {
+          pollingConflictRetryTimer = null;
+          if (!isShuttingDown && isMainModule) {
+            console.log(`🔄 [PID:${APP_PID}] Attempting to resume Telegram Bot polling after backoff...`);
+            try {
+              if (bot.isPolling && !bot.isPolling()) {
+                await bot.startPolling({
+                  params: {
+                    allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"]
+                  }
+                });
+              }
+            } catch (startErr) {
+              console.error(`⚠️ [PID:${APP_PID}] Error resuming polling:`, startErr.message);
+            }
+          }
+        }, 10000);
+      }
+    }
+    return;
+  }
+
   console.error(`⚠️ [PID:${APP_PID}] Telegram Bot Polling Error: ${errCode} - ${errMsg}`);
 });
 
