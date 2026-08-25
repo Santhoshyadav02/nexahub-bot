@@ -321,15 +321,57 @@ class SourceRegistry {
     }
   }
 
+  resolveKeyword(rawKeyword) {
+    if (!rawKeyword) return "";
+    let kwLower = String(rawKeyword).trim().toLowerCase();
+
+    // Strip leading emojis/icons from UI category labels
+    const cleanKw = kwLower.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "").trim();
+
+    // Category mapping for English and Korean UI labels
+    const CATEGORY_MAP = {
+      // English card mappings
+      "myanmar": "Romantic Vibe",
+      "evergrande troupe": "Dating",
+      "myanmar women": "Romance",
+      "sister snake": "Crotch",
+      "has work": "Mosa",
+      "bullying & sex": "Bunny Girl Cosplay Date",
+      "da ci ge": "Lustful Hostess",
+      "senior year love story": "Concubine",
+      "sichuan mother & son": "Saki Mizumi",
+      "hu siyuan": "A Muse",
+      "kept lover": "Romantic Vibe",
+      "didi proxy operation": "Dating",
+
+      // Korean UI mappings (from previous requirements / fallbacks)
+      "아이돌 열애 루머": "Dating",
+      "케이팝 열애설": "Romantic Vibe",
+      "k-pop 열애설": "Romantic Vibe",
+      "비밀 연애": "Dating",
+      "연예인 결별": "Crotch",
+      "열애 논란": "Mosa",
+      "비밀 커플": "Bunny Girl Cosplay Date",
+      "바이럴 로맨스": "Lustful Hostess",
+      "럽스타그램": "Concubine",
+      "결혼 루머": "Saki Mizumi",
+      "연예계 스캔들": "A Muse"
+    };
+
+    return CATEGORY_MAP[cleanKw] || CATEGORY_MAP[kwLower] || rawKeyword;
+  }
+
   getSourceByKeyword(keyword) {
     if (!keyword) return null;
-    const kwLower = keyword.trim().toLowerCase();
+    const resolved = this.resolveKeyword(keyword);
+    const kwLower = resolved.trim().toLowerCase();
     return this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || (s.name && s.name.trim().toLowerCase() === kwLower));
   }
 
   enforceRollingRetention(targetKeyword) {
     if (!targetKeyword) return;
-    const kwLower = targetKeyword.trim().toLowerCase();
+    const resolved = this.resolveKeyword(targetKeyword);
+    const kwLower = resolved.trim().toLowerCase();
 
     const source = this.sources.find(s => 
       (s.keyword && s.keyword.trim().toLowerCase() === kwLower) || 
@@ -393,28 +435,8 @@ class SourceRegistry {
 
   getPostsForKeyword(rawKeyword, videoOnly = false) {
     if (!rawKeyword) return [];
-    let kwLower = String(rawKeyword).trim().toLowerCase();
-
-    // Strip leading emojis/icons from UI category labels
-    const cleanKw = kwLower.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "").trim();
-
-    // Category mapping for Korean UI labels and keyword fallbacks
-    const CATEGORY_MAP = {
-      "아이돌 열애 루머": "Dating",
-      "케이팝 열애설": "Romantic Vibe",
-      "k-pop 열애설": "Romantic Vibe",
-      "비밀 연애": "Dating",
-      "연예인 결별": "Crotch",
-      "열애 논란": "Mosa",
-      "비밀 커플": "Bunny Girl Cosplay Date",
-      "바이럴 로맨스": "Lustful Hostess",
-      "럽스타그램": "Concubine",
-      "결혼 루머": "Saki Mizumi",
-      "연예계 스캔들": "A Muse"
-    };
-
-    let resolvedKeyword = CATEGORY_MAP[cleanKw] || CATEGORY_MAP[kwLower] || rawKeyword;
-    let targetKwLower = resolvedKeyword.trim().toLowerCase();
+    const resolved = this.resolveKeyword(rawKeyword);
+    let targetKwLower = resolved.trim().toLowerCase();
 
     const source = this.sources.find(s => (s.keyword && s.keyword.trim().toLowerCase() === targetKwLower) || (s.name && s.name.trim().toLowerCase() === targetKwLower));
 
@@ -470,8 +492,8 @@ class SourceRegistry {
     const dupCount = matchedPosts.length - uniquePosts.length;
 
     console.log(`Category requested: ${rawKeyword}`);
-    console.log(`Resolved keyword: ${resolvedKeyword}`);
-    console.log(`Resolved channel/source: ${source ? source.name || source.username || source.id : resolvedKeyword}`);
+    console.log(`Resolved keyword: ${resolved}`);
+    console.log(`Resolved channel/source: ${source ? source.name || source.username || source.id : resolved}`);
     console.log(`Total DB records: ${allDbPostsForSource.length}`);
     console.log(`Total valid video records: ${uniquePosts.length}`);
     console.log(`Duplicate records: ${dupCount}`);

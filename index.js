@@ -1930,96 +1930,30 @@ function smartShortenTitle(str, maxLen = 18) {
   return symbols.slice(0, maxLen - 1).join("") + "…";
 }
 
-const CARD_1_TO_10_LABELS = [
-  "🔥 케이팝 열애설",
-  "💋 비밀 연애",
-  "👀 아이돌 열애 루머",
-  "💔 연예인 결별",
-  "🚨 열애 논란",
-  "❤️ 비밀 커플",
-  "😳 바이럴 로맨스",
-  "🔥 럽스타그램",
-  "💍 결혼 루머",
-  "👀 연예계 스캔들"
-];
-
-const CARD_11_TO_20_LABELS = [
-  "🎬 로맨스 VOD",
-  "💖 연애 클립",
-  "🌸 심쿵 로맨스",
-  "🔥 바이럴 영상",
-  "🚨 모자이크 이슈",
-  "🐰 코스프레 데이트",
-  "🍸 호스테스 이슈",
-  "👑 후궁 이야기",
-  "🌸 사키 미즈미",
-  "🎨 뮤즈 컬렉션"
+const POPULAR_TOPIC_CARDS = [
+  { name: "Myanmar", topicKey: "Myanmar" },
+  { name: "Evergrande Troupe", topicKey: "Evergrande Troupe" },
+  { name: "Myanmar Women", topicKey: "Myanmar Women" },
+  { name: "Sister Snake", topicKey: "Sister Snake" },
+  { name: "Has Work", topicKey: "Has Work" },
+  { name: "Bullying & Sex", topicKey: "Bullying & Sex" },
+  { name: "Da Ci Ge", topicKey: "Da Ci Ge" },
+  { name: "Senior Year Love Story", topicKey: "Senior Year Love Story" },
+  { name: "Sichuan Mother & Son", topicKey: "Sichuan Mother & Son" },
+  { name: "Hu Siyuan", topicKey: "Hu Siyuan" },
+  { name: "Kept Lover", topicKey: "Kept Lover" },
+  { name: "Didi Proxy Operation", topicKey: "Didi Proxy Operation" }
 ];
 
 async function getMainKeyboard() {
-  // 1. CARDS 1–10: Live Trending Keywords (VISUAL DISPLAY LABELS ONLY -> Direct Fixed Channel Callback)
-  const card1to10Buttons = [];
-  
-  for (let i = 0; i < 10; i++) {
-    const label = CARD_1_TO_10_LABELS[i];
-    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
-    card1to10Buttons.push({
-      text: label,
-      callback_data: `topic:${channelKeyword}`
-    });
-  }
+  const buttons = POPULAR_TOPIC_CARDS.map(c => ({
+    text: c.name,
+    callback_data: `topic:${c.topicKey}`
+  }));
 
-  // 2. CARDS 11–20: TRENDING VIDEOS (Korean Display Labels -> Direct Fixed Channel Callback)
-  const card11to20Buttons = [];
-  const usedVideoSignatures = new Set();
-  const rawEnglishNames = ["romantic vibe", "dating", "romance", "crotch", "mosa", "bunny girl cosplay date", "lustful hostess", "concubine", "saki mizumi", "a muse", "jun ko"];
-
-  for (let i = 0; i < 10; i++) {
-    const channelKeyword = TARGET_CHANNELS[i] || "Dating";
-    const channelPosts = sourceRegistry.getPostsForKeyword(channelKeyword);
-
-    let selectedPost = null;
-    for (const p of channelPosts) {
-      if (!p || !p.title) continue;
-      const cleanTitleSig = sanitizeUTF8(p.title)
-        .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱]+/gu, "")
-        .replace(/^\[[^\]]+\]\s*/, "")
-        .trim().toLowerCase().substring(0, 35);
-
-      if (!usedVideoSignatures.has(cleanTitleSig)) {
-        selectedPost = p;
-        usedVideoSignatures.add(cleanTitleSig);
-        break;
-      }
-    }
-
-    if (!selectedPost && channelPosts.length > 0) {
-      selectedPost = channelPosts[0];
-    }
-
-    let textToFormat = channelKeyword;
-    if (selectedPost && selectedPost.title) {
-      textToFormat = selectedPost.title;
-    }
-    
-    let label = await formatTrendingCardLabel(textToFormat, true, i, channelKeyword);
-    const cleanLabelLower = label ? label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s▶️🎬🖼️🔥⭐🎤👁️🖤⚽🎲💃👑📰🚨📈🌎🇰🇷🏙️💬🎵💻🤖💰❤️✨👀🌟🎯📱🎨🍸👑🐰💖]+/gu, "").trim().toLowerCase() : "";
-
-    if (!label || !/[\uac00-\ud7af]/.test(label) || rawEnglishNames.some(name => cleanLabelLower.includes(name))) {
-      label = CARD_11_TO_20_LABELS[i] || "🎬 트렌딩 동영상";
-    }
-
-    card11to20Buttons.push({
-      text: label,
-      callback_data: `topic:${channelKeyword}`
-    });
-  }
-
-  // Assemble 12 Popular Topics cards into 4 rows x 3 columns grid (Cards 1–12)
-  const visibleButtons = [...card1to10Buttons, ...card11to20Buttons].slice(0, 12);
   const gridRows = [];
-  for (let i = 0; i < visibleButtons.length; i += 3) {
-    gridRows.push(visibleButtons.slice(i, i + 3));
+  for (let i = 0; i < buttons.length; i += 3) {
+    gridRows.push(buttons.slice(i, i + 3));
   }
 
   return { inline_keyboard: gridRows };
@@ -2473,16 +2407,30 @@ const CATEGORIES = {
 };
 
 const TOPIC_NAMES = {
-  "Romantic Vibe": "🔥 케이팝 열애설",
-  "Dating": "💋 비밀 연애",
-  "Romance": "👀 아이돌 열애 루머",
-  "Crotch": "💔 연예인 결별",
-  "Mosa": "🚨 열애 논란",
-  "Bunny Girl Cosplay Date": "❤️ 비밀 커플",
-  "Lustful Hostess": "😳 바이럴 로맨스",
-  "Concubine": "🔥 럽스타그램",
-  "Saki Mizumi": "💍 결혼 루머",
-  "A Muse": "👀 연예계 스캔들",
+  "Myanmar": "Myanmar",
+  "Evergrande Troupe": "Evergrande Troupe",
+  "Myanmar Women": "Myanmar Women",
+  "Sister Snake": "Sister Snake",
+  "Has Work": "Has Work",
+  "Bullying & Sex": "Bullying & Sex",
+  "Da Ci Ge": "Da Ci Ge",
+  "Senior Year Love Story": "Senior Year Love Story",
+  "Sichuan Mother & Son": "Sichuan Mother & Son",
+  "Hu Siyuan": "Hu Siyuan",
+  "Kept Lover": "Kept Lover",
+  "Didi Proxy Operation": "Didi Proxy Operation",
+
+  // Legacy/fallback mappings
+  "Romantic Vibe": "Myanmar",
+  "Dating": "Evergrande Troupe",
+  "Romance": "Myanmar Women",
+  "Crotch": "Sister Snake",
+  "Mosa": "Has Work",
+  "Bunny Girl Cosplay Date": "Bullying & Sex",
+  "Lustful Hostess": "Da Ci Ge",
+  "Concubine": "Senior Year Love Story",
+  "Saki Mizumi": "Sichuan Mother & Son",
+  "A Muse": "Hu Siyuan",
   "ai": "🤖 AI",
   "games": "🎮 게임 플레이",
   "stories": "📚 단편 소설",
