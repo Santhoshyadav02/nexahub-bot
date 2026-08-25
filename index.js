@@ -2014,11 +2014,11 @@ async function getMainKeyboard() {
     });
   }
 
-  // Assemble into 4 rows x 5 columns grid (Cards 1–20)
-  const allButtons = [...card1to10Buttons, ...card11to20Buttons];
+  // Assemble 12 Popular Topics cards into 4 rows x 3 columns grid (Cards 1–12)
+  const visibleButtons = [...card1to10Buttons, ...card11to20Buttons].slice(0, 12);
   const gridRows = [];
-  for (let i = 0; i < allButtons.length; i += 5) {
-    gridRows.push(allButtons.slice(i, i + 5));
+  for (let i = 0; i < visibleButtons.length; i += 3) {
+    gridRows.push(visibleButtons.slice(i, i + 3));
   }
 
   return { inline_keyboard: gridRows };
