@@ -409,10 +409,10 @@ class SourceRegistry {
       return dateB - dateA;
     });
 
-    // If valid videos count > 50, retain newest 50 and evict older posts for this source
-    if (validVideos.length > 50) {
-      const retained50Set = new Set(validVideos.slice(0, 50).map(p => p.id));
-      const evictedCount = validVideos.length - 50;
+    // If valid videos count > 40, retain newest 40 and evict older posts for this source
+    if (validVideos.length > 40) {
+      const retained40Set = new Set(validVideos.slice(0, 40).map(p => p.id));
+      const evictedCount = validVideos.length - 40;
 
       this.posts = this.posts.filter(p => {
         const pKw = (p.keyword || "").trim().toLowerCase();
@@ -425,10 +425,12 @@ class SourceRegistry {
           if (source.username && pUser === source.username.trim().toLowerCase()) isMatch = true;
         }
         if (!isMatch) return true;
-        return retained50Set.has(p.id);
+        return retained40Set.has(p.id);
       });
 
-      console.log(`🧹 Rolling 50 Retention: Retained 50 newest valid videos for "${targetKeyword}", evicted ${evictedCount} older posts.`);
+      if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+        console.log(`🧹 Rolling 40 Retention: Retained 40 newest valid videos for "${targetKeyword}", evicted ${evictedCount} older posts.`);
+      }
       this.saveData();
     }
   }
@@ -485,23 +487,25 @@ class SourceRegistry {
       return dateB - dateA;
     });
 
-    const finalReturnedPosts = uniquePosts.slice(0, 50);
+    const finalReturnedPosts = uniquePosts.slice(0, 40);
 
     const latestMsgId = uniquePosts[0] ? uniquePosts[0].message_id : "N/A";
     const oldestRetainedMsgId = uniquePosts[uniquePosts.length - 1] ? uniquePosts[uniquePosts.length - 1].message_id : "N/A";
     const dupCount = matchedPosts.length - uniquePosts.length;
 
-    console.log(`Category requested: ${rawKeyword}`);
-    console.log(`Resolved keyword: ${resolved}`);
-    console.log(`Resolved channel/source: ${source ? source.name || source.username || source.id : resolved}`);
-    console.log(`Total DB records: ${allDbPostsForSource.length}`);
-    console.log(`Total valid video records: ${uniquePosts.length}`);
-    console.log(`Duplicate records: ${dupCount}`);
-    console.log(`Latest Telegram message ID: ${latestMsgId}`);
-    console.log(`Oldest retained message ID: ${oldestRetainedMsgId}`);
-    console.log(`Posts eligible for display: ${uniquePosts.length}`);
-    console.log(`Posts returned by API: ${finalReturnedPosts.length}`);
-    console.log(`Posts rendered by UI: ${finalReturnedPosts.length}`);
+    if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
+      console.log(`Category requested: ${rawKeyword}`);
+      console.log(`Resolved keyword: ${resolved}`);
+      console.log(`Resolved channel/source: ${source ? source.name || source.username || source.id : resolved}`);
+      console.log(`Total DB records: ${allDbPostsForSource.length}`);
+      console.log(`Total valid video records: ${uniquePosts.length}`);
+      console.log(`Duplicate records: ${dupCount}`);
+      console.log(`Latest Telegram message ID: ${latestMsgId}`);
+      console.log(`Oldest retained message ID: ${oldestRetainedMsgId}`);
+      console.log(`Posts eligible for display: ${uniquePosts.length}`);
+      console.log(`Posts returned by API: ${finalReturnedPosts.length}`);
+      console.log(`Posts rendered by UI: ${finalReturnedPosts.length}`);
+    }
 
     return finalReturnedPosts;
   }

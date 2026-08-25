@@ -1380,9 +1380,9 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const isTopicView = callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:");
-  const itemsPerPage = 10;
-  const maxTotalPages = isTopicView ? 5 : 5;
-  const maxItemsCap = isTopicView ? 50 : 50;
+  const itemsPerPage = 8;
+  const maxTotalPages = 5;
+  const maxItemsCap = 40;
 
   const maxUiItems = (items || []).slice(0, maxItemsCap);
   const totalPages = Math.min(maxTotalPages, Math.ceil(maxUiItems.length / itemsPerPage));
@@ -1703,7 +1703,7 @@ async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1
   }
 
   const posts = channel.posts;
-  const itemsPerPage = 10;
+  const itemsPerPage = 8;
   const totalPages = Math.ceil(posts.length / itemsPerPage);
   const currentPage = Math.max(1, Math.min(page, totalPages));
 

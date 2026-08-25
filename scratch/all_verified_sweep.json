@@ -1,0 +1,330 @@
+{
+  "games": [
+    {
+      "username": "@ruliweb",
+      "url": "https://t.me/ruliweb",
+      "name": "루리웹",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 116534
+    },
+    {
+      "username": "@hungryapp",
+      "url": "https://t.me/hungryapp",
+      "name": "Hungry App",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 29353
+    },
+    {
+      "username": "@nexon_kr",
+      "url": "https://t.me/nexon_kr",
+      "name": "Nexon korea",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 29252
+    },
+    {
+      "username": "@game_kr",
+      "url": "https://t.me/game_kr",
+      "name": "@game_kr",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 122822
+    },
+    {
+      "username": "@game_news",
+      "url": "https://t.me/game_news",
+      "name": "🎮Game news🎮",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 108971
+    }
+  ],
+  "ai_tools": [
+    {
+      "username": "@itfoxn",
+      "url": "https://t.me/itfoxn",
+      "name": "FOX NEWS",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 98433
+    },
+    {
+      "username": "@blockmedia",
+      "url": "https://t.me/blockmedia",
+      "name": "블록미디어",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 113906
+    },
+    {
+      "username": "@aiinnovationstudio",
+      "url": "https://t.me/aiinnovationstudio",
+      "name": "AI_Innovation_Studio",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 117674
+    },
+    {
+      "username": "@chatgpt_kr",
+      "url": "https://t.me/chatgpt_kr",
+      "name": "MohirAI",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 44622
+    },
+    {
+      "username": "@ai_korea",
+      "url": "https://t.me/ai_korea",
+      "name": "AI_KOREA🇰🇷🤍",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 64437
+    },
+    {
+      "username": "@developer_kr",
+      "url": "https://t.me/developer_kr",
+      "name": "Developer KR",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 21922
+    },
+    {
+      "username": "@chatgpt_korea",
+      "url": "https://t.me/chatgpt_korea",
+      "name": "ChatGpt",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 64437
+    }
+  ],
+  "stories": [
+    {
+      "username": "@novel_kr",
+      "url": "https://t.me/novel_kr",
+      "name": "Kr Novel Talk",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 24839
+    }
+  ],
+  "papers": [
+    {
+      "username": "@paper_kr",
+      "url": "https://t.me/paper_kr",
+      "name": "رواق الكتب",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 21291
+    },
+    {
+      "username": "@nature_kr",
+      "url": "https://t.me/nature_kr",
+      "name": "Красивая натура",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 71335
+    },
+    {
+      "username": "@lab_kr",
+      "url": "https://t.me/lab_kr",
+      "name": "Б&#39;юті КР",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 35321
+    }
+  ],
+  "opening_up": [
+    {
+      "username": "@media_kr",
+      "url": "https://t.me/media_kr",
+      "name": "Журнал Красавицы России",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 33477
+    }
+  ],
+  "food_source": [
+    {
+      "username": "@food_kr",
+      "url": "https://t.me/food_kr",
+      "name": "يوميات مطاعم كركوك",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 82323
+    },
+    {
+      "username": "@mukbang_kr",
+      "url": "https://t.me/mukbang_kr",
+      "name": "mukbang_kr",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 25586
+    }
+  ],
+  "finance": [
+    {
+      "username": "@FastStockNews",
+      "url": "https://t.me/FastStockNews",
+      "name": "주식 급등일보🚀급등테마·대장주 탐색기 | Korean Stocks",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 122942
+    },
+    {
+      "username": "@FastStockNewsUSA",
+      "url": "https://t.me/FastStockNewsUSA",
+      "name": "급등일보 미국주식🇺🇸 속보·매크로·리서치",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 120908
+    },
+    {
+      "username": "@FastBitNews",
+      "url": "https://t.me/FastBitNews",
+      "name": "코인 급등일보🪐실시간 코인뉴스 탐색기🚀",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 108514
+    },
+    {
+      "username": "@FastLandNews",
+      "url": "https://t.me/FastLandNews",
+      "name": "부동산 급등일보🏠(청약,갭투자,꼬마빌딩,정책/동향)",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 100649
+    },
+    {
+      "username": "@TNBfolio",
+      "url": "https://t.me/TNBfolio",
+      "name": "TNBfolio",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 107130
+    },
+    {
+      "username": "@dartquickai",
+      "url": "https://t.me/dartquickai",
+      "name": "다트퀵AI(Beta) - 실시간 전자공시 AI 요약 및 분석 정리채널",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 138324
+    },
+    {
+      "username": "@wowtv_official",
+      "url": "https://t.me/wowtv_official",
+      "name": "한국경제TV 프리미엄 주식정보",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 121611
+    },
+    {
+      "username": "@upbit_news",
+      "url": "https://t.me/upbit_news",
+      "name": "업비트 Upbit 공식 텔레그램",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 93221
+    },
+    {
+      "username": "@buffettlab",
+      "url": "https://t.me/buffettlab",
+      "name": "버핏연구소",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 106928
+    },
+    {
+      "username": "@coin_kr",
+      "url": "https://t.me/coin_kr",
+      "name": "코인다이어리(coin diary)",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 49029
+    },
+    {
+      "username": "@blockmedia",
+      "url": "https://t.me/blockmedia",
+      "name": "블록미디어",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 113906
+    },
+    {
+      "username": "@kwusa",
+      "url": "https://t.me/kwusa",
+      "name": "키움증권 미국주식 톡톡",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 98091
+    },
+    {
+      "username": "@hanaresearch",
+      "url": "https://t.me/hanaresearch",
+      "name": "하나증권 리서치",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 118871
+    },
+    {
+      "username": "@meritz_research",
+      "url": "https://t.me/meritz_research",
+      "name": "메리츠증권 리서치",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 64027
+    }
+  ],
+  "adult": [
+    {
+      "username": "@romance_kr",
+      "url": "https://t.me/romance_kr",
+      "name": "Сплетничаем о клубе романтики &#33;",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 91021
+    },
+    {
+      "username": "@vibe_kr",
+      "url": "https://t.me/vibe_kr",
+      "name": "NSA | shaxsiy blog💡",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 43946
+    },
+    {
+      "username": "@gossip_kr",
+      "url": "https://t.me/gossip_kr",
+      "name": "Gossip Kr",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 21691
+    },
+    {
+      "username": "@beauty_kr",
+      "url": "https://t.me/beauty_kr",
+      "name": "ШУКАЮ МОДЕЛЬ КРОПИВНИЦЬКИЙ",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 35902
+    },
+    {
+      "username": "@style_kr",
+      "url": "https://t.me/style_kr",
+      "name": "Style KR",
+      "exists": true,
+      "isKorean": false,
+      "dataLength": 75398
+    },
+    {
+      "username": "@mood_kr",
+      "url": "https://t.me/mood_kr",
+      "name": "Моод☁️",
+      "exists": true,
+      "isKorean": true,
+      "dataLength": 104587
+    }
+  ]
+}

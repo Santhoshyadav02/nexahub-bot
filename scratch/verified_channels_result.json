@@ -1,0 +1,266 @@
+{
+  "games": [
+    {
+      "username": "@ruliweb",
+      "url": "https://t.me/ruliweb",
+      "name": "루리웹",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 116536
+    },
+    {
+      "username": "@hungryapp",
+      "url": "https://t.me/hungryapp",
+      "name": "Hungry App",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 29349
+    },
+    {
+      "username": "@nexon_kr",
+      "url": "https://t.me/nexon_kr",
+      "name": "Nexon korea",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 29252
+    },
+    {
+      "username": "@game_kr",
+      "url": "https://t.me/game_kr",
+      "name": "@game_kr",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 122822
+    },
+    {
+      "username": "@game_news",
+      "url": "https://t.me/game_news",
+      "name": "🎮Game news🎮",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 108968
+    }
+  ],
+  "ai_tools": [
+    {
+      "username": "@itfoxn",
+      "url": "https://t.me/itfoxn",
+      "name": "FOX NEWS",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 98432
+    },
+    {
+      "username": "@blockmedia",
+      "url": "https://t.me/blockmedia",
+      "name": "블록미디어",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 113906
+    },
+    {
+      "username": "@aiinnovationstudio",
+      "url": "https://t.me/aiinnovationstudio",
+      "name": "AI_Innovation_Studio",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 117672
+    },
+    {
+      "username": "@chatgpt_kr",
+      "url": "https://t.me/chatgpt_kr",
+      "name": "MohirAI",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 44623
+    },
+    {
+      "username": "@ai_korea",
+      "url": "https://t.me/ai_korea",
+      "name": "AI_KOREA🇰🇷🤍",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 64435
+    }
+  ],
+  "stories": [
+    {
+      "username": "@novel_kr",
+      "url": "https://t.me/novel_kr",
+      "name": "Kr Novel Talk",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 24839
+    }
+  ],
+  "papers": [
+    {
+      "username": "@paper_kr",
+      "url": "https://t.me/paper_kr",
+      "name": "رواق الكتب",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 21291
+    },
+    {
+      "username": "@nature_kr",
+      "url": "https://t.me/nature_kr",
+      "name": "Красивая натура",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 71335
+    }
+  ],
+  "opening_up": [
+    {
+      "username": "@media_kr",
+      "url": "https://t.me/media_kr",
+      "name": "Журнал Красавицы России",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 33478
+    }
+  ],
+  "food_source": [
+    {
+      "username": "@food_kr",
+      "url": "https://t.me/food_kr",
+      "name": "يوميات مطاعم كركوك",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 82321
+    },
+    {
+      "username": "@mukbang_kr",
+      "url": "https://t.me/mukbang_kr",
+      "name": "mukbang_kr",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 25586
+    }
+  ],
+  "finance": [
+    {
+      "username": "@FastStockNews",
+      "url": "https://t.me/FastStockNews",
+      "name": "주식 급등일보🚀급등테마·대장주 탐색기 | Korean Stocks",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 122938
+    },
+    {
+      "username": "@FastStockNewsUSA",
+      "url": "https://t.me/FastStockNewsUSA",
+      "name": "급등일보 미국주식🇺🇸 속보·매크로·리서치",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 120908
+    },
+    {
+      "username": "@FastBitNews",
+      "url": "https://t.me/FastBitNews",
+      "name": "코인 급등일보🪐실시간 코인뉴스 탐색기🚀",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 108514
+    },
+    {
+      "username": "@FastLandNews",
+      "url": "https://t.me/FastLandNews",
+      "name": "부동산 급등일보🏠(청약,갭투자,꼬마빌딩,정책/동향)",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 100651
+    },
+    {
+      "username": "@TNBfolio",
+      "url": "https://t.me/TNBfolio",
+      "name": "TNBfolio",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 107128
+    },
+    {
+      "username": "@dartquickai",
+      "url": "https://t.me/dartquickai",
+      "name": "다트퀵AI(Beta) - 실시간 전자공시 AI 요약 및 분석 정리채널",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 138324
+    },
+    {
+      "username": "@wowtv_official",
+      "url": "https://t.me/wowtv_official",
+      "name": "한국경제TV 프리미엄 주식정보",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 121614
+    },
+    {
+      "username": "@upbit_news",
+      "url": "https://t.me/upbit_news",
+      "name": "업비트 Upbit 공식 텔레그램",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 93220
+    },
+    {
+      "username": "@buffettlab",
+      "url": "https://t.me/buffettlab",
+      "name": "버핏연구소",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 106933
+    },
+    {
+      "username": "@blockmedia",
+      "url": "https://t.me/blockmedia",
+      "name": "블록미디어",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 113906
+    },
+    {
+      "username": "@coin_kr",
+      "url": "https://t.me/coin_kr",
+      "name": "코인다이어리(coin diary)",
+      "exists": true,
+      "isKorean": true,
+      "rawLength": 49030
+    }
+  ],
+  "adult": [
+    {
+      "username": "@bgcgw1",
+      "url": "https://t.me/bgcgw1",
+      "name": "曝光吃瓜网",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 61186
+    },
+    {
+      "username": "@xahvh",
+      "url": "https://t.me/xahvh",
+      "name": "西安外围 模特极品",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 61476
+    },
+    {
+      "username": "@Daoyusmlie",
+      "url": "https://t.me/Daoyusmlie",
+      "name": "岛遇｜密语精品｜每日更新",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 70004
+    },
+    {
+      "username": "@tianjin2023",
+      "url": "https://t.me/tianjin2023",
+      "name": "诱惑◆反差福利姬写真集",
+      "exists": true,
+      "isKorean": false,
+      "rawLength": 65434
+    }
+  ]
+}

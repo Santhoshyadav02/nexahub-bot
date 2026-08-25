@@ -1,0 +1,458 @@
+{
+  "games": [
+    {
+      "name": "루리웹",
+      "username": "@ruliweb",
+      "url": "https://t.me/ruliweb",
+      "exists": true,
+      "isKorean": true,
+      "length": 116532
+    },
+    {
+      "name": "WEMIX",
+      "username": "@wemix_official",
+      "url": "https://t.me/wemix_official",
+      "exists": true,
+      "isKorean": true,
+      "length": 108275
+    },
+    {
+      "name": "@game_kr",
+      "username": "@game_kr",
+      "url": "https://t.me/game_kr",
+      "exists": true,
+      "isKorean": true,
+      "length": 122822
+    },
+    {
+      "name": "Hungry App",
+      "username": "@hungryapp",
+      "url": "https://t.me/hungryapp",
+      "exists": true,
+      "isKorean": false,
+      "length": 29353
+    },
+    {
+      "name": "Nexon korea",
+      "username": "@nexon_kr",
+      "url": "https://t.me/nexon_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 29252
+    }
+  ],
+  "ai_tools": [
+    {
+      "name": "FOX NEWS",
+      "username": "@itfoxn",
+      "url": "https://t.me/itfoxn",
+      "exists": true,
+      "isKorean": true,
+      "length": 98432
+    },
+    {
+      "name": "블록미디어",
+      "username": "@blockmedia",
+      "url": "https://t.me/blockmedia",
+      "exists": true,
+      "isKorean": true,
+      "length": 113907
+    },
+    {
+      "name": "AI_Innovation_Studio",
+      "username": "@aiinnovationstudio",
+      "url": "https://t.me/aiinnovationstudio",
+      "exists": true,
+      "isKorean": true,
+      "length": 117672
+    },
+    {
+      "name": "AI_KOREA🇰🇷🤍",
+      "username": "@ai_korea",
+      "url": "https://t.me/ai_korea",
+      "exists": true,
+      "isKorean": true,
+      "length": 64436
+    },
+    {
+      "name": "Generative AI",
+      "username": "@generativeai_gpt",
+      "url": "https://t.me/generativeai_gpt",
+      "exists": true,
+      "isKorean": false,
+      "length": 139341
+    },
+    {
+      "name": "Artificial Intelligence | ChatGPT AI | Data Science & Machine Learning",
+      "username": "@aichads",
+      "url": "https://t.me/aichads",
+      "exists": true,
+      "isKorean": false,
+      "length": 111964
+    },
+    {
+      "name": "MohirAI",
+      "username": "@chatgpt_kr",
+      "url": "https://t.me/chatgpt_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 44623
+    },
+    {
+      "name": "Developer KR",
+      "username": "@developer_kr",
+      "url": "https://t.me/developer_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 21924
+    },
+    {
+      "name": "ChatGpt",
+      "username": "@chatgpt_korea",
+      "url": "https://t.me/chatgpt_korea",
+      "exists": true,
+      "isKorean": false,
+      "length": 64436
+    }
+  ],
+  "stories": [
+    {
+      "name": "Kr Novel Talk",
+      "username": "@novel_kr",
+      "url": "https://t.me/novel_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 24841
+    },
+    {
+      "name": "HANNECT | ELITE",
+      "username": "@korea_edu",
+      "url": "https://t.me/korea_edu",
+      "exists": true,
+      "isKorean": true,
+      "length": 93017
+    }
+  ],
+  "papers": [
+    {
+      "name": "رواق الكتب",
+      "username": "@paper_kr",
+      "url": "https://t.me/paper_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 21293
+    },
+    {
+      "name": "Красивая натура",
+      "username": "@nature_kr",
+      "url": "https://t.me/nature_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 71333
+    },
+    {
+      "name": "HANNECT | ELITE",
+      "username": "@korea_edu",
+      "url": "https://t.me/korea_edu",
+      "exists": true,
+      "isKorean": true,
+      "length": 93017
+    },
+    {
+      "name": "Builders",
+      "username": "@builders",
+      "url": "https://t.me/builders",
+      "exists": true,
+      "isKorean": false,
+      "length": 131492
+    }
+  ],
+  "opening_up": [
+    {
+      "name": "Журнал Красавицы России",
+      "username": "@media_kr",
+      "url": "https://t.me/media_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 33477
+    },
+    {
+      "name": "KOREAN DRAMAS UPDATES & NEWS",
+      "username": "@taliekdramasupdates",
+      "url": "https://t.me/taliekdramasupdates",
+      "exists": true,
+      "isKorean": false,
+      "length": 122808
+    },
+    {
+      "name": "TikTok Central",
+      "username": "@TikTok_Centrall",
+      "url": "https://t.me/TikTok_Centrall",
+      "exists": true,
+      "isKorean": true,
+      "length": 105197
+    }
+  ],
+  "food_source": [
+    {
+      "name": "يوميات مطاعم كركوك",
+      "username": "@food_kr",
+      "url": "https://t.me/food_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 82319
+    },
+    {
+      "name": "mukbang_kr",
+      "username": "@mukbang_kr",
+      "url": "https://t.me/mukbang_kr",
+      "exists": true,
+      "isKorean": false,
+      "length": 25584
+    }
+  ],
+  "finance": [
+    {
+      "name": "주식 급등일보🚀급등테마·대장주 탐색기 | Korean Stocks",
+      "username": "@FastStockNews",
+      "url": "https://t.me/FastStockNews",
+      "exists": true,
+      "isKorean": true,
+      "length": 122955
+    },
+    {
+      "name": "급등일보 미국주식🇺🇸 속보·매크로·리서치",
+      "username": "@FastStockNewsUSA",
+      "url": "https://t.me/FastStockNewsUSA",
+      "exists": true,
+      "isKorean": true,
+      "length": 120907
+    },
+    {
+      "name": "코인 급등일보🪐실시간 코인뉴스 탐색기🚀",
+      "username": "@FastBitNews",
+      "url": "https://t.me/FastBitNews",
+      "exists": true,
+      "isKorean": true,
+      "length": 108516
+    },
+    {
+      "name": "부동산 급등일보🏠(청약,갭투자,꼬마빌딩,정책/동향)",
+      "username": "@FastLandNews",
+      "url": "https://t.me/FastLandNews",
+      "exists": true,
+      "isKorean": true,
+      "length": 100648
+    },
+    {
+      "name": "TNBfolio",
+      "username": "@TNBfolio",
+      "url": "https://t.me/TNBfolio",
+      "exists": true,
+      "isKorean": true,
+      "length": 107123
+    },
+    {
+      "name": "다트퀵AI(Beta) - 실시간 전자공시 AI 요약 및 분석 정리채널",
+      "username": "@dartquickai",
+      "url": "https://t.me/dartquickai",
+      "exists": true,
+      "isKorean": true,
+      "length": 138324
+    },
+    {
+      "name": "한국경제TV 프리미엄 주식정보",
+      "username": "@wowtv_official",
+      "url": "https://t.me/wowtv_official",
+      "exists": true,
+      "isKorean": true,
+      "length": 121610
+    },
+    {
+      "name": "버핏연구소",
+      "username": "@buffettlab",
+      "url": "https://t.me/buffettlab",
+      "exists": true,
+      "isKorean": true,
+      "length": 106929
+    },
+    {
+      "name": "코인다이어리(coin diary)",
+      "username": "@coin_kr",
+      "url": "https://t.me/coin_kr",
+      "exists": true,
+      "isKorean": true,
+      "length": 49031
+    },
+    {
+      "name": "블록미디어",
+      "username": "@blockmedia",
+      "url": "https://t.me/blockmedia",
+      "exists": true,
+      "isKorean": true,
+      "length": 113905
+    },
+    {
+      "name": "키움증권 미국주식 톡톡",
+      "username": "@kwusa",
+      "url": "https://t.me/kwusa",
+      "exists": true,
+      "isKorean": true,
+      "length": 98091
+    },
+    {
+      "name": "하나증권 리서치",
+      "username": "@hanaresearch",
+      "url": "https://t.me/hanaresearch",
+      "exists": true,
+      "isKorean": true,
+      "length": 118871
+    },
+    {
+      "name": "메리츠증권 리서치",
+      "username": "@meritz_research",
+      "url": "https://t.me/meritz_research",
+      "exists": true,
+      "isKorean": true,
+      "length": 64026
+    },
+    {
+      "name": "변창호 코인사관학교 BCH",
+      "username": "@BChoSN",
+      "url": "https://t.me/BChoSN",
+      "exists": true,
+      "isKorean": true,
+      "length": 103908
+    },
+    {
+      "name": "잼민123🦅",
+      "username": "@mujammin123",
+      "url": "https://t.me/mujammin123",
+      "exists": true,
+      "isKorean": true,
+      "length": 110222
+    },
+    {
+      "name": "새우잡이어선 공지방",
+      "username": "@shrimp_notice",
+      "url": "https://t.me/shrimp_notice",
+      "exists": true,
+      "isKorean": true,
+      "length": 89823
+    },
+    {
+      "name": "MBM Crypto Insider🦅",
+      "username": "@MBMweb3",
+      "url": "https://t.me/MBMweb3",
+      "exists": true,
+      "isKorean": true,
+      "length": 111445
+    },
+    {
+      "name": "HTS보다 빠른 뉴스채널",
+      "username": "@morefaternews",
+      "url": "https://t.me/morefaternews",
+      "exists": true,
+      "isKorean": true,
+      "length": 107574
+    },
+    {
+      "name": "갓물주 (코인정보, 돈되는거)",
+      "username": "@godmulzoo",
+      "url": "https://t.me/godmulzoo",
+      "exists": true,
+      "isKorean": true,
+      "length": 102835
+    },
+    {
+      "name": "케이씨지 블록체인/디지털자산/AI/경제 뉴스",
+      "username": "@coinkcgchannel",
+      "url": "https://t.me/coinkcgchannel",
+      "exists": true,
+      "isKorean": true,
+      "length": 109253
+    },
+    {
+      "name": "에어드랍ATM",
+      "username": "@Bounty_ATM",
+      "url": "https://t.me/Bounty_ATM",
+      "exists": true,
+      "isKorean": true,
+      "length": 117171
+    },
+    {
+      "name": "라오니()",
+      "username": "@Raoni1",
+      "url": "https://t.me/Raoni1",
+      "exists": true,
+      "isKorean": true,
+      "length": 101553
+    },
+    {
+      "name": "키움증권 전략/시황 한지영",
+      "username": "@hedgecat0301",
+      "url": "https://t.me/hedgecat0301",
+      "exists": true,
+      "isKorean": true,
+      "length": 139185
+    },
+    {
+      "name": "사제콩이_서상영",
+      "username": "@ehdwl",
+      "url": "https://t.me/ehdwl",
+      "exists": true,
+      "isKorean": true,
+      "length": 141334
+    },
+    {
+      "name": "마샬 공유방 2.0",
+      "username": "@marshallog",
+      "url": "https://t.me/marshallog",
+      "exists": true,
+      "isKorean": true,
+      "length": 109407
+    },
+    {
+      "name": "하나 중국/신흥국 전략 김경환",
+      "username": "@HANAchina",
+      "url": "https://t.me/HANAchina",
+      "exists": true,
+      "isKorean": true,
+      "length": 109151
+    }
+  ],
+  "adult": [
+    {
+      "name": "曝光吃瓜网",
+      "username": "@bgcgw1",
+      "url": "https://t.me/bgcgw1",
+      "exists": true,
+      "isKorean": false,
+      "length": 61186
+    },
+    {
+      "name": "西安外围 模特极品",
+      "username": "@xahvh",
+      "url": "https://t.me/xahvh",
+      "exists": true,
+      "isKorean": false,
+      "length": 61474
+    },
+    {
+      "name": "岛遇｜密语精品｜每日更新",
+      "username": "@Daoyusmlie",
+      "url": "https://t.me/Daoyusmlie",
+      "exists": true,
+      "isKorean": false,
+      "length": 70004
+    },
+    {
+      "name": "诱惑◆反差福利姬写真集",
+      "username": "@tianjin2023",
+      "url": "https://t.me/tianjin2023",
+      "exists": true,
+      "isKorean": false,
+      "length": 65439
+    }
+  ]
+}
