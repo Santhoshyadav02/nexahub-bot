@@ -331,7 +331,7 @@ class MTProtoChannelReader {
               channelReport.skipped = skippedCount;
               channelReport.existing_after = postsAfter.length;
 
-              console.log(`📦 [SYNC] channel=${ch.name} historical posts loaded=${channelReport.inserted}`);
+              console.log(`📦 [SYNC] channel=${ch.name} fetched=${channelReport.fetched} new=${channelReport.new_posts} skipped=${channelReport.skipped} existing_after=${channelReport.existing_after}`);
             }
           }
         }

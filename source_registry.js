@@ -259,11 +259,30 @@ class SourceRegistry {
       telegramUrl = `https://t.me/c/${cleanChatId}/${messageId}`;
     }
 
-    const existingPostIndex = this.posts.findIndex(p => 
-      (p.unique_hash && p.unique_hash === uniqueHash) ||
-      (p.telegram_url && telegramUrl && p.telegram_url === telegramUrl) ||
-      (p.message_id && String(p.message_id) === String(messageId) && (p.keyword === targetKeyword || p.channel_name === targetChannelName))
-    );
+    const targetResolvedKw = this.resolveKeyword(targetKeyword);
+    const targetResolvedName = this.resolveKeyword(targetChannelName);
+
+    const existingPostIndex = this.posts.findIndex(p => {
+      const sameMsgId = String(p.message_id) === String(messageId);
+      if (!sameMsgId) return false;
+
+      const pResolvedKw = this.resolveKeyword(p.keyword);
+      const pResolvedName = this.resolveKeyword(p.channel_name);
+
+      const chanMatch = (
+        (source && p.source_id === source.id) ||
+        (source && source.chat_id && String(p.chat_id) === String(source.chat_id)) ||
+        (source && source.username && p.username && String(p.username).toLowerCase() === String(source.username).toLowerCase()) ||
+        (String(p.chat_id) === String(chatId)) ||
+        (pResolvedKw === targetResolvedKw) ||
+        (pResolvedName === targetResolvedName) ||
+        (p.username && username && String(p.username).toLowerCase() === String(username).toLowerCase()) ||
+        (p.unique_hash && uniqueHash && p.unique_hash === uniqueHash) ||
+        (p.telegram_url && telegramUrl && p.telegram_url === telegramUrl)
+      );
+
+      return chanMatch;
+    });
 
     const postRecord = {
       id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -292,7 +311,9 @@ class SourceRegistry {
       this.posts[existingPostIndex] = {
         ...this.posts[existingPostIndex],
         ...postRecord,
-        id: this.posts[existingPostIndex].id
+        id: this.posts[existingPostIndex].id,
+        video_file_id: videoFileId || this.posts[existingPostIndex].video_file_id || null,
+        updated_at: new Date().toISOString()
       };
       if (isDebug) {
         console.log("[INGEST]");
@@ -305,6 +326,15 @@ class SourceRegistry {
       return { post: this.posts[existingPostIndex], isNew: false };
     } else {
       this.posts.unshift(postRecord);
+      // Enforce rolling 40 active posts cap per channel
+      const maxPostsPerChannel = 40;
+      const channelPosts = this.posts.filter(p => this.resolveKeyword(p.keyword) === targetResolvedKw);
+      if (channelPosts.length > maxPostsPerChannel) {
+        const postsToEvict = channelPosts.slice(maxPostsPerChannel);
+        const evictIds = new Set(postsToEvict.map(p => p.id));
+        this.posts = this.posts.filter(p => !evictIds.has(p.id));
+      }
+
       if (source) {
         source.last_checked_at = new Date().toISOString();
       }
