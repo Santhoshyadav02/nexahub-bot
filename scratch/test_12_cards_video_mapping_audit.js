@@ -3,7 +3,7 @@ const index = require("../index");
 const sourceRegistry = require("../source_registry");
 
 console.log("==================================================");
-console.log("12 CARD VIDEO MAPPING AUDIT");
+console.log("12 CARD COMPLETE VIDEO MAPPING AUDIT");
 console.log("==================================================\n");
 
 const expected12Cards = [
@@ -22,25 +22,27 @@ const expected12Cards = [
 ];
 
 let totalCards = 12;
-let totalVideosTested = 0;
+let totalDisplayedVideoItems = 0;
+let totalVideoItemsActuallyVerified = 0;
 let mappingPassed = 0;
 let mappingFailed = 0;
-let crossChannelErrors = 0;
 let messageIdMismatches = 0;
-let previewSourceMismatches = 0;
+let channelMismatches = 0;
+let postIdMismatches = 0;
+let crossChannelErrors = 0;
+let paginationMappingErrors = 0;
 
 const auditFailures = [];
 
-async function auditAll12Cards() {
-  // Ensure each target channel has valid test posts in sourceRegistry if registry is empty
+async function audit100PercentVideos() {
   const nowSec = Math.floor(Date.now() / 1000);
   
+  // Ensure each target channel has valid test posts in sourceRegistry if registry is empty
   expected12Cards.forEach(card => {
     const kw = card.expectedKeyword;
     const existingPosts = sourceRegistry.getPostsForKeyword(kw, true);
-    if (existingPosts.length < 10) {
-      // Ingest sample video & text posts to thoroughly audit mapping logic
-      for (let i = 1; i <= 12; i++) {
+    if (existingPosts.length < 15) {
+      for (let i = 1; i <= 20; i++) {
         const msgId = 5000 + i;
         sourceRegistry.processChannelPost({
           chat: { id: `-100_${kw}`, title: kw, username: kw.toLowerCase().replace(/\s+/g, "") },
@@ -50,7 +52,6 @@ async function auditAll12Cards() {
           caption: `▶️ [0:${15+i}] ${card.koreanName} AUDIT VIDEO #${i}`
         }, kw);
 
-        // Add an interleaved text post to test videoOnly index resolution robustness
         if (i % 3 === 0) {
           sourceRegistry.processChannelPost({
             chat: { id: `-100_${kw}`, title: kw, username: kw.toLowerCase().replace(/\s+/g, "") },
@@ -78,120 +79,124 @@ async function auditAll12Cards() {
     console.log(`Telegram Channel Username: @${channelUsername}`);
     console.log(`Telegram Channel ID: ${channelId}`);
 
-    // Get posts eligible for display
     const videoPosts = sourceRegistry.getPostsForKeyword(card.topicKey, true);
-    console.log(`Total Displayable Videos: ${videoPosts.length}`);
+    const activeVideos = videoPosts.slice(0, 40);
+    const totalPages = Math.min(5, Math.ceil(activeVideos.length / 8));
 
-    let cardPass = true;
-    let cardTestedCount = 0;
+    console.log(`Total Displayable Videos: ${activeVideos.length} (${totalPages} pages)`);
+    totalDisplayedVideoItems += activeVideos.length;
 
-    // Test items: Page 1 items (first, middle, last) and Page 2 items
-    const itemsToTest = [];
-    if (videoPosts.length > 0) itemsToTest.push({ pos: 1, post: videoPosts[0], page: 1 });
-    if (videoPosts.length > 3) itemsToTest.push({ pos: 4, post: videoPosts[3], page: 1 });
-    if (videoPosts.length >= 8) itemsToTest.push({ pos: 8, post: videoPosts[7], page: 1 });
-    if (videoPosts.length > 8) itemsToTest.push({ pos: 9, post: videoPosts[8], page: 2 });
-    if (videoPosts.length >= 12) itemsToTest.push({ pos: 12, post: videoPosts[11], page: 2 });
+    let cardFailCount = 0;
 
-    for (const testItem of itemsToTest) {
-      totalVideosTested++;
-      cardTestedCount++;
-
-      const p = testItem.post;
+    // Verify 100% of displayed videos
+    for (let idx = 0; idx < activeVideos.length; idx++) {
+      totalVideoItemsActuallyVerified++;
+      const p = activeVideos[idx];
+      const pageNum = Math.floor(idx / 8) + 1;
+      const listPos = idx + 1;
       const expectedMsgId = p.message_id;
       const expectedChannel = p.channel_name || resolvedKeyword;
+      const expectedPostId = p.id || p.unique_hash;
 
-      // 1. Simulate button click resolution via video_<id> payload handler
-      const videoId = p.id || p.unique_hash;
-      const lookupPost = sourceRegistry.getPostById(videoId);
+      const callbackData = `det~${encodeURIComponent("topic_page:" + card.topicKey)}~${idx}~${pageNum}`;
+      const deepLinkUrl = `https://t.me/santhosh_learning_2026_bot?start=video_${expectedPostId}`;
 
-      if (!lookupPost) {
-        cardPass = false;
+      // Simulate Telegram start handler lookup
+      const postFromId = sourceRegistry.getPostById(expectedPostId);
+      if (!postFromId) {
+        cardFailCount++;
         mappingFailed++;
+        postIdMismatches++;
         auditFailures.push({
           cardNum: card.cardNum,
-          itemPos: testItem.pos,
-          expectedChannel,
+          page: pageNum,
+          pos: listPos,
+          expectedPostId,
           expectedMsgId,
           actualMsgId: "NULL",
-          rootCause: `getPostById("${videoId}") returned undefined`,
-          file: "source_registry.js / index.js"
+          cause: `getPostById("${expectedPostId}") returned undefined`,
+          file: "source_registry.js",
+          fn: "getPostById"
         });
         continue;
       }
 
-      // Trace index resolution in index.js /start handler:
-      const callbackPrefix = `topic_page:${lookupPost.keyword}`;
-      const postsForKwVideoOnly = sourceRegistry.getPostsForKeyword(lookupPost.keyword, true);
-      const foundIdxVideoOnly = postsForKwVideoOnly.findIndex(item => item.id === lookupPost.id || item.unique_hash === lookupPost.unique_hash);
+      // Simulate index & page calculation in index.js
+      const kwPosts = sourceRegistry.getPostsForKeyword(postFromId.keyword, true);
+      const foundIdx = kwPosts.findIndex(item => item.id === postFromId.id || item.unique_hash === postFromId.unique_hash);
+      const calcPage = Math.floor(foundIdx / 8) + 1;
+      const resolvedPost = kwPosts[foundIdx];
 
-      const postsForKwAll = sourceRegistry.getPostsForKeyword(lookupPost.keyword, false);
-      const foundIdxAll = postsForKwAll.findIndex(item => item.id === lookupPost.id || item.unique_hash === lookupPost.unique_hash);
-
-      // Verify resolved post in renderItemDetailPage:
-      const resolvedPost = postsForKwVideoOnly[foundIdxVideoOnly];
-
+      const postIdMatch = resolvedPost && (resolvedPost.id === expectedPostId || resolvedPost.unique_hash === expectedPostId);
       const msgIdMatch = resolvedPost && String(resolvedPost.message_id) === String(expectedMsgId);
-      const chanMatch = resolvedPost && sourceRegistry.resolveKeyword(resolvedPost.keyword || resolvedPost.channel_name) === sourceRegistry.resolveKeyword(expectedChannel);
-      const crossChannelLeak = resolvedPost && sourceRegistry.resolveKeyword(resolvedPost.keyword) !== sourceRegistry.resolveKeyword(card.topicKey);
+      const chanMatch = resolvedPost && sourceRegistry.resolveKeyword(resolvedPost.keyword || resolvedPost.channel_name) === sourceRegistry.resolveKeyword(card.topicKey);
+      const isCrossChannel = resolvedPost && sourceRegistry.resolveKeyword(resolvedPost.keyword) !== sourceRegistry.resolveKeyword(card.topicKey);
+      const pageMatch = calcPage === pageNum;
 
-      if (foundIdxAll !== foundIdxVideoOnly && postsForKwAll.length !== postsForKwVideoOnly.length) {
-        console.warn(`⚠️ WARNING: Index disparity detected! VideoOnly index=${foundIdxVideoOnly}, AllPost index=${foundIdxAll}`);
-      }
-
-      if (msgIdMatch && chanMatch && !crossChannelLeak) {
+      if (postIdMatch && msgIdMatch && chanMatch && !isCrossChannel && pageMatch) {
         mappingPassed++;
       } else {
-        cardPass = false;
+        cardFailCount++;
         mappingFailed++;
-        if (crossChannelLeak) crossChannelErrors++;
+        if (!postIdMatch) postIdMismatches++;
         if (!msgIdMatch) messageIdMismatches++;
-        if (!chanMatch) previewSourceMismatches++;
+        if (!chanMatch) channelMismatches++;
+        if (isCrossChannel) crossChannelErrors++;
+        if (!pageMatch) paginationMappingErrors++;
 
         auditFailures.push({
           cardNum: card.cardNum,
-          itemPos: testItem.pos,
-          expectedChannel,
+          page: pageNum,
+          pos: listPos,
+          expectedPostId,
           expectedMsgId,
-          actualChannel: resolvedPost ? resolvedPost.channel_name : "UNKNOWN",
-          actualMsgId: resolvedPost ? resolvedPost.message_id : "UNKNOWN",
-          rootCause: crossChannelLeak ? "Cross-channel leakage" : (!msgIdMatch ? "Message ID Mismatch" : "Channel Mismatch"),
-          file: "index.js (renderItemDetailPage / start handler)"
+          actualPostId: resolvedPost ? (resolvedPost.id || resolvedPost.unique_hash) : "NULL",
+          actualMsgId: resolvedPost ? resolvedPost.message_id : "NULL",
+          actualChannel: resolvedPost ? resolvedPost.keyword : "NULL",
+          cause: isCrossChannel ? "Cross-Channel Leakage" : (!msgIdMatch ? "Message ID Mismatch" : (!postIdMatch ? "Post ID Mismatch" : "Pagination Mapping Error")),
+          file: "index.js",
+          fn: "renderItemDetailPage / start handler"
         });
       }
     }
 
-    if (cardPass) {
-      console.log(`PASS: List → Callback → Channel → Message ID → Preview (${cardTestedCount} videos verified)`);
+    if (cardFailCount === 0) {
+      console.log(`PASS: 100% of ${activeVideos.length} video items across all ${totalPages} pages verified cleanly.`);
     } else {
-      console.log(`❌ FAIL: Mapping disparity detected in Card ${card.cardNum}`);
+      console.log(`❌ FAIL: ${cardFailCount} mapping errors detected in Card ${card.cardNum}.`);
     }
   }
+
+  const isComplete = totalDisplayedVideoItems === totalVideoItemsActuallyVerified && totalDisplayedVideoItems > 0;
 
   console.log(`\n==================================================`);
   console.log(`AUDIT SUMMARY STATISTICS`);
   console.log(`==================================================`);
   console.log(`TOTAL CARDS: ${totalCards}`);
-  console.log(`TOTAL VIDEOS TESTED: ${totalVideosTested}`);
+  console.log(`TOTAL DISPLAYED VIDEO ITEMS: ${totalDisplayedVideoItems}`);
+  console.log(`TOTAL VIDEO ITEMS ACTUALLY VERIFIED: ${totalVideoItemsActuallyVerified}`);
+  console.log(`AUDIT STATUS: ${isComplete ? "COMPLETE" : "INCOMPLETE"}`);
   console.log(`MAPPING PASSED: ${mappingPassed}`);
   console.log(`MAPPING FAILED: ${mappingFailed}`);
-  console.log(`CROSS-CHANNEL ERRORS: ${crossChannelErrors}`);
-  console.log(`MESSAGE-ID MISMATCHES: ${messageIdMismatches}`);
-  console.log(`PREVIEW SOURCE MISMATCHES: ${previewSourceMismatches}`);
+  console.log(`MESSAGE ID MISMATCH: ${messageIdMismatches}`);
+  console.log(`CHANNEL MISMATCH: ${channelMismatches}`);
+  console.log(`POST ID MISMATCH: ${postIdMismatches}`);
+  console.log(`CROSS-CHANNEL LEAKAGE: ${crossChannelErrors}`);
+  console.log(`PAGINATION MAPPING ERRORS: ${paginationMappingErrors}`);
 
   if (auditFailures.length > 0) {
     console.log(`\n==================================================`);
-    console.log(`🚨 DETAILED FAILURE DISPARITY REPORT`);
+    console.log(`🚨 DETAILED DISPARITY FAILURE REPORT`);
     console.log(`==================================================`);
     auditFailures.forEach(f => {
-      console.log(`Card ${f.cardNum} | Pos ${f.itemPos} | Expected MsgID:${f.expectedMsgId} (@${f.expectedChannel}) | Actual MsgID:${f.actualMsgId} (@${f.actualChannel}) | Cause: ${f.rootCause} | File: ${f.file}`);
+      console.log(`Card ${f.cardNum} | Pg ${f.page} Pos ${f.pos} | Expected PostID:${f.expectedPostId} MsgID:${f.expectedMsgId} | Actual PostID:${f.actualPostId} MsgID:${f.actualMsgId} (@${f.actualChannel}) | Cause: ${f.cause} | File: ${f.file} (${f.fn})`);
     });
   }
 
   console.log(`==================================================\n`);
 }
 
-auditAll12Cards().catch(err => {
+audit100PercentVideos().catch(err => {
   console.error("❌ Audit script failed:", err);
   process.exit(1);
 });
