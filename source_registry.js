@@ -285,17 +285,21 @@ class SourceRegistry {
       updated_at: new Date().toISOString()
     };
 
+    const isDebug = process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug";
+
     if (existingPostIndex !== -1) {
       this.posts[existingPostIndex] = {
         ...this.posts[existingPostIndex],
         ...postRecord,
         id: this.posts[existingPostIndex].id
       };
-      console.log("[INGEST]");
-      console.log(`channel=${targetChannelName}`);
-      console.log(`message_id=${messageId}`);
-      console.log(`media_type=${mediaType}`);
-      console.log(`telegram_url=${telegramUrl}`);
+      if (isDebug) {
+        console.log("[INGEST]");
+        console.log(`channel=${targetChannelName}`);
+        console.log(`message_id=${messageId}`);
+        console.log(`media_type=${mediaType}`);
+        console.log(`telegram_url=${telegramUrl}`);
+      }
       this.saveData();
       return { post: this.posts[existingPostIndex], isNew: false };
     } else {
@@ -303,11 +307,15 @@ class SourceRegistry {
       if (source) {
         source.last_checked_at = new Date().toISOString();
       }
-      console.log("[INGEST]");
-      console.log(`channel=${targetChannelName}`);
-      console.log(`message_id=${messageId}`);
-      console.log(`media_type=${mediaType}`);
-      console.log(`telegram_url=${telegramUrl}`);
+      if (isDebug) {
+        console.log("[INGEST]");
+        console.log(`channel=${targetChannelName}`);
+        console.log(`message_id=${messageId}`);
+        console.log(`media_type=${mediaType}`);
+        console.log(`telegram_url=${telegramUrl}`);
+      } else {
+        console.log(`📥 [INGEST] channel=${targetChannelName} msgId=${messageId} type=${mediaType}`);
+      }
       this.saveData();
       return { post: postRecord, isNew: true };
     }
@@ -417,7 +425,6 @@ class SourceRegistry {
       if (source && pSrcId && pSrcId === source.id) return true;
       if (pKw === targetKwLower || pChan === targetKwLower) return true;
       if (source && source.username && p.username && p.username.trim().toLowerCase() === source.username.trim().toLowerCase()) return true;
-      if ((targetKwLower === "romance" || targetKwLower === "아이돌 열애 루머") && (pKw === "dating" || pChan === "dating")) return true;
       return false;
     });
 
