@@ -1397,26 +1397,19 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     const itemNumber = startIndex + index + 1;
     let displayTitle = String(p.title || p.name || "").trim();
 
-    // Strip video duration brackets e.g. [0:13], [1:15], [12:34] from list item titles
-    displayTitle = displayTitle.replace(/\[\d+:\d+\]\s*/g, "").trim();
+    // Strip ▶️ / ▶ / 🎬 icons and video duration brackets e.g. [0:13], [1:15] from list item titles
+    displayTitle = displayTitle
+      .replace(/^▶️\s*/g, "")
+      .replace(/^▶\s*/g, "")
+      .replace(/^🎬\s*/g, "")
+      .replace(/\[\d+:\d+\]\s*/g, "")
+      .trim();
 
     if (!displayTitle || (displayTitle.includes("Update") && !displayTitle.includes("#"))) {
-      displayTitle = "🎬 제목 없음";
+      displayTitle = "제목 없음";
     }
 
-    let icon = "";
-    if (displayTitle.includes("▶") || displayTitle.includes("🎬") || displayTitle.includes("🖼️") || displayTitle.includes("📄") || displayTitle.includes("📹") || displayTitle.includes("🔘")) {
-      icon = "";
-    } else if (p.url && p.url.includes("img")) {
-      icon = "🖼️ ";
-    } else if (displayTitle.startsWith("[")) {
-      icon = "▶️ ";
-    } else {
-      icon = "🎬 ";
-    }
-
-    const fullTitle = `${icon}${displayTitle}`.trim();
-    const escapedTitle = escapeHTML(fullTitle);
+    const escapedTitle = escapeHTML(displayTitle);
 
     let itemUrl = p.telegram_url || p.url;
     if (isTopicView) {

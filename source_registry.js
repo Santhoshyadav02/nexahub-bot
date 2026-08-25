@@ -243,15 +243,7 @@ class SourceRegistry {
 
     let rawTextTitle = text.split("\n")[0] ? text.split("\n")[0].trim() : "";
     let displayTitle = rawTextTitle.length > 0 ? (rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle) : "제목 없음";
-
-    let icon = "🎬 ";
-    if (mediaType === "video") {
-      icon = "▶️ ";
-    } else if (mediaType === "photo") {
-      icon = "🖼️ ";
-    }
-
-    const fullTitle = displayTitle === "제목 없음" ? `${icon}제목 없음` : `${icon}${displayTitle}`;
+    const fullTitle = displayTitle;
 
     let cleanChatId = chatId.startsWith("-100") ? chatId.substring(4) : chatId.replace("-", "");
     let inviteUrl = source ? source.invite_url : null;

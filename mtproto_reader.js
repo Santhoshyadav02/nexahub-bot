@@ -259,14 +259,7 @@ class MTProtoChannelReader {
               let rawTextTitle = textContent.split("\n")[0] ? textContent.split("\n")[0].trim() : "";
               let titleText = rawTextTitle.length > 0 ? (rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle) : "제목 없음";
 
-              let icon = "🎬 ";
-              if (mediaType === "video") {
-                icon = "▶️ ";
-              } else if (mediaType === "photo") {
-                icon = "🖼️ ";
-              }
-
-              const fullTitle = titleText === "제목 없음" ? `${icon}제목 없음` : `${icon}${titleText}`;
+              const fullTitle = titleText;
               const postObj = {
                 message_id: m.id,
                 date: m.date,
