@@ -1596,6 +1596,9 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
   };
 
   let cachedFileId = item.file_id || item.video_file_id || getCachedFileId(item.id || item.unique_hash);
+  if (cachedFileId && (typeof cachedFileId !== "string" || /^\d+$/.test(cachedFileId) || cachedFileId.length < 25 || cachedFileId.includes("LIVE_TEST") || cachedFileId.includes("test_"))) {
+    cachedFileId = null;
+  }
 
   // If file_id is missing, attempt MTProto media resolution
   if (!cachedFileId && process.env.TELEGRAM_SESSION_STRING && (item.chat_id || item.username) && item.message_id) {
@@ -2525,7 +2528,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           const posts = sourceRegistry.getPostsForKeyword(post.keyword);
           const foundIdx = posts.findIndex(p => p.id === post.id || p.unique_hash === post.unique_hash);
           itemIdx = foundIdx !== -1 ? foundIdx : 0;
-          page = Math.floor(itemIdx / 10) + 1;
+          page = Math.floor(itemIdx / 8) + 1;
         } else {
           callbackPrefix = "topic_page:Romance";
           itemIdx = 0;

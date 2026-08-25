@@ -234,9 +234,8 @@ class MTProtoChannelReader {
                   mediaType = "video";
                   videosFoundCount++;
                   channelReport.num_videos++;
-                  if (doc && doc.id) {
-                    videoFileId = String(doc.id);
-                  }
+                  // Do not store raw MTProto numeric doc.id as Bot API file_id
+                  videoFileId = null;
                   if (videoAttr && videoAttr.duration) {
                     const dur = Math.floor(videoAttr.duration);
                     const mins = Math.floor(dur / 60);

@@ -579,9 +579,10 @@ class SourceRegistry {
     for (const p of this.posts) {
       if (p.video_file_id) {
         if (typeof p.video_file_id !== "string" || 
+            /^\d+$/.test(p.video_file_id) || 
             p.video_file_id.includes("LIVE_TEST") || 
             p.video_file_id.includes("test_") || 
-            p.video_file_id.length < 20) {
+            p.video_file_id.length < 25) {
           p.video_file_id = null;
           modified = true;
         }
