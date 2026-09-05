@@ -1587,23 +1587,8 @@ function localizeDisplayTitle(rawTitle, categoryName = "") {
   return t.length > 80 ? t.substring(0, 77) + "..." : (t || "신규 영상");
 }
 
-  const itemLines = [];
-
-  pageItems.forEach((p, index) => {
-    const itemNumber = startIndex + index + 1;
-    let displayTitle = localizeDisplayTitle(p.title || p.name || "", title);
-
-    if (!displayTitle || (displayTitle.includes("Update") && !displayTitle.includes("#"))) {
-      displayTitle = "제목 없음";
-    }
-
-    const escapedTitle = escapeHTML(displayTitle);
-    itemLines.push(`${itemNumber}. 🎬 ${escapedTitle}`);
-  });
-
   let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
-  messageText += `이 채널의 최신 동영상 목록입니다. 시청할 영상을 아래 버튼에서 선택하세요.\n\n`;
-  messageText += itemLines.join("\n\n");
+  messageText += `이 채널의 최신 동영상 목록입니다.\n시청할 영상을 아래 버튼에서 선택하세요.`;
   if (totalPages > 1) {
     messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
   }
