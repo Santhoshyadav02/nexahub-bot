@@ -1435,39 +1435,6 @@ function getFeaturedChannels(cardId) {
 }
 
 
-// ============================================================
-// 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (WITH 2-STEP DETAIL NAVIGATION)
-// ============================================================
-async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
-  if (!items || items.length === 0) {
-    const emptyText = `📺 <b>${escapeHTML(title)}</b>\n\n이 채널에 이용 가능한 게시물이 없습니다.`;
-    const emptyOpts = {
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]
-        ]
-      }
-    };
-    if (messageId) {
-      return await editMessageTextSafe(chatId, messageId, emptyText, emptyOpts);
-    } else {
-      return await sendMessageSafe(chatId, emptyText, emptyOpts);
-    }
-  }
-
-  const isTopicView = callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:");
-  const itemsPerPage = 8;
-  const maxTotalPages = 5;
-  const maxItemsCap = 40;
-
-  const maxUiItems = (items || []).slice(0, maxItemsCap);
-  const totalPages = Math.min(maxTotalPages, Math.ceil(maxUiItems.length / itemsPerPage));
-  const currentPage = Math.max(1, Math.min(page, totalPages));
-
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
-
 function localizeDisplayTitle(rawTitle, categoryName = "") {
   if (!rawTitle || typeof rawTitle !== "string") {
     return categoryName ? `${categoryName} 추천 영상` : "추천 영상";
@@ -1586,6 +1553,39 @@ function localizeDisplayTitle(rawTitle, categoryName = "") {
 
   return t.length > 80 ? t.substring(0, 77) + "..." : (t || "신규 영상");
 }
+
+// ============================================================
+// 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (WITH 2-STEP DETAIL NAVIGATION)
+// ============================================================
+async function renderHyperlinkListPostView(chatId, title, items, page = 1, callbackPrefix = "page", messageId = null) {
+  if (!items || items.length === 0) {
+    const emptyText = `📺 <b>${escapeHTML(title)}</b>\n\n이 채널에 이용 가능한 게시물이 없습니다.`;
+    const emptyOpts = {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🏠 메인 메뉴로 돌아가기", callback_data: "menu" }]
+        ]
+      }
+    };
+    if (messageId) {
+      return await editMessageTextSafe(chatId, messageId, emptyText, emptyOpts);
+    } else {
+      return await sendMessageSafe(chatId, emptyText, emptyOpts);
+    }
+  }
+
+  const isTopicView = callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:");
+  const itemsPerPage = 8;
+  const maxTotalPages = 5;
+  const maxItemsCap = 40;
+
+  const maxUiItems = (items || []).slice(0, maxItemsCap);
+  const totalPages = Math.min(maxTotalPages, Math.ceil(maxUiItems.length / itemsPerPage));
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
 
   let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
   messageText += `이 채널의 최신 동영상 목록입니다.\n시청할 영상을 아래 버튼에서 선택하세요.`;
