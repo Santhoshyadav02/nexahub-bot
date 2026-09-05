@@ -23,6 +23,9 @@ class MTProtoChannelReader {
       return MTProtoChannelReader.instance;
     }
 
+    MTProtoChannelReader.constructionCount = (MTProtoChannelReader.constructionCount || 0) + 1;
+    console.log(`📡 [MTProtoChannelReader] Initializing singleton TelegramClient instance (Count: ${MTProtoChannelReader.constructionCount})...`);
+
     this.apiId = parseInt(process.env.TELEGRAM_API_ID || "0", 10);
     this.apiHash = process.env.TELEGRAM_API_HASH || "";
     this.sessionString = process.env.TELEGRAM_SESSION_STRING || "";

@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "schedulerIntervalMs": 900000,
+  "initialHistoryLimit": 15,
+  "maxPublishPerSource": 2,
+  "maxPublishPerCycle": 5,
+  "rateLimitDelayMs": 2500,
+  "dryRun": false,
+  "smokeTestMode": false,
+  "maxPerDestinationInSmokeTest": 1
+}

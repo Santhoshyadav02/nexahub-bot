@@ -1,0 +1,307 @@
+{
+  "version": "1.0.0",
+  "description": "NexaHub 10 Destination Channels Routing & Keyword Configuration",
+  "destinations": {
+    "DESTINATION_1": {
+      "id": "DESTINATION_1",
+      "name": "Romantic Vibe",
+      "username": "ccsfvk",
+      "enabled": true,
+      "priority": 1,
+      "keywords": {
+        "high": [
+          "romantic vibe",
+          "k-pop 열애설",
+          "케이팝 열애설",
+          "kept lover",
+          "myanmar"
+        ],
+        "medium": [
+          "romantic",
+          "vibe",
+          "k-pop",
+          "케이팝",
+          "러브",
+          "로맨틱"
+        ],
+        "low": [
+          "intimate",
+          "mood"
+        ]
+      }
+    },
+    "DESTINATION_2": {
+      "id": "DESTINATION_2",
+      "name": "Dating",
+      "username": "cccsefk",
+      "enabled": true,
+      "priority": 2,
+      "keywords": {
+        "high": [
+          "dating",
+          "evergrande troupe",
+          "didi proxy operation",
+          "아이돌 열애 루머",
+          "비밀 연애"
+        ],
+        "medium": [
+          "date",
+          "date night",
+          "아이돌",
+          "열애",
+          "데이트",
+          "약속"
+        ],
+        "low": [
+          "meeting",
+          "blind date"
+        ]
+      }
+    },
+    "DESTINATION_3": {
+      "id": "DESTINATION_3",
+      "name": "Romance",
+      "username": "e5brygh",
+      "enabled": true,
+      "priority": 3,
+      "keywords": {
+        "high": [
+          "romance",
+          "myanmar women",
+          "first love",
+          "mutual relations",
+          "intimacy"
+        ],
+        "medium": [
+          "love story",
+          "relations",
+          "lover",
+          "love",
+          "순애",
+          "로맨스"
+        ],
+        "low": [
+          "crush",
+          "passion"
+        ]
+      }
+    },
+    "DESTINATION_4": {
+      "id": "DESTINATION_4",
+      "name": "Crotch",
+      "username": "ccdjxc",
+      "enabled": true,
+      "priority": 4,
+      "keywords": {
+        "high": [
+          "crotch",
+          "sister snake",
+          "between her legs",
+          "between her legs drunk",
+          "eat your sausage",
+          "연예인 결별"
+        ],
+        "medium": [
+          "sausage",
+          "legs",
+          "skirt",
+          "body",
+          "thigh",
+          "다리",
+          "스커트"
+        ],
+        "low": [
+          "bottom",
+          "hips"
+        ]
+      }
+    },
+    "DESTINATION_5": {
+      "id": "DESTINATION_5",
+      "name": "Mosa",
+      "username": "vsdxda",
+      "enabled": true,
+      "priority": 5,
+      "keywords": {
+        "high": [
+          "mosa",
+          "has work",
+          "열애 논란",
+          "mosaic",
+          "uncensored",
+          "no mosa",
+          "探花",
+          "tanhua"
+        ],
+        "medium": [
+          "censored",
+          "主播",
+          "streamer",
+          "노모",
+          "모자이크",
+          "대리운영"
+        ],
+        "low": [
+          "blur",
+          "pixel"
+        ]
+      }
+    },
+    "DESTINATION_6": {
+      "id": "DESTINATION_6",
+      "name": "Bunny Girl Cosplay Date",
+      "username": "tfccdet",
+      "enabled": true,
+      "priority": 6,
+      "keywords": {
+        "high": [
+          "bunny girl cosplay date",
+          "bunny girl",
+          "bullying & sex",
+          "비밀 커플",
+          "반차",
+          "反差"
+        ],
+        "medium": [
+          "cosplay",
+          "bunny",
+          "costume",
+          "roleplay",
+          "코스프레",
+          "바니걸",
+          "制服",
+          "uniform"
+        ],
+        "low": [
+          "dressup",
+          "outfit"
+        ]
+      }
+    },
+    "DESTINATION_7": {
+      "id": "DESTINATION_7",
+      "name": "Lustful Hostess",
+      "username": "sfgfem",
+      "enabled": true,
+      "priority": 7,
+      "keywords": {
+        "high": [
+          "lustful hostess",
+          "housekeeper",
+          "award-winning housekeeper",
+          "da ci ge",
+          "바이럴 로맨스",
+          "人妻",
+          "少妇",
+          "店长"
+        ],
+        "medium": [
+          "hostess",
+          "hotel",
+          "wife",
+          "housewife",
+          "호스티스",
+          "주부",
+          "호텔"
+        ],
+        "low": [
+          "maid",
+          "service"
+        ]
+      }
+    },
+    "DESTINATION_8": {
+      "id": "DESTINATION_8",
+      "name": "Concubine",
+      "username": "ddkicr",
+      "enabled": true,
+      "priority": 8,
+      "keywords": {
+        "high": [
+          "concubine",
+          "senior year love story",
+          "sister rice bowl",
+          "delicious sister rice bowl",
+          "delicious sister",
+          "fantrie",
+          "럽스타그램"
+        ],
+        "medium": [
+          "vip channel",
+          "nude content",
+          "nude",
+          "fantrie nude",
+          "첩",
+          "비밀 회원"
+        ],
+        "low": [
+          "exclusive",
+          "premium"
+        ]
+      }
+    },
+    "DESTINATION_9": {
+      "id": "DESTINATION_9",
+      "name": "Saki Mizumi",
+      "username": "cccddghhgf",
+      "enabled": true,
+      "priority": 9,
+      "keywords": {
+        "high": [
+          "saki mizumi",
+          "sichuan mother & son",
+          "korean japanese",
+          "japanese 18",
+          "결혼 루머"
+        ],
+        "medium": [
+          "japanese",
+          "japan",
+          "saki",
+          "mizumi",
+          "mother & son",
+          "일본",
+          "모자",
+          "jav",
+          "av"
+        ],
+        "low": [
+          "tokyo",
+          "asia"
+        ]
+      }
+    },
+    "DESTINATION_10": {
+      "id": "DESTINATION_10",
+      "name": "A Muse",
+      "username": "bzd4wrf",
+      "enabled": true,
+      "priority": 10,
+      "keywords": {
+        "high": [
+          "a muse",
+          "hu siyuan",
+          "연예계 스캔들",
+          "91porn",
+          "麻豆",
+          "madou",
+          "onlyfans",
+          "海角"
+        ],
+        "medium": [
+          "muse",
+          "model",
+          "twitter",
+          "91",
+          "onlyfans推特分享",
+          "뮤즈",
+          "모델"
+        ],
+        "low": [
+          "gallery",
+          "photoshoot"
+        ]
+      }
+    }
+  }
+}

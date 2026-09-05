@@ -8,6 +8,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 const https = require("https");
 const { startScraperScheduler } = require("./scraper");
+const { startPipelineScheduler, stopPipelineScheduler } = require("./telegram_pipeline_publisher");
 const rankingScraper = require("./ranking_scraper");
 const sourceRegistry = require("./source_registry");
 
@@ -105,6 +106,9 @@ async function handleProcessExit(signal) {
 
   console.log(`🛑 [PID:${APP_PID}] Received ${signal}. Closing bot polling connection...`);
   try {
+    stopPipelineScheduler();
+  } catch (err) {}
+  try {
     if (bot.isPolling()) {
       await bot.stopPolling();
       console.log(`✅ [PID:${APP_PID}] Bot polling stopped cleanly for ${signal}.`);
@@ -112,6 +116,13 @@ async function handleProcessExit(signal) {
   } catch (err) {
     console.error(`⚠️ [PID:${APP_PID}] Error stopping polling on ${signal}:`, err.message);
   }
+  try {
+    const MTProtoChannelReader = require("./mtproto_reader");
+    if (MTProtoChannelReader.instance) {
+      await MTProtoChannelReader.instance.disconnect();
+      console.log(`✅ [PID:${APP_PID}] MTProto client disconnected cleanly for ${signal}.`);
+    }
+  } catch (err) {}
   process.exit(0);
 }
 
@@ -2982,6 +2993,7 @@ bot.on("message", async (msg) => {
 if (isMainModule) {
   startScraperScheduler();
   rankingScraper.startRankingScheduler();
+  startPipelineScheduler();
   console.log("✅ NewsSearch Main Bot is running...");
   console.log("🔗 Channels shown directly in main bot!");
 }
