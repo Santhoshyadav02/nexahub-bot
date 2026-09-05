@@ -1587,24 +1587,54 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
 
-  let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
-  messageText += `이 채널의 최신 동영상 목록입니다.\n시청할 영상을 아래 버튼에서 선택하세요.`;
-  if (totalPages > 1) {
-    messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
-  }
+  const itemLines = [];
 
-  const itemButtons = pageItems.map((p, index) => {
+  pageItems.forEach((p, index) => {
     const itemNumber = startIndex + index + 1;
     let displayTitle = localizeDisplayTitle(p.title || p.name || "", title);
+
     if (!displayTitle || (displayTitle.includes("Update") && !displayTitle.includes("#"))) {
       displayTitle = "제목 없음";
     }
-    const truncatedTitle = displayTitle.length > 36 ? displayTitle.substring(0, 34) + "..." : displayTitle;
-    return [{
-      text: `▶️ ${itemNumber}. ${truncatedTitle}`,
-      callback_data: `det:${callbackPrefix}:${startIndex + index}:${currentPage}`
-    }];
+
+    const escapedTitle = escapeHTML(displayTitle);
+
+    let itemUrl = p.telegram_url || p.url;
+    if (isTopicView) {
+      const vidId = p.id || p.unique_hash;
+      if (vidId) {
+        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=video_${vidId}`;
+      } else {
+        const cleanPrefix = encodeURIComponent(callbackPrefix);
+        const itemIdx = startIndex + index;
+        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=det~${cleanPrefix}~${itemIdx}~${currentPage}`;
+      }
+    } else if (!itemUrl) {
+      const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
+      if (src && src.username) {
+        itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
+      } else if (p.username) {
+        itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
+      } else if (src && src.invite_url) {
+        itemUrl = src.invite_url;
+      } else if (p.invite_url) {
+        itemUrl = p.invite_url;
+      } else if (p.chat_id && p.message_id) {
+        let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
+        itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
+      }
+    }
+    const safeUrl = escapeHTML(itemUrl);
+
+    itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
   });
+
+  let messageText = `📺 <b>${escapeHTML(title)}</b>\n\n`;
+  messageText += `이 채널의 최신 동영상 목록입니다.\n\n`;
+  messageText += itemLines.join("\n\n");
+  if (totalPages > 1) {
+    messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
+  }
 
   const navRow = [];
   if (currentPage > 1) {
@@ -1615,7 +1645,6 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   }
 
   const inline_keyboard = [];
-  itemButtons.forEach(btnRow => inline_keyboard.push(btnRow));
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
