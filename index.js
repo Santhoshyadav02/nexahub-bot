@@ -2605,12 +2605,21 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
     const firstName = msg.from.first_name || "there";
 
-    const combinedKeyboard = await getTrendingKeyboard();
-
+    // 1. Send welcome message registering persistent bottom ReplyKeyboardMarkup
     await sendMessageSafe(chatId,
       `📡 <b>NexaHub에 오신 것을 환영합니다, ${escapeHTML(firstName)}님!</b>\n\n` +
       `🔍 텔레그램 리소스 검색 엔진입니다. 키워드를 전송하여 그룹, 채널, 동영상, 음악을 검색하세요.\n\n` +
-      `한국어 및 영어를 지원합니다.\n\n` +
+      `한국어 및 영어를 지원합니다.`,
+      {
+        parse_mode: "HTML",
+        reply_markup: getPersistentNavigationKeyboard()
+      }
+    );
+
+    // 2. Send 12 Popular Topic cards & Trending keywords with InlineKeyboardMarkup
+    const combinedKeyboard = await getTrendingKeyboard();
+
+    await sendMessageSafe(chatId,
       `🔥 <b>핫 토픽</b>\n\n탐색할 주제를 선택하세요 👇`,
       {
         parse_mode: "HTML",
