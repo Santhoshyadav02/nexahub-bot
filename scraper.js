@@ -249,6 +249,11 @@ async function refreshTelegramPosts() {
       mtprotoReaderInstance = new MTProtoChannelReader();
     }
     const results = await mtprotoReaderInstance.syncAllChannels(10, true);
+    if (!results) {
+      console.log("ℹ️ Telegram MTProto sync skipped: MTProto client not connected or sync in cooldown. Existing channels_cache.json preserved.");
+      isSyncingTelegram = false;
+      return;
+    }
 
     let totalFetched = 0;
     let totalNew = 0;
@@ -309,12 +314,14 @@ async function refreshTelegramPosts() {
 }
 
 function startScraperScheduler() {
-  // Run immediately on start
+  // Run trending & breaking news immediately on start
   safeScrapeTrending();
   safeScrapeBreakingNews();
-  refreshTelegramPosts();
 
-  // Run trending every 10 minutes, breaking news every 3 minutes, telegram posts every 5 minutes
+  // Stagger initial Telegram MTProto sync by 5s to allow rolling deployment handoff
+  setTimeout(refreshTelegramPosts, 5000);
+
+  // Recurring intervals: Trending (10m), Breaking news (3m), Telegram posts (10m)
   setInterval(safeScrapeTrending, 10 * 60 * 1000);
   setInterval(safeScrapeBreakingNews, 3 * 60 * 1000);
   setInterval(refreshTelegramPosts, 10 * 60 * 1000);

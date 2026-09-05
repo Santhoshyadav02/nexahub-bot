@@ -50,8 +50,13 @@ class MTProtoChannelReader {
     }
 
     if (this.client && this.client.connected) {
-      console.log("✅ MTProto client: CONNECTED (reusing persistent connection)");
       return true;
+    }
+
+    if (this.backoffUntil && Date.now() < this.backoffUntil) {
+      const waitSec = Math.ceil((this.backoffUntil - Date.now()) / 1000);
+      console.log(`ℹ️ [MTProtoChannelReader] Connection backoff active (${waitSec}s remaining). Skipping connect request.`);
+      return false;
     }
 
     if (this.connectingPromise) {
@@ -67,10 +72,26 @@ class MTProtoChannelReader {
           await this.client.getDialogs({ limit: 100 });
         } catch (e) {}
         console.log("✅ MTProto client: CONNECTED");
+        this.backoffUntil = null;
         return true;
       } catch (err) {
-        console.error("❌ MTProto client connection error:", err.message);
-        try { await this.client.disconnect(); } catch (e) {}
+        const isAuthKeyDuplicated = err && (
+          (err.message && err.message.includes("AUTH_KEY_DUPLICATED")) ||
+          err.errorMessage === "AUTH_KEY_DUPLICATED" ||
+          err.code === 406
+        );
+
+        if (isAuthKeyDuplicated) {
+          console.warn("⚠️ [MTProtoChannelReader] 406 AUTH_KEY_DUPLICATED detected (previous deployment container is releasing the session). Applying 15s controlled backoff...");
+          this.backoffUntil = Date.now() + 15000;
+        } else {
+          console.error("❌ MTProto client connection error:", err.message);
+          this.backoffUntil = Date.now() + 5000;
+        }
+
+        try {
+          await this.disconnect();
+        } catch (e) {}
         return false;
       } finally {
         this.connectingPromise = null;
@@ -82,7 +103,7 @@ class MTProtoChannelReader {
 
   async disconnect() {
     try {
-      if (this.client && this.client.connected) {
+      if (this.client) {
         console.log("🔌 Explicitly disconnecting MTProto client...");
         await this.client.disconnect().catch(() => {});
         if (typeof this.client.destroy === "function") {
@@ -95,7 +116,7 @@ class MTProtoChannelReader {
   async syncAllChannels(limit = 10, saveToDisk = false) {
     if (this.isSyncing) {
       console.log("ℹ️ MTProto sync already in progress. Skipping concurrent sync request.");
-      return [];
+      return null;
     }
     this.isSyncing = true;
     try {
@@ -103,7 +124,7 @@ class MTProtoChannelReader {
       const connected = await this.connect();
       if (!connected) {
         console.warn("⚠️ Cannot run MTProto sync: Client not connected.");
-        return results;
+        return null;
       }
 
       console.log("📡 MTProto client: SYNC START");

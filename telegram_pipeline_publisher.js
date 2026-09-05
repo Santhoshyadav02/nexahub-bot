@@ -36,7 +36,7 @@ function loadPipelineConfig() {
     }
   }
   return {
-    schedulerIntervalMs: 900000, // 15 minutes (Stage 10)
+    schedulerIntervalMs: 600000, // 10 minutes
     initialHistoryLimit: 10,
     maxPublishPerCycle: 10,
     rateLimitDelayMs: 1500,
@@ -580,7 +580,7 @@ function startPipelineScheduler(options = {}) {
     config.enabled = options.enabled;
   }
 
-  const intervalMs = options.intervalMs || config.schedulerIntervalMs || 900000;
+  const intervalMs = options.intervalMs || config.schedulerIntervalMs || 600000;
 
   if (config.enabled === false) {
     console.log("ℹ️ Telegram Video Pipeline scheduler is currently DISABLED (enabled: false in pipeline_config.json).");
@@ -622,11 +622,11 @@ function startPipelineScheduler(options = {}) {
   }
   pipelineSchedulerTimer = setInterval(runCycle, intervalMs);
 
-  // Trigger initial publish cycle after brief startup delay
+  // Trigger initial publish cycle after startup delay (15s)
   if (initialCycleTimer) {
     clearTimeout(initialCycleTimer);
   }
-  initialCycleTimer = setTimeout(runCycle, 2500);
+  initialCycleTimer = setTimeout(runCycle, 15000);
 
   return {
     status: "RUNNING",
