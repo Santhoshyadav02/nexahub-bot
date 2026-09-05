@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "schedulerIntervalMs": 900000,
+  "schedulerIntervalMs": 600000,
   "initialHistoryLimit": 15,
   "maxPublishPerSource": 2,
   "maxPublishPerCycle": 5,

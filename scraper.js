@@ -317,9 +317,9 @@ function startScraperScheduler() {
   // Run trending every 10 minutes, breaking news every 3 minutes, telegram posts every 5 minutes
   setInterval(safeScrapeTrending, 10 * 60 * 1000);
   setInterval(safeScrapeBreakingNews, 3 * 60 * 1000);
-  setInterval(refreshTelegramPosts, 5 * 60 * 1000);
+  setInterval(refreshTelegramPosts, 10 * 60 * 1000);
 
-  console.log("⏰ Scrapers active: Trending (10m), Breaking news (3m), Telegram posts (5m)");
+  console.log("⏰ Scrapers active: Trending (10m), Breaking news (3m), Telegram posts (10m)");
 }
 
 if (require.main === module) {
