@@ -122,13 +122,14 @@ class GlobalRoundRobinRouter {
   }
 
   /**
-   * Routes a single item using global round-robin sequence
+   * Assigns a destination for an item without advancing the round-robin counter.
+   * Locked retry destinations or already-published identities are respected.
    * @param {object} item 
    * @returns {object}
    */
-  routeItem(item) {
+  assignDestination(item) {
     if (!item || typeof item !== "object") {
-      throw new Error("routeItem requires a valid item object");
+      throw new Error("assignDestination requires a valid item object");
     }
 
     const sourceChannelId = String(item.sourceChannelId || "unknown");
@@ -154,7 +155,7 @@ class GlobalRoundRobinRouter {
       };
     }
 
-    // 2. Check if item has a prior assigned destination lock (e.g. retry after failure)
+    // 2. Check if item has a prior assigned destination lock (e.g. retry after failure / across restarts)
     let assignedDest = (this.ledger && this.ledger.getAssignedDestination && this.ledger.getAssignedDestination(sourceIdentity))
       || this.assignedDestinations.get(sourceIdentity);
     let assignedIndex = null;
@@ -163,25 +164,18 @@ class GlobalRoundRobinRouter {
     if (assignedDest && this.destinations.includes(assignedDest)) {
       assignedIndex = this.destinations.indexOf(assignedDest);
       isRetry = true;
-      // RETRY OF ALREADY-ASSIGNED FAILED VIDEO MUST NOT ADVANCE THE GLOBAL COUNTER
+      console.log(`[RR ASSIGN] ${sourceIdentity} -> ${assignedDest} (RETRY LOCK)`);
     } else {
-      // 3. Assign next global round-robin destination from authoritative persisted counter
-      if (this.ledger && typeof this.ledger.getNextRoundRobinIndex === "function") {
-        assignedIndex = this.ledger.getNextRoundRobinIndex();
-        assignedDest = this.destinations[assignedIndex];
-        this.assignedDestinations.set(sourceIdentity, assignedDest);
+      // 3. Assign next destination from current authoritative counter without advancing yet
+      assignedIndex = this.getCurrentIndex();
+      assignedDest = this.destinations[assignedIndex];
+      this.assignedDestinations.set(sourceIdentity, assignedDest);
 
-        // Atomically advance and persist next index
-        this.ledger.advanceRoundRobinIndex();
-        this.currentIndex = this.ledger.getNextRoundRobinIndex();
-      } else {
-        assignedIndex = this.currentIndex;
-        assignedDest = this.destinations[assignedIndex];
-        this.assignedDestinations.set(sourceIdentity, assignedDest);
-
-        // In-memory fallback if no ledger attached
-        this.currentIndex = (this.currentIndex + 1) % this.destinations.length;
+      if (this.ledger && typeof this.ledger.lockDestination === "function") {
+        this.ledger.lockDestination(sourceIdentity, assignedDest);
       }
+
+      console.log(`[RR ASSIGN] ${sourceIdentity} -> ${assignedDest}`);
     }
 
     const destMeta = this.destinationsMeta[assignedDest] || { id: assignedDest, name: assignedDest, username: "" };
@@ -206,6 +200,40 @@ class GlobalRoundRobinRouter {
       duplicate: false,
       alreadyPublished: false
     };
+  }
+
+  /**
+   * Confirms successful publication for an assigned item and atomically advances the counter
+   * @param {string} sourceIdentity 
+   * @param {string} destinationChannelId 
+   */
+  confirmSuccess(sourceIdentity, destinationChannelId) {
+    console.log(`[RR SUCCESS] ${sourceIdentity} -> ${destinationChannelId}`);
+    const prevIndex = this.getCurrentIndex();
+    
+    if (this.ledger && typeof this.ledger.advanceRoundRobinIndex === "function") {
+      this.ledger.advanceRoundRobinIndex();
+      this.currentIndex = this.ledger.getNextRoundRobinIndex();
+    } else {
+      this.currentIndex = (this.currentIndex + 1) % this.destinations.length;
+    }
+
+    const nextIndex = this.getCurrentIndex();
+    const nextDest = this.destinations[nextIndex];
+    console.log(`[RR ADVANCE] ${destinationChannelId} -> ${nextDest}`);
+  }
+
+  /**
+   * Routes a single item using global round-robin sequence (assign + confirm for standalone calls)
+   * @param {object} item 
+   * @returns {object}
+   */
+  routeItem(item) {
+    const decision = this.assignDestination(item);
+    if (!decision.duplicate && !decision.isRetry) {
+      this.confirmSuccess(decision.sourceIdentity, decision.destinationChannelId);
+    }
+    return decision;
   }
 
   /**

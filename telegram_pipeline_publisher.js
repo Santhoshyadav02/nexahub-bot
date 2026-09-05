@@ -17,7 +17,6 @@
 const fs = require("fs");
 const path = require("path");
 const { SOURCE_ROUTING_CONFIG, SOURCE_CHANNELS_LIST } = require("./telegram_source_router");
-const { SourceFallbackRouter } = require("./source_fallback_routing");
 const { GlobalRoundRobinRouter } = require("./global_round_robin_router");
 const { loadRoutingConfig } = require("./telegram_content_classifier");
 const { generateKoreanCaptionAsync } = require("./korean_caption_generator");
@@ -38,10 +37,11 @@ function loadPipelineConfig() {
   return {
     schedulerIntervalMs: 600000, // 10 minutes
     initialHistoryLimit: 10,
-    maxPublishPerCycle: 10,
-    rateLimitDelayMs: 1500,
+    maxPublishPerSource: 2,
+    maxPublishPerCycle: 5,
+    rateLimitDelayMs: 2500,
     dryRun: false,
-    smokeTestMode: true,
+    smokeTestMode: false,
     maxPerDestinationInSmokeTest: 1
   };
 }
@@ -79,6 +79,14 @@ class PublishedLedger {
           }
         }
 
+        if (parsed.pendingAssignments && typeof parsed.pendingAssignments === "object") {
+          for (const [id, dest] of Object.entries(parsed.pendingAssignments)) {
+            if (id && dest && !this.assignedDestinations.has(id)) {
+              this.assignedDestinations.set(id, dest);
+            }
+          }
+        }
+
         // Authoritative load or deterministic one-time migration for legacy ledgers
         if (typeof parsed.nextRoundRobinIndex === "number" && !isNaN(parsed.nextRoundRobinIndex)) {
           this.nextRoundRobinIndex = ((parsed.nextRoundRobinIndex % 10) + 10) % 10;
@@ -107,6 +115,7 @@ class PublishedLedger {
         updatedAt: new Date().toISOString(),
         totalPublished: this.publishedIdentities.size,
         nextRoundRobinIndex: this.nextRoundRobinIndex,
+        pendingAssignments: Object.fromEntries(this.assignedDestinations),
         records: this.records
       };
       fs.writeFileSync(this.filePath, JSON.stringify(payload, null, 2), "utf8");
@@ -121,6 +130,11 @@ class PublishedLedger {
 
   getAssignedDestination(sourceIdentity) {
     return this.assignedDestinations.get(sourceIdentity) || null;
+  }
+
+  lockDestination(sourceIdentity, destinationChannelId) {
+    this.assignedDestinations.set(sourceIdentity, destinationChannelId);
+    this.save();
   }
 
   getNextRoundRobinIndex() {
@@ -441,22 +455,11 @@ class TelegramPipelinePublisher {
       return parseInt(b.item.messageId, 10) - parseInt(a.item.messageId, 10);
     });
 
-    // Assign destinations sequentially using global round-robin router
+    // Return clean candidate list without assigning destinations or advancing round-robin counter
     const results = [];
     for (const cand of uniqueCandidates) {
-      const decision = this.router.routeItem(cand.item);
-      if (decision.captionSource === "source_metadata" && typeof generateKoreanCaptionAsync === "function") {
-        try {
-          const catName = decision.destinationName || decision.matchedCategory || "";
-          const capAsync = await generateKoreanCaptionAsync(cand.item, { matchedCategory: catName });
-          if (capAsync && capAsync.generatedKoreanCaption) {
-            decision.generatedKoreanCaption = capAsync.generatedKoreanCaption;
-          }
-        } catch (e) {}
-      }
       results.push({
         item: cand.item,
-        decision,
         sourceIdentity: cand.sourceIdentity,
         alreadyPublished: this.ledger.isPublished(cand.sourceIdentity)
       });
@@ -488,36 +491,17 @@ class TelegramPipelinePublisher {
         duplicateSkippedCount++;
         continue;
       }
-      if (!cand.decision.destinationChannelId || cand.decision.destinationChannelId === "UNCLASSIFIED") {
-        unclassifiedCount++;
-        continue;
-      }
 
       const srcKey = cand.item.sourceUsername || cand.item.sourceChannelId;
       sourceCounts[srcKey] = sourceCounts[srcKey] || 0;
 
-      if (isSmokeTest) {
-        const dest = cand.decision.destinationChannelId;
-        destinationCounts[dest] = destinationCounts[dest] || 0;
-        if (destinationCounts[dest] < maxPerDest && sourceCounts[srcKey] < maxPerSource && plannedOperations.length < maxTotal) {
-          destinationCounts[dest]++;
-          sourceCounts[srcKey]++;
-          plannedOperations.push(cand);
-        }
-      } else {
-        if (sourceCounts[srcKey] < maxPerSource && plannedOperations.length < maxTotal) {
-          sourceCounts[srcKey]++;
-          plannedOperations.push(cand);
-        }
+      if (sourceCounts[srcKey] < maxPerSource && plannedOperations.length < maxTotal) {
+        sourceCounts[srcKey]++;
+        plannedOperations.push(cand);
       }
     }
 
-    console.log(`📋 [Pipeline Cycle Plan] Discovered: ${candidates.length}, Already Published: ${duplicateSkippedCount}, Unclassified: ${unclassifiedCount}, Planned: ${plannedOperations.length}`);
-    for (let i = 0; i < plannedOperations.length; i++) {
-      const op = plannedOperations[i];
-      const catOrName = op.decision.matchedCategory || op.decision.destinationName || "Round Robin";
-      console.log(`   [${i + 1}/${plannedOperations.length}] @${op.item.sourceUsername}:${op.item.messageId} -> ${op.decision.destinationChannelId} (${catOrName}) [${op.decision.captionSource}]`);
-    }
+    console.log(`📋 [Pipeline Cycle Plan] Discovered: ${candidates.length}, Already Published: ${duplicateSkippedCount}, Planned: ${plannedOperations.length}`);
 
     const results = {
       totalDiscovered: candidates.length,
@@ -534,11 +518,27 @@ class TelegramPipelinePublisher {
 
     for (let i = 0; i < plannedOperations.length; i++) {
       const op = plannedOperations[i];
+      // JIT destination assignment strictly for accepted items
+      const decision = this.router.assignDestination(op.item);
+      op.decision = decision;
+
+      if (decision.captionSource === "source_metadata" && typeof generateKoreanCaptionAsync === "function") {
+        try {
+          const catName = decision.destinationName || decision.matchedCategory || "";
+          const capAsync = await generateKoreanCaptionAsync(op.item, { matchedCategory: catName });
+          if (capAsync && capAsync.generatedKoreanCaption) {
+            decision.generatedKoreanCaption = capAsync.generatedKoreanCaption;
+          }
+        } catch (e) {}
+      }
+
       console.log(`🚀 [Publishing ${i + 1}/${plannedOperations.length}] ${op.sourceIdentity} -> ${op.decision.destinationChannelId}...`);
 
       const pubRes = await this.publishItem(op.item, op.decision);
 
       if (pubRes.status === "SUCCESS" || pubRes.status === "DRY_RUN_ACCEPTED") {
+        // Confirm publication and advance round-robin counter strictly post-success
+        this.router.confirmSuccess(op.sourceIdentity, op.decision.destinationChannelId);
         results.published++;
         results.publishedRecords.push(pubRes);
         if (op.decision.captionSource === "generic_fallback") {
@@ -555,8 +555,10 @@ class TelegramPipelinePublisher {
 
       // Rate limit delay between posts
       if (i < plannedOperations.length - 1) {
-        const delay = this.config.rateLimitDelayMs || 2500;
-        await this.sleep(delay);
+        const delay = typeof this.config.rateLimitDelayMs === "number" ? this.config.rateLimitDelayMs : 2500;
+        if (delay > 0) {
+          await this.sleep(delay);
+        }
       }
     }
 
