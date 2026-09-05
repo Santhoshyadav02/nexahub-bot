@@ -1468,19 +1468,130 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pageItems = maxUiItems.slice(startIndex, startIndex + itemsPerPage);
 
+function localizeDisplayTitle(rawTitle, categoryName = "") {
+  if (!rawTitle || typeof rawTitle !== "string") {
+    return categoryName ? `${categoryName} 추천 영상` : "추천 영상";
+  }
+
+  let t = rawTitle.trim();
+
+  // Strip leading icons and duration tags
+  t = t
+    .replace(/^▶️\s*/g, "")
+    .replace(/^▶\s*/g, "")
+    .replace(/^🎬\s*/g, "")
+    .replace(/\[\d+:\d+\]\s*/g, "")
+    .trim();
+
+  // Strip prefix category tags like [Romantic Vibe], [Dating], [Romance], etc.
+  t = t.replace(/^\[(Romantic Vibe|Dating|Romance|Crotch|Mosa|Bunny Girl Cosplay Date|Lustful Hostess|Concubine|Saki Mizumi|A Muse)\]\s*/i, '');
+
+  // Specific high-frequency English/Chinese studio & series patterns
+  const PATTERN_REPLACEMENTS = [
+    { regex: /\[Uncle Kangaroo - VIP Preview\]/gi, replace: "캥거루 아저씨 VIP 프리뷰:" },
+    { regex: /\[Uncle Kangaroo - Resource Sharing\]/gi, replace: "캥거루 아저씨 자원공유:" },
+    { regex: /\[袋鼠大叔-VIP预览\]/gi, replace: "캥거루 아저씨 VIP 프리뷰:" },
+    { regex: /\[袋鼠大叔-资源分享\]/gi, replace: "캥거루 아저씨 자원공유:" },
+    { regex: /\[MyGirlfriendsBustyFriend\]/gi, replace: "내 여자친구의 글래머 친구" },
+    { regex: /\[FilthyFamily\]/gi, replace: "패밀리 시크릿" },
+    { regex: /Big tit Latina/gi, replace: "글래머 라티나" },
+    { regex: /91 Great God Series/gi, replace: "91 대작 컬렉션" },
+    { regex: /91大神/gi, replace: "91 대작" },
+    { regex: /One Bed Two Couple/gi, replace: "원 베드 투 커플" },
+    { regex: /Hungry Sisters/gi, replace: "배고픈 자매들" },
+    { regex: /Love Lesson/gi, replace: "러브 레슨 (화려한 외출)" },
+    { regex: /Daughter-in-law's First Love/gi, replace: "며느리의 첫사랑" },
+    { regex: /My Sister's Friend/gi, replace: "내 여동생의 친구" },
+    { regex: /My Father's Wife/gi, replace: "아버지의 여자" },
+    { regex: /My Daughter's Tutor/gi, replace: "딸의 과외 선생님" },
+    { regex: /My Best Friend's Wife/gi, replace: "내 절친의 아내" },
+    { regex: /Mother and Daughter/gi, replace: "엄마와 딸" },
+    { regex: /Lonely Sister/gi, replace: "외로운 누나" },
+    { regex: /Kind Daughter-in-Law/gi, replace: "친절한 며느리" },
+    { regex: /In-Law's Seduction/gi, replace: "사돈의 유혹" },
+    { regex: /Housekeeper Wife/gi, replace: "가정부 아내" },
+    { regex: /Hard Working Good Daughter-in-Law/gi, replace: "착하고 열심인 며느리" },
+    { regex: /Free Sex/gi, replace: "자유로운 사랑" },
+    { regex: /Adult Sport/gi, replace: "성인 스포츠" },
+    { regex: /I Lend You My Wife/gi, replace: "내 아내를 빌려드립니다" },
+    { regex: /First Person Forbidden Ejaculation/gi, replace: "1인칭 시점 금지된 유혹" },
+    { regex: /Exchange Wife/gi, replace: "스와핑 아내" },
+    { regex: /Award-winning Housekeeper/gi, replace: "최우수 가정부의 비밀" },
+    { regex: /A Wet Flower, A Blooming Wife/gi, replace: "젖은 꽃 피어나는 아내" },
+    { regex: /Delicious Sister Rice Bowl/gi, replace: "맛있는 자매 덮밥" },
+    { regex: /A New Female Employee Who is Made Fun Of By A Perverted Boss/gi, replace: "변태 상사에게 놀림당하는 신입 여직원" },
+    { regex: /Erotic Tutoring/gi, replace: "비밀 과외" },
+    { regex: /Erotic Actor!! I Won't!/gi, replace: "에로 배우는 사절이야!" },
+    { regex: /Disciple of Deokjin Yuk/gi, replace: "덕진육의 수제자" },
+    { regex: /Delivery Massage/gi, replace: "출장 힐링 마사지" },
+    { regex: /Advanced Prostitute/gi, replace: "고급 콜걸" },
+    { regex: /A Friends Wife Sold In Debt/gi, replace: "빚 대신 팔려간 친구의 아내" },
+    { regex: /Young Older Sister in Law/gi, replace: "젊은 형수의 비밀스런 사랑 이야기" },
+    { regex: /Good Mother/gi, replace: "착한 엄마" },
+    { regex: /Between Her Legs Drunk/gi, replace: "취중 밀회: 그녀의 다리 사이" },
+    { regex: /Can I Eat Your Sausage!?/gi, replace: "맛있는 소시지 먹어도 될까요!" },
+    { regex: /Girl next Door/gi, replace: "옆집 소녀의 은밀한 비밀" },
+    { regex: /Bitch Wife Squirting/gi, replace: "매혹적인 아내의 짜릿한 하이라이트" },
+    { regex: /Friends Manet/gi, replace: "친구의 은밀한 비밀 화보" },
+    { regex: /台湾福利姬小母狗【优咪 lewdyumi】/gi, replace: "대만 인기 코스플레이어 유미 최신작" },
+    { regex: /Mutual Relations/gi, replace: "상호 관계: 세 남녀의 은밀한 사랑 이야기" },
+    { regex: /Intimacy/gi, replace: "정사" },
+    { regex: /Dirty Bandit Aggregation/gi, replace: "더티 밴딧 컬렉션 스페셜" }
+  ];
+
+  for (const item of PATTERN_REPLACEMENTS) {
+    if (item.regex.test(t)) {
+      t = t.replace(item.regex, item.replace).trim();
+    }
+  }
+
+  // Strip prefix category tags like [Romantic Vibe], [Dating], [Romance], etc.
+  t = t.replace(/^\[(Romantic Vibe|Dating|Romance|Crotch|Mosa|Bunny Girl Cosplay Date|Lustful Hostess|Concubine|Saki Mizumi|A Muse)\]\s*/i, '');
+
+  // Strip spam channel noise
+  t = t
+    .replace(/HD\s*»\s*▰.*$/i, 'HD')
+    .replace(/🔰BACK UP CHANNEL🔰/gi, '')
+    .replace(/🔰BACK UP.*?$/gi, '')
+    .replace(/- 91porn.*$/gi, '')
+    .trim();
+
+  // If still completely non-Korean (e.g. pure Chinese / Burmese / English)
+  const hasHangul = /[\uac00-\ud7af]/.test(t);
+  const hasChinese = /[\u4e00-\u9fa5]/.test(t);
+  const hasBurmese = /[\u1000-\u109f]/.test(t);
+
+  if (!hasHangul || hasChinese || hasBurmese) {
+    if (hasChinese) {
+      if (/傲娇/.test(t)) return "츤데레 소녀 & 매혹적인 유부녀의 라이브";
+      if (/肉感|豪乳|肥臀/.test(t)) return "글래머 미녀의 파격 제복 댄스 & 퍼포먼스";
+      if (/女神|裸聊/.test(t)) return "비주얼 여신의 프라이빗 1:1 라이브";
+      if (/黑丝/.test(t)) return "블랙 스타킹 섹시 유혹 & 단독 스페셜";
+      if (/车震|野外/.test(t)) return "야외 드라이브 데이트 & 호텔 시크릿 밀회";
+      if (/母子/.test(t)) return "SNS 화제의 시크릿 로맨스 이슈";
+      if (/3P|换妻/.test(t)) return "커플의 시크릿 일탈 파티";
+      if (/老师|教师/.test(t)) return "미모의 강사와 비밀스런 밀회";
+      return categoryName ? `${categoryName} 인기 추천 영상` : "인기 추천 영상";
+    }
+    if (hasBurmese) {
+      return categoryName ? `${categoryName} 화제의 추천 영상` : "화제의 추천 영상";
+    }
+    if (!hasHangul && /^[A-Za-z0-9\s,'\(\)\-\.]+$/.test(t)) {
+      return `[추천 콘텐츠] ${t}`;
+    }
+  }
+
+  // Clean trailing punctuation and symbols
+  t = t.replace(/^[-\s:]+/, '').replace(/[-\s:]+$/, '').trim();
+
+  return t.length > 80 ? t.substring(0, 77) + "..." : (t || "신규 영상");
+}
+
   const itemLines = [];
 
   pageItems.forEach((p, index) => {
     const itemNumber = startIndex + index + 1;
-    let displayTitle = String(p.title || p.name || "").trim();
-
-    // Strip ▶️ / ▶ / 🎬 icons and video duration brackets e.g. [0:13], [1:15] from list item titles
-    displayTitle = displayTitle
-      .replace(/^▶️\s*/g, "")
-      .replace(/^▶\s*/g, "")
-      .replace(/^🎬\s*/g, "")
-      .replace(/\[\d+:\d+\]\s*/g, "")
-      .trim();
+    let displayTitle = localizeDisplayTitle(p.title || p.name || "", title);
 
     if (!displayTitle || (displayTitle.includes("Update") && !displayTitle.includes("#"))) {
       displayTitle = "제목 없음";
@@ -1585,7 +1696,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     });
   }
 
-  let displayTitle = String(item.title || item.name || "텔레그램 콘텐츠").trim();
+  let displayTitle = localizeDisplayTitle(item.title || item.name || "텔레그램 콘텐츠", title);
 
   // 1. Post URL for [ ▶️ WATCH VIDEO ]
   const src = sourceRegistry.getSourceByKeyword(item.keyword || item.channel_name);
