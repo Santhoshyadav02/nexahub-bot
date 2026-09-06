@@ -1,0 +1,542 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-09-07T03:00:00Z",
+  "categories": [
+    {
+      "id": "adult_broadcast",
+      "title": "성인방송",
+      "icon": "🔞",
+      "items": [
+        {
+          "id": "pandalive",
+          "name": "팬더티비",
+          "url": "https://www.pandalive.co.kr/",
+          "description": "한국 대표 개인방송 라이브 스트리밍 플랫폼"
+        },
+        {
+          "id": "popkontv",
+          "name": "팝콘티비",
+          "url": "https://www.popkontv.com/",
+          "description": "실시간 소통 및 다양한 라이브 스트리밍 서비스"
+        },
+        {
+          "id": "flextv",
+          "name": "플렉스티비",
+          "url": "https://www.flextv.co.kr/",
+          "description": "고화질 실시간 인터넷 방송 플랫폼"
+        },
+        {
+          "id": "stripchat",
+          "name": "스트립챗",
+          "url": "https://ko.stripchat.com/",
+          "description": "글로벌 라이브 캠 스트리밍 플랫폼"
+        },
+        {
+          "id": "bubeelive",
+          "name": "부비",
+          "url": "https://www.bubeelive.com/",
+          "description": "실시간 소통 중심의 인터넷 라이브 방송"
+        },
+        {
+          "id": "dallalive",
+          "name": "달라",
+          "url": "https://www.dallalive.com/",
+          "description": "인기 크리에이터 실시간 라이브 플랫폼"
+        },
+        {
+          "id": "camsoda",
+          "name": "캠소다",
+          "url": "https://camsoda.com/",
+          "description": "글로벌 라이브 화상 커뮤니케이션 플랫폼"
+        },
+        {
+          "id": "chaturbate",
+          "name": "채터베이트",
+          "url": "https://chaturbate.com/",
+          "description": "글로벌 실시간 인터랙티브 라이브 방송"
+        },
+        {
+          "id": "celuvtv",
+          "name": "셀럽티비",
+          "url": "https://www.celuvtv.co.kr/",
+          "description": "연예·셀럽 중심의 실시간 방송 플랫폼"
+        },
+        {
+          "id": "lemoncams",
+          "name": "레몬캠스",
+          "url": "https://www.lemoncams.com/ko",
+          "description": "글로벌 라이브 화상 채팅 서비스"
+        }
+      ]
+    },
+    {
+      "id": "community",
+      "title": "인기커뮤니티",
+      "icon": "💬",
+      "items": [
+        {
+          "id": "dcinside",
+          "name": "디시인사이드",
+          "url": "https://gall.dcinside.com/",
+          "description": "국내 최대 규모의 인터넷 커뮤니티 및 갤러리"
+        },
+        {
+          "id": "fmkorea",
+          "name": "에펨코리아",
+          "url": "https://www.fmkorea.com/",
+          "description": "축구, 게임, 유머 및 종합 커뮤니티"
+        },
+        {
+          "id": "inven",
+          "name": "인벤",
+          "url": "https://www.inven.co.kr/",
+          "description": "국내 대표 게임 정보 및 토론 포털"
+        },
+        {
+          "id": "ppomppu",
+          "name": "뽐뿌",
+          "url": "https://www.ppomppu.co.kr/",
+          "description": "알뜰 쇼핑 정보 및 일상 커뮤니티"
+        },
+        {
+          "id": "bobaedream",
+          "name": "보배드림",
+          "url": "https://www.bobaedream.co.kr/",
+          "description": "자동차 및 사회 이슈 종합 커뮤니티"
+        },
+        {
+          "id": "blind",
+          "name": "블라인드",
+          "url": "https://www.teamblind.com/kr/",
+          "description": "직장인 익명 소통 및 직무 커뮤니티"
+        },
+        {
+          "id": "dogdrip",
+          "name": "개드립",
+          "url": "https://www.dogdrip.net/",
+          "description": "인기 유머 및 이슈 모음 커뮤니티"
+        },
+        {
+          "id": "clien",
+          "name": "클리앙",
+          "url": "https://www.clien.net/",
+          "description": "IT 기기 및 다양한 주제의 토론 커뮤니티"
+        },
+        {
+          "id": "humoruniv",
+          "name": "웃긴대학",
+          "url": "https://web.humoruniv.com/main.html",
+          "description": "유머 및 자유 창작 게시판 포털"
+        },
+        {
+          "id": "etoland",
+          "name": "이토랜드",
+          "url": "https://etoland.co.kr/",
+          "description": "종합 유머 및 일상 정보 커뮤니티"
+        }
+      ]
+    },
+    {
+      "id": "ai_tools",
+      "title": "AI 도구",
+      "icon": "🤖",
+      "items": [
+        {
+          "id": "manus",
+          "name": "마누스 (Manus)",
+          "url": "https://manus.im/login?code=MLDKJPRQJNBCYS",
+          "description": "차세대 자율 실행형 AI 에이전트 서비스"
+        },
+        {
+          "id": "chatgpt",
+          "name": "챗GPT (ChatGPT)",
+          "url": "https://chatgpt.com/",
+          "description": "OpenAI의 대표 대화형 인공지능 모델"
+        },
+        {
+          "id": "gemini",
+          "name": "Google Gemini",
+          "url": "https://gemini.google.com/app",
+          "description": "Google의 차세대 멀티모달 AI 플랫폼"
+        },
+        {
+          "id": "perplexity",
+          "name": "Perplexity AI",
+          "url": "https://www.perplexity.ai/",
+          "description": "실시간 지식 탐색 및 검색 중심 AI 엔진"
+        },
+        {
+          "id": "claude",
+          "name": "Claude AI",
+          "url": "https://claude.ai/login?returnTo=%2F%3F",
+          "description": "Anthropic의 안전하고 뛰어난 지능형 AI 어시스턴트"
+        },
+        {
+          "id": "notion_ai",
+          "name": "Notion AI",
+          "url": "https://www.notion.com/ko/product/ai",
+          "description": "스마트 문서 작성 및 작업 자동화 AI 도구"
+        },
+        {
+          "id": "writesonic",
+          "name": "Writesonic",
+          "url": "https://writesonic.com/",
+          "description": "마케팅 카피 및 콘텐츠 생성 AI 플랫폼"
+        },
+        {
+          "id": "quillbot",
+          "name": "QuillBot",
+          "url": "https://quillbot.com/",
+          "description": "문장 재구성 및 문법 검사 AI 도구"
+        },
+        {
+          "id": "copy_ai",
+          "name": "Copy.ai",
+          "url": "https://www.copy.ai/",
+          "description": "마케팅 문구 및 카피라이팅 자동 생성 솔루션"
+        },
+        {
+          "id": "midjourney",
+          "name": "Midjourney",
+          "url": "https://www.midjourney.com/home",
+          "description": "프롬프트 기반 초고화질 AI 이미지 생성 도구"
+        }
+      ]
+    },
+    {
+      "id": "utilities",
+      "title": "유틸/도구",
+      "icon": "🛠️",
+      "items": [
+        {
+          "id": "check_ip",
+          "name": "내 IP 주소 확인",
+          "url": "https://ip.pe.kr/",
+          "description": "현재 접속한 공인 IP 주소 및 네트워크 정보 확인"
+        },
+        {
+          "id": "naver_qr",
+          "name": "QR코드 생성기",
+          "url": "https://qr.naver.com/",
+          "description": "네이버 커스텀 QR코드 생성 및 관리"
+        },
+        {
+          "id": "iloveimg_resize",
+          "name": "이미지 리사이즈",
+          "url": "https://www.iloveimg.com/ko/resize-image#resize-options,pixels",
+          "description": "온라인 사진/이미지 크기 및 해상도 조절"
+        },
+        {
+          "id": "avast_password",
+          "name": "비밀번호 생성기",
+          "url": "https://www.avast.com/ko-kr/random-password-generator#pc",
+          "description": "안전한 고강도 랜덤 비밀번호 생성 도구"
+        },
+        {
+          "id": "iloveimg_convert",
+          "name": "이미지 포맷 변환",
+          "url": "https://www.iloveimg.com/ko/convert-to-jpg",
+          "description": "PNG, WEBP 등 다양한 포맷의 JPG 변환"
+        },
+        {
+          "id": "iloveimg_crop",
+          "name": "이미지 크롭",
+          "url": "https://www.iloveimg.com/ko/crop-image",
+          "description": "온라인 이미지 원하는 영역 자르기 도구"
+        },
+        {
+          "id": "smallpdf_convert",
+          "name": "PDF 변환",
+          "url": "https://smallpdf.com/kr/pdf-converter",
+          "description": "PDF 파일 상호 포맷 변환 및 압축 도구"
+        },
+        {
+          "id": "best79_calc",
+          "name": "퍼센트 / 이자 계산기",
+          "url": "https://best79.com/loan/",
+          "description": "금융 대출 이자 및 일상 퍼센트 계산기"
+        },
+        {
+          "id": "convertlive",
+          "name": "단위 변환기",
+          "url": "https://convertlive.com/ko/%EB%B3%80%ED%99%98",
+          "description": "길이, 무게, 넓이, 환율 등 종합 단위 변환"
+        },
+        {
+          "id": "image_color_picker",
+          "name": "컬러 피커",
+          "url": "https://imagecolorpicker.com/ko",
+          "description": "이미지 내 원하는 지점의 색상 코드(HEX/RGB) 추출"
+        }
+      ]
+    },
+    {
+      "id": "overseas_shopping",
+      "title": "해외직구",
+      "icon": "🛍️",
+      "items": [
+        {
+          "id": "amazon",
+          "name": "Amazon",
+          "url": "https://www.amazon.com/",
+          "description": "세계 최대 글로벌 종합 온라인 쇼핑몰"
+        },
+        {
+          "id": "ebay",
+          "name": "eBay",
+          "url": "https://www.ebay.com/",
+          "description": "글로벌 경매 및 해외 상품 오픈마켓"
+        },
+        {
+          "id": "aliexpress",
+          "name": "AliExpress",
+          "url": "https://ko.aliexpress.com/",
+          "description": "가성비 해외 직구 및 글로벌 쇼핑 플랫폼"
+        },
+        {
+          "id": "bloomingdales",
+          "name": "Bloomingdale's",
+          "url": "https://www.bloomingdales.com/",
+          "description": "미국 프리미엄 백화점 패션 브랜드 직구"
+        },
+        {
+          "id": "zappos",
+          "name": "Zappos",
+          "url": "https://www.zappos.com/",
+          "description": "신발 및 패션 전문 글로벌 온라인 쇼핑몰"
+        },
+        {
+          "id": "cosme",
+          "name": "Cosme",
+          "url": "https://www.cosme.com/",
+          "description": "일본 뷰티 랭킹 및 화장품 전문 쇼핑몰"
+        },
+        {
+          "id": "iherb",
+          "name": "iHerb",
+          "url": "https://kr.iherb.com/",
+          "description": "천연 영양제, 건강식품 및 뷰티 직구몰"
+        },
+        {
+          "id": "yesstyle",
+          "name": "YesStyle",
+          "url": "https://www.yesstyle.com/en/home.html",
+          "description": "아시아 패션 및 K-뷰티 해외 쇼핑 플랫폼"
+        },
+        {
+          "id": "bestbuy",
+          "name": "BestBuy",
+          "url": "https://www.bestbuy.com/home",
+          "description": "미국 가전 및 IT 전자제품 전문 쇼핑몰"
+        },
+        {
+          "id": "rakuten",
+          "name": "Rakuten",
+          "url": "https://www.rakuten.co.jp/",
+          "description": "일본 최대 종합 온라인 쇼핑 마켓"
+        }
+      ]
+    },
+    {
+      "id": "psychology",
+      "title": "심리",
+      "icon": "🧠",
+      "items": [
+        {
+          "id": "sbti_test",
+          "name": "SBTI 테스트",
+          "url": "https://sbti-test.com/ko/",
+          "description": "성격 및 개인 매력 지수 분석 테스트"
+        },
+        {
+          "id": "mbti_16personalities",
+          "name": "MBTI 테스트",
+          "url": "https://www.16personalities.com/ko/",
+          "description": "16가지 무료 성격유형 정밀 검사"
+        },
+        {
+          "id": "bdsm_test",
+          "name": "BDSM 성향 테스트",
+          "url": "https://bdsm.testmoa.com/",
+          "description": "성향 및 취향 심리 분석 자가진단"
+        },
+        {
+          "id": "attachment_test",
+          "name": "연애 애착 테스트",
+          "url": "https://smore.im/quiz/sUkReTm4vT",
+          "description": "안정형/불안형/회피형 연애 애착유형 진단"
+        },
+        {
+          "id": "aura_test",
+          "name": "나의 아우라 찾기",
+          "url": "https://poomang.com/restylane",
+          "description": "나만의 고유한 기운과 분위기 컬러 진단"
+        },
+        {
+          "id": "animal_matching",
+          "name": "동물 캐릭터 매칭 테스트",
+          "url": "https://poomang.com/t/finally_animal?from_detail=True",
+          "description": "나의 성격과 가장 닮은 동물 캐릭터 분석"
+        },
+        {
+          "id": "stress_burnout",
+          "name": "스트레스 / 번아웃 지수",
+          "url": "https://www.maum-sopoong.or.kr/stress-self-diagnosis-test",
+          "description": "일상 스트레스와 번아웃 위험도 자가진단"
+        },
+        {
+          "id": "mbti_matching",
+          "name": "MBTI 궁합 매칭",
+          "url": "https://love-mbti.com/ko/compatibility/",
+          "description": "MBTI 유형별 연애 및 성격 궁합 계산기"
+        },
+        {
+          "id": "alcohol_bti",
+          "name": "술BTI",
+          "url": "https://poomang.com/ggbti",
+          "description": "음주 스타일과 술자리 성향 분석 테스트"
+        },
+        {
+          "id": "mental_strength",
+          "name": "멘탈 강도 테스트",
+          "url": "https://smore.im/quiz/QKLJdQr8Mn",
+          "description": "마음의 회복탄력성과 멘탈 내구도 측정"
+        }
+      ]
+    },
+    {
+      "id": "dating",
+      "title": "미팅/연애",
+      "icon": "💘",
+      "items": [
+        {
+          "id": "tinder",
+          "name": "Tinder (틴더)",
+          "url": "https://tinder.com/ko",
+          "description": "글로벌 1위 소셜 매칭 및 데이팅 플랫폼"
+        },
+        {
+          "id": "pairs",
+          "name": "페어즈 (Pairs)",
+          "url": "https://www.pairs.lv/kr",
+          "description": "진지한 만남과 신뢰 중심의 매칭 서비스"
+        },
+        {
+          "id": "wippy",
+          "name": "위피 (Wippy)",
+          "url": "https://www.wippy.io/",
+          "description": "동네 친구 만들기 및 일상 매칭 앱"
+        },
+        {
+          "id": "glam",
+          "name": "글램 (Glam)",
+          "url": "https://www.glam.am/",
+          "description": "매력도 평가 기반 프리미엄 데이팅 앱"
+        },
+        {
+          "id": "bleet",
+          "name": "블릿 (Bleet)",
+          "url": "https://www.teambleet.com/",
+          "description": "직장인 및 전문직 인증 데이팅 커뮤니티"
+        },
+        {
+          "id": "bumble",
+          "name": "Bumble (범블)",
+          "url": "https://bumble.com/ko/",
+          "description": "여성 우선 매칭 중심의 글로벌 소셜 앱"
+        },
+        {
+          "id": "noondate",
+          "name": "정오의데이트",
+          "url": "https://noondate.com/v2/account/intro",
+          "description": "매일 정오 매칭되는 프리미엄 소개팅 서비스"
+        },
+        {
+          "id": "endlessdream",
+          "name": "너랑나랑",
+          "url": "https://endlessdream.co.kr/info/index.html",
+          "description": "이상형 16강 토너먼트 소개팅 앱"
+        },
+        {
+          "id": "azar",
+          "name": "아자르 (Azar)",
+          "url": "https://azarlive.com/about/",
+          "description": "글로벌 실시간 비디오 채팅 및 매칭 플랫폼"
+        },
+        {
+          "id": "amanda",
+          "name": "아만다 (Amanda)",
+          "url": "https://play.google.com/store/apps/details?id=com.dorsia.amanda",
+          "description": "검증된 회원들의 프리미엄 소개팅 플랫폼"
+        }
+      ]
+    },
+    {
+      "id": "korean_diaspora",
+      "title": "한인교민",
+      "icon": "🌏",
+      "items": [
+        {
+          "id": "dailynl",
+          "name": "[네덜란드] 데일리NL",
+          "url": "https://dailynl.net/",
+          "description": "네덜란드 한인 교민 뉴스 및 생활 정보 포털"
+        },
+        {
+          "id": "auckland_korean",
+          "name": "[뉴질랜드] 오클랜드",
+          "url": "https://nz.korean.net/",
+          "description": "뉴질랜드 오클랜드 한인회 교민 커뮤니티"
+        },
+        {
+          "id": "japaninfo",
+          "name": "[일본] 재팬인포",
+          "url": "https://japaninfo.kr/",
+          "description": "일본 거주 한인을 위한 생활·취업 정보 포털"
+        },
+        {
+          "id": "newyorkkorea",
+          "name": "[미국] 뉴욕코리아",
+          "url": "https://www.newyorkkorea.net/",
+          "description": "미국 뉴욕/뉴저지 한인 종합 생활 커뮤니티"
+        },
+        {
+          "id": "ilhanmo",
+          "name": "[일본] 일한모",
+          "url": "https://korean.co.jp/",
+          "description": "일본 거주 한국인 모임 및 구인구직 네트워크"
+        },
+        {
+          "id": "philall",
+          "name": "[필리핀] 필리핀올",
+          "url": "http://www.philall.com/",
+          "description": "필리핀 교민 생활·여행·비즈니스 종합 정보"
+        },
+        {
+          "id": "nzkoreapost",
+          "name": "[뉴질랜드] 코리아포스트",
+          "url": "https://www.nzkoreapost.com/",
+          "description": "뉴질랜드 최대 한인 뉴스 및 커뮤니티 포털"
+        },
+        {
+          "id": "moyiza",
+          "name": "[중국] 모이자",
+          "url": "https://www.moyiza.com/",
+          "description": "중국 조선족 및 한인 종합 소통 커뮤니티"
+        },
+        {
+          "id": "hanindeul",
+          "name": "[말레이시아] 한인들",
+          "url": "http://www.hanindeul.com/",
+          "description": "말레이시아 교민 생활 및 교류 정보망"
+        },
+        {
+          "id": "gutentagkorea",
+          "name": "[독일] 구텐탁코리아",
+          "url": "https://gutentagkorea.com/",
+          "description": "독일 및 유럽 한인 대상 뉴스·생활 정보 포털"
+        }
+      ]
+    }
+  ]
+}
