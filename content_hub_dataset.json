@@ -5,20 +5,13 @@
     {
       "id": "adult_broadcast",
       "title": "성인방송",
-      "icon": "🔞",
+      "icon": "",
       "items": [
         {
           "id": "pandalive",
           "name": "팬더티비",
           "url": "https://www.pandalive.co.kr/",
-          "description": "한국 대표 개인방송 라이브 스트리밍 플랫폼",
-          "sub_items": [
-            {
-              "id": "pandalive_live",
-              "name": "라이브 방송",
-              "url": "https://www.pandalive.co.kr/live"
-            }
-          ]
+          "description": "한국 대표 개인방송 라이브 스트리밍 플랫폼"
         },
         {
           "id": "popkontv",
@@ -85,60 +78,19 @@
           "id": "dcinside",
           "name": "디시인사이드",
           "url": "https://gall.dcinside.com/",
-          "description": "국내 최대 규모의 인터넷 커뮤니티 및 갤러리",
-          "sub_items": [
-            {
-              "id": "dc_best",
-              "name": "실시간 베스트",
-              "url": "https://gall.dcinside.com/board/lists/?id=dcbest"
-            },
-            {
-              "id": "dc_major",
-              "name": "주요 갤러리",
-              "url": "https://gall.dcinside.com/"
-            },
-            {
-              "id": "dc_minor",
-              "name": "마이너 갤러리",
-              "url": "https://gall.dcinside.com/m"
-            }
-          ]
+          "description": "국내 최대 규모의 인터넷 커뮤니티 및 갤러리"
         },
         {
           "id": "fmkorea",
           "name": "에펨코리아",
           "url": "https://www.fmkorea.com/",
-          "description": "축구, 게임, 유머 및 종합 커뮤니티",
-          "sub_items": [
-            {
-              "id": "fm_poten",
-              "name": "포텐 인기글",
-              "url": "https://www.fmkorea.com/best"
-            },
-            {
-              "id": "fm_humor",
-              "name": "유머/이슈 갤러리",
-              "url": "https://www.fmkorea.com/humor"
-            },
-            {
-              "id": "fm_football",
-              "name": "국내/해외 축구",
-              "url": "https://www.fmkorea.com/football"
-            }
-          ]
+          "description": "축구, 게임, 유머 및 종합 커뮤니티"
         },
         {
           "id": "inven",
           "name": "인벤",
           "url": "https://www.inven.co.kr/",
-          "description": "국내 대표 게임 정보 및 토론 포털",
-          "sub_items": [
-            {
-              "id": "inven_news",
-              "name": "게임 뉴스 & 웹진",
-              "url": "https://www.inven.co.kr/webzine/"
-            }
-          ]
+          "description": "국내 대표 게임 정보 및 토론 포털"
         },
         {
           "id": "ppomppu",
@@ -199,73 +151,25 @@
           "id": "chatgpt",
           "name": "챗GPT (ChatGPT)",
           "url": "https://chatgpt.com/",
-          "description": "OpenAI의 대표 대화형 인공지능 모델",
-          "sub_items": [
-            {
-              "id": "chatgpt_web",
-              "name": "챗GPT 대화하기",
-              "url": "https://chatgpt.com/"
-            },
-            {
-              "id": "chatgpt_gpts",
-              "name": "GPTs 스토어",
-              "url": "https://chatgpt.com/gpts"
-            }
-          ]
+          "description": "OpenAI의 대표 대화형 인공지능 모델"
         },
         {
           "id": "gemini",
           "name": "Google Gemini",
           "url": "https://gemini.google.com/app",
-          "description": "Google의 차세대 멀티모달 AI 플랫폼",
-          "sub_items": [
-            {
-              "id": "gemini_app",
-              "name": "Gemini 대화",
-              "url": "https://gemini.google.com/app"
-            },
-            {
-              "id": "gemini_updates",
-              "name": "Gemini 최신 소식",
-              "url": "https://gemini.google.com/updates"
-            }
-          ]
+          "description": "Google의 차세대 멀티모달 AI 플랫폼"
         },
         {
           "id": "perplexity",
           "name": "Perplexity AI",
           "url": "https://www.perplexity.ai/",
-          "description": "실시간 지식 탐색 및 검색 중심 AI 엔진",
-          "sub_items": [
-            {
-              "id": "perplexity_search",
-              "name": "AI 지식 검색",
-              "url": "https://www.perplexity.ai/"
-            },
-            {
-              "id": "perplexity_discover",
-              "name": "디스커버 트렌드",
-              "url": "https://www.perplexity.ai/discover"
-            }
-          ]
+          "description": "실시간 지식 탐색 및 검색 중심 AI 엔진"
         },
         {
           "id": "claude",
           "name": "Claude AI",
           "url": "https://claude.ai/login?returnTo=%2F%3F",
-          "description": "Anthropic의 안전하고 뛰어난 지능형 AI 어시스턴트",
-          "sub_items": [
-            {
-              "id": "claude_chat",
-              "name": "Claude 대화하기",
-              "url": "https://claude.ai/"
-            },
-            {
-              "id": "claude_docs",
-              "name": "Claude 도큐먼트",
-              "url": "https://docs.anthropic.com/"
-            }
-          ]
+          "description": "Anthropic의 안전하고 뛰어난 지능형 AI 어시스턴트"
         },
         {
           "id": "notion_ai",
@@ -320,19 +224,7 @@
           "id": "iloveimg_resize",
           "name": "이미지 리사이즈",
           "url": "https://www.iloveimg.com/ko/resize-image",
-          "description": "온라인 사진/이미지 크기 및 해상도 조절",
-          "sub_items": [
-            {
-              "id": "iloveimg_resize_opt",
-              "name": "이미지 크기 조절",
-              "url": "https://www.iloveimg.com/ko/resize-image"
-            },
-            {
-              "id": "iloveimg_compress",
-              "name": "이미지 용량 압축",
-              "url": "https://www.iloveimg.com/ko/compress-image"
-            }
-          ]
+          "description": "온라인 사진/이미지 크기 및 해상도 조절"
         },
         {
           "id": "avast_password",
@@ -356,19 +248,7 @@
           "id": "smallpdf_convert",
           "name": "PDF 변환",
           "url": "https://smallpdf.com/kr/pdf-converter",
-          "description": "PDF 파일 상호 포맷 변환 및 압축 도구",
-          "sub_items": [
-            {
-              "id": "smallpdf_convert_opt",
-              "name": "PDF 변환기",
-              "url": "https://smallpdf.com/kr/pdf-converter"
-            },
-            {
-              "id": "smallpdf_compress",
-              "name": "PDF 용량 줄이기",
-              "url": "https://smallpdf.com/kr/compress-pdf"
-            }
-          ]
+          "description": "PDF 파일 상호 포맷 변환 및 압축 도구"
         },
         {
           "id": "best79_calc",
@@ -399,19 +279,7 @@
           "id": "amazon",
           "name": "Amazon",
           "url": "https://www.amazon.com/",
-          "description": "세계 최대 글로벌 종합 온라인 쇼핑몰",
-          "sub_items": [
-            {
-              "id": "amazon_deals",
-              "name": "오늘의 딜 (Gold Box)",
-              "url": "https://www.amazon.com/gp/goldbox"
-            },
-            {
-              "id": "amazon_bestsellers",
-              "name": "베스트셀러",
-              "url": "https://www.amazon.com/Best-Sellers/zgbs"
-            }
-          ]
+          "description": "세계 최대 글로벌 종합 온라인 쇼핑몰"
         },
         {
           "id": "ebay",
@@ -447,14 +315,7 @@
           "id": "iherb",
           "name": "iHerb",
           "url": "https://kr.iherb.com/",
-          "description": "천연 영양제, 건강식품 및 뷰티 직구몰",
-          "sub_items": [
-            {
-              "id": "iherb_specials",
-              "name": "금주의 할인 특가",
-              "url": "https://kr.iherb.com/specials"
-            }
-          ]
+          "description": "천연 영양제, 건강식품 및 뷰티 직구몰"
         },
         {
           "id": "yesstyle",
@@ -491,19 +352,7 @@
           "id": "mbti_16personalities",
           "name": "MBTI 테스트",
           "url": "https://www.16personalities.com/ko/",
-          "description": "16가지 무료 성격유형 정밀 검사",
-          "sub_items": [
-            {
-              "id": "mbti_test_opt",
-              "name": "무료 성격유형 검사",
-              "url": "https://www.16personalities.com/ko/%EB%AC%B4%EB%A3%8C-%EC%84%B1%EA%B2%A9-%EC%9C%A0%ED%98%95-%EA%B2%80%EC%82%AC"
-            },
-            {
-              "id": "mbti_profiles",
-              "name": "16가지 성격유형 프로필",
-              "url": "https://www.16personalities.com/ko/%EC%84%B1%EA%B2%A9-%EC%9C%A0%ED%98%95"
-            }
-          ]
+          "description": "16가지 무료 성격유형 정밀 검사"
         },
         {
           "id": "bdsm_test",
@@ -564,19 +413,7 @@
           "id": "tinder",
           "name": "Tinder (틴더)",
           "url": "https://tinder.com/ko",
-          "description": "글로벌 1위 소셜 매칭 및 데이팅 플랫폼",
-          "sub_items": [
-            {
-              "id": "tinder_start",
-              "name": "틴더 웹 시작하기",
-              "url": "https://tinder.com/ko"
-            },
-            {
-              "id": "tinder_safety_guide",
-              "name": "안전 팁 & 가이드",
-              "url": "https://policies.tinder.com/safety/intl/ko"
-            }
-          ]
+          "description": "글로벌 1위 소셜 매칭 및 데이팅 플랫폼"
         },
         {
           "id": "pairs",
@@ -686,12 +523,6 @@
           "name": "[중국] 모이자",
           "url": "https://www.moyiza.com/",
           "description": "중국 조선족 및 한인 종합 소통 커뮤니티"
-        },
-        {
-          "id": "hanindeul",
-          "name": "[말레이시아] 한인들",
-          "url": "http://www.hanindeul.com/",
-          "description": "말레이시아 교민 생활 및 교류 정보망"
         },
         {
           "id": "gutentagkorea",

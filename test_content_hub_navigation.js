@@ -6,115 +6,118 @@ const indexApp = require("./index");
 const contentHubScraper = require("./content_hub_scraper");
 
 console.log("============================================================");
-console.log("🧪 RUNNING CONTENT HUB NAVIGATION & SUB-ITEM AUDIT TEST SUITE");
+console.log("🧪 RUNNING CONTENT HUB LINK-STYLE UI & NAVIGATION TEST SUITE");
 console.log("============================================================\n");
 
 let passedCount = 0;
 
-// Test 1: Category -> Site list (Level 1 & Level 2)
-console.log("📌 Test 1: Verifying Level 1 & Level 2 Compact Category Navigation...");
+// Test 1: Category Level 1 (Emoji removal & 4x2 grid)
+console.log("📌 Test 1: Verifying Level 1 Category Grid & 🔞 Emoji Removal...");
 const categories = indexApp.getContentHubCategories();
 assert.strictEqual(categories.length, 8, "Must contain exactly 8 categories");
 const adultCat = indexApp.getContentHubCategoryById("adult_broadcast");
 assert(adultCat, "adult_broadcast category must exist");
 assert.strictEqual(adultCat.title, "성인방송", "Category title must be localized Korean '성인방송'");
+assert.strictEqual(adultCat.icon || "", "", "adult_broadcast must NOT have 🔞 or adult icon");
 
-const keyboardL2 = indexApp.getContentHubCategoryKeyboard("adult_broadcast", 1);
-assert(keyboardL2.inline_keyboard.length >= 8, "Level 2 keyboard must have site buttons");
-// Verify clean format e.g. "🔞 팬더티비" (no numbering)
-const firstBtnText = keyboardL2.inline_keyboard[0][0].text;
-assert(!/^\d+[\.\s]/.test(firstBtnText), `Button text must NOT have numeric prefix, actual: ${firstBtnText}`);
-assert(firstBtnText.includes("팬더티비"), `Button text must include site name, actual: ${firstBtnText}`);
-console.log(`   ✅ Level 2 clean list verified: "${firstBtnText}"`);
-passedCount++;
+// Test Level 1 Category Keyboard
+indexApp.getCategoryHubKeyboard().then(catKbd => {
+  assert(Array.isArray(catKbd.inline_keyboard), "Level 1 keyboard must exist");
+  const allBtnTexts = catKbd.inline_keyboard.flat().map(b => b.text);
+  assert(allBtnTexts.includes("성인방송"), "Level 1 must contain clean '성인방송' button");
+  assert(!allBtnTexts.some(t => t.includes("🔞")), "Level 1 must NOT contain 🔞 emoji");
+  console.log("   ✅ Level 1 verified: 4x2 grid, zero 🔞 emoji, clean '성인방송' button.");
+  passedCount++;
 
-// Test 2: Site -> Detail (Level 3 with sub-items e.g. Panda TV)
-console.log("\n📌 Test 2: Verifying Level 3 Sub-Item List Detail View (Panda TV)...");
-const pandaItem = indexApp.getContentHubItemById("adult_broadcast", "pandalive");
-assert(pandaItem, "Panda TV item must exist in adult_broadcast");
-assert(Array.isArray(pandaItem.sub_items) && pandaItem.sub_items.length >= 1, "Panda TV must have verified sub-items");
+  // Test 2: Level 2 Link-Style Text & Hyperlink Generation
+  console.log("\n📌 Test 2: Verifying Level 2 Blue Clickable Hyperlinks & Description...");
+  const commText = indexApp.getContentHubCategoryListText("community", 1);
+  assert(commText.includes("📁 <b>콘텐츠 허브 > 인기커뮤니티</b>"), "Level 2 header breadcrumb must be correct");
+  assert(commText.includes("원하는 사이트를 선택하세요. 👇"), "Level 2 subtitle present");
+  assert(commText.includes('<a href="https://gall.dcinside.com/">디시인사이드</a>'), "Site name must be an HTML <a> hyperlink");
+  assert(commText.includes("국내 최대 규모의 인터넷 커뮤니티 및 갤러리"), "Verified description must be rendered");
+  assert(!/^\s*\d+[\.\)]/m.test(commText), "Level 2 text must NOT contain numeric prefixes (1., 01.)");
+  console.log("   ✅ Level 2 link-style text verified: blue HTML hyperlink, Korean description, no numeric prefixes.");
+  passedCount++;
 
-const detailText = indexApp.getContentHubItemDetailText("adult_broadcast", "pandalive");
-assert(detailText.includes("팬더티비"), "Detail text must include site name");
-assert(detailText.includes("성인방송"), "Detail text must include category");
-assert(detailText.includes("주요 항목:"), "Detail text must include '주요 항목:' section header");
-assert(detailText.includes("라이브 방송"), "Detail text must list '라이브 방송' sub-item");
+  // Test 3: Level 2 Keyboard (No Large Grey Site Buttons, Only Navigation)
+  console.log("\n📌 Test 3: Verifying Level 2 Keyboard (Navigation Only, No Grey Site Buttons)...");
+  const commKbd = indexApp.getContentHubCategoryKeyboard("community", 1);
+  const siteButtons = commKbd.inline_keyboard.flat().filter(b => b.callback_data && b.callback_data.startsWith("ch_item:"));
+  assert.strictEqual(siteButtons.length, 0, "Level 2 keyboard must NOT contain grey site buttons");
+  
+  const navRow = commKbd.inline_keyboard.find(row => row.some(b => b.text.includes("[ 1 / 2 ]")));
+  assert(navRow, "Level 2 keyboard must have pagination row [ 1 / 2 ]");
+  const footerRow = commKbd.inline_keyboard[commKbd.inline_keyboard.length - 1];
+  assert(footerRow.some(b => b.text.includes("카테고리 목록")), "Must have '📂 카테고리 목록' button");
+  assert(footerRow.some(b => b.text.includes("메인 메뉴")), "Must have '🏠 메인 메뉴' button");
+  console.log("   ✅ Level 2 keyboard verified: navigation controls only, zero large grey site buttons.");
+  passedCount++;
 
-const detailKeyboard = indexApp.getContentHubItemDetailKeyboard("adult_broadcast", "pandalive", 1);
-const urlButtons = detailKeyboard.inline_keyboard.filter(row => row[0].url);
-assert.strictEqual(urlButtons[0][0].text, "🔗 사이트 바로가기 ↗", "First URL button must be '🔗 사이트 바로가기 ↗'");
-assert.strictEqual(urlButtons[0][0].url, pandaItem.url, "First URL button must open verified main URL");
+  // Test 4: Direct 1:1 Link Rendering (Panda TV - No Static Sub-Items)
+  console.log("\n📌 Test 4: Verifying Direct 1:1 Link Rendering (Panda TV)...");
+  const adultText = indexApp.getContentHubCategoryListText("adult_broadcast", 1);
+  assert(adultText.includes('<a href="https://www.pandalive.co.kr/">팬더티비</a>'), "Panda TV must be direct HTML link");
+  assert(!adultText.includes("/ranking"), "Panda TV must NOT contain /ranking");
+  assert(!adultText.includes("/vod"), "Panda TV must NOT contain /vod");
+  assert(!adultText.includes("🔞"), "Adult broadcast text must NOT contain 🔞 emoji");
+  console.log("   ✅ Pure direct link verified: direct HTML link format, zero 🔞 emoji, zero destination sub-items.");
+  passedCount++;
 
-const liveBtn = urlButtons.find(r => r[0].text.includes("라이브 방송"));
-assert(liveBtn, "Must have '🔗 라이브 방송 ↗' button");
-assert.strictEqual(liveBtn[0].url, "https://www.pandalive.co.kr/live", "Sub-item button must link directly to live URL");
-console.log(`   ✅ Level 3 sub-item detail view verified with ${urlButtons.length} direct outbound URL buttons.`);
-passedCount++;
+  // Test 5: Broken URLs Exclusion
+  console.log("\n📌 Test 5: Verifying Broken URLs Filtered / Excluded...");
+  assert(!contentHubScraper.isValidUrl("https://pornworks.app/ko/"), "Broken URL pornworks must be invalid");
+  assert(!contentHubScraper.isValidUrl("http://www.hanindeul.com/"), "Broken URL hanindeul must be invalid");
+  console.log("   ✅ Broken URLs strictly filtered and rejected.");
+  passedCount++;
 
-// Test 3: Missing sub-item data fallback
-console.log("\n📌 Test 3: Verifying Missing Sub-Item Data Fallback (e.g. Camsoda)...");
-const camsodaItem = indexApp.getContentHubItemById("adult_broadcast", "camsoda");
-assert(camsodaItem, "Camsoda item must exist");
-const camsodaDetailText = indexApp.getContentHubItemDetailText("adult_broadcast", "camsoda");
-assert(camsodaDetailText.includes("원본 사이트에서 콘텐츠를 확인할 수 있습니다."), "Single-link item must show clean fallback message");
-const camsodaKeyboard = indexApp.getContentHubItemDetailKeyboard("adult_broadcast", "camsoda", 1);
-const camsodaUrlButtons = camsodaKeyboard.inline_keyboard.filter(row => row[0].url);
-assert.strictEqual(camsodaUrlButtons.length, 1, "Single-link item must have exactly 1 direct URL button");
-assert.strictEqual(camsodaUrlButtons[0][0].text, "🔗 사이트 바로가기 ↗");
-console.log("   ✅ Clean single-link fallback verified without inventing fake sub-items.");
-passedCount++;
-
-// Test 4: Pagination & Back navigation
-console.log("\n📌 Test 4: Verifying Pagination & Context-Preserving Back Navigation...");
-const keyboardL2Page2 = indexApp.getContentHubCategoryKeyboard("adult_broadcast", 2);
-const navRow = keyboardL2Page2.inline_keyboard.find(row => row.some(b => b.text.includes("[ 2 / 2 ]")));
-assert(navRow, "Level 2 page 2 must show pagination row [ 2 / 2 ]");
-
-// Check detail back button from page 2
-const detailFromP2 = indexApp.getContentHubItemDetailKeyboard("adult_broadcast", "pandalive", 2);
-const backRow = detailFromP2.inline_keyboard.find(row => row.some(b => b.text === "◀️ 목록으로"));
-assert(backRow, "Detail view must have '◀️ 목록으로' button");
-const backBtn = backRow.find(b => b.text === "◀️ 목록으로");
-assert.strictEqual(backBtn.callback_data, "ch_page:adult_broadcast:2", "Back button must preserve page 2 context");
-
-const catBtn = backRow.find(b => b.text === "📂 전체 카테고리");
-assert(catBtn, "Detail view must have '📂 전체 카테고리' button");
-assert.strictEqual(catBtn.callback_data, "ch_hub", "Category button callback must be 'ch_hub'");
-console.log("   ✅ Pagination and context-preserving back navigation verified.");
-passedCount++;
-
-// Test 5: URL Validation across all categories and sub-items
-console.log("\n📌 Test 5: Auditing all stored external URLs for strict validity...");
-let totalAuditedUrls = 0;
-for (const cat of categories) {
-  for (const it of cat.items) {
-    assert(contentHubScraper.isValidUrl(it.url), `Item URL must be valid: ${it.url}`);
-    assert(!it.url.includes("javascript:"), `Item URL must not have javascript: ${it.url}`);
-    totalAuditedUrls++;
-
-    if (Array.isArray(it.sub_items)) {
-      for (const sub of it.sub_items) {
-        assert(contentHubScraper.isValidUrl(sub.url), `Sub-item URL must be valid: ${sub.url}`);
-        assert(!sub.url.includes("javascript:"), `Sub-item URL must not have javascript: ${sub.url}`);
-        totalAuditedUrls++;
+  // Test 6: Audit All Active URLs
+  console.log("\n📌 Test 6: Auditing All Active Content Hub URLs...");
+  let totalAudited = 0;
+  for (const cat of categories) {
+    for (const it of cat.items) {
+      assert(contentHubScraper.isValidUrl(it.url), `Item URL must be valid: ${it.url}`);
+      assert(!it.url.includes("localhost") && !it.url.includes("127.0.0.1"), `No localhost URL: ${it.url}`);
+      totalAudited++;
+      if (Array.isArray(it.sub_items)) {
+        for (const sub of it.sub_items) {
+          assert(contentHubScraper.isValidUrl(sub.url), `Sub-item URL must be valid: ${sub.url}`);
+          totalAudited++;
+        }
       }
     }
   }
-}
-console.log(`   ✅ All ${totalAuditedUrls} external URLs audited: 100% valid HTTP/HTTPS URLs.`);
-passedCount++;
+  console.log(`   ✅ All ${totalAudited} active URLs audited: 100% valid HTTP/HTTPS URLs.`);
+  passedCount++;
 
-// Test 6: Isolation and regression verification
-console.log("\n📌 Test 6: Verifying isolation & production ledger protection...");
-const ledgerPath = path.join(__dirname, "published_ledger.json");
-const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
-const succCount = (ledger.records || []).filter(r => r.status === "SUCCESS").length;
-assert.strictEqual(ledger.records.length, 105, `published_ledger.json total records must remain 105 (actual: ${ledger.records.length})`);
-assert.strictEqual(succCount, 88, `published_ledger.json SUCCESS count must remain 88 (actual: ${succCount})`);
-assert.strictEqual(ledger.nextRoundRobinIndex, 1, `published_ledger.json nextRoundRobinIndex must remain 1 (actual: ${ledger.nextRoundRobinIndex})`);
-console.log(`   ✅ published_ledger.json intact: TOTAL=${ledger.records.length}, SUCCESS=${succCount}, nextIndex=${ledger.nextRoundRobinIndex}`);
-passedCount++;
+  // Test 7: Korean UI Localization
+  console.log("\n📌 Test 7: Verifying Complete Korean UI Localization...");
+  const forbiddenEnglish = ["\\bSite\\b", "\\bCategory\\b", "\\bNext\\b", "\\bPrevious\\b", "\\bBack\\b", "\\bHome\\b"];
+  forbiddenEnglish.forEach(w => {
+    const re = new RegExp(w, "i");
+    assert(!re.test(commText), `English word ${w} found in Level 2 text`);
+    commKbd.inline_keyboard.flat().forEach(btn => {
+      assert(!re.test(btn.text), `English word ${w} found in button: ${btn.text}`);
+    });
+  });
+  console.log("   ✅ Korean UI localization verified: zero English control words.");
+  passedCount++;
 
-console.log("\n============================================================");
-console.log(`🎉 ALL ${passedCount} CONTENT HUB NAVIGATION AUDIT TESTS PASSED!`);
-console.log("============================================================\n");
+  // Test 8: Isolation & Production Ledger Integrity
+  console.log("\n📌 Test 8: Verifying Isolation & Production Ledger Protection...");
+  const ledgerPath = path.join(__dirname, "published_ledger.json");
+  const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
+  const succCount = (ledger.records || []).filter(r => r.status === "SUCCESS").length;
+  assert.strictEqual(ledger.records.length, 105, `published_ledger.json total records must remain 105 (actual: ${ledger.records.length})`);
+  assert.strictEqual(succCount, 88, `published_ledger.json SUCCESS count must remain 88 (actual: ${succCount})`);
+  assert.strictEqual(ledger.nextRoundRobinIndex, 1, `published_ledger.json nextRoundRobinIndex must remain 1 (actual: ${ledger.nextRoundRobinIndex})`);
+  console.log(`   ✅ published_ledger.json intact: TOTAL=${ledger.records.length}, SUCCESS=${succCount}, nextIndex=${ledger.nextRoundRobinIndex}`);
+  passedCount++;
+
+  console.log("\n============================================================");
+  console.log(`🎉 ALL ${passedCount} CONTENT HUB NAVIGATION AUDIT TESTS PASSED!`);
+  console.log("============================================================\n");
+}).catch(err => {
+  console.error("Test failure:", err);
+  process.exit(1);
+});

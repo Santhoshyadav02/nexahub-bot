@@ -14,7 +14,7 @@ const CATEGORY_CONFIG = [
   {
     id: "adult_broadcast",
     title: "성인방송",
-    icon: "🔞",
+    icon: "",
     matchPatterns: ["성인방송", "/성인방송"],
     defaultDescription: "실시간 라이브 방송 플랫폼"
   },
@@ -136,9 +136,17 @@ function loadCachedDataset() {
   return null;
 }
 
+const KNOWN_BROKEN_URLS = new Set([
+  "https://pornworks.app/ko/",
+  "https://pornworks.app/",
+  "http://www.hanindeul.com/",
+  "http://www.hanindeul.com"
+]);
+
 function isValidUrl(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
+  if (KNOWN_BROKEN_URLS.has(trimmed) || KNOWN_BROKEN_URLS.has(trimmed.replace(/\/$/, ""))) return false;
   if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
   if (trimmed.startsWith("javascript:") || trimmed.startsWith("#") || trimmed.includes("javascript:")) return false;
   try {
@@ -158,8 +166,7 @@ function calculateHash(dataset) {
     items: (c.items || []).map(it => ({
       id: it.id,
       name: it.name,
-      url: it.url,
-      sub_items: Array.isArray(it.sub_items) ? it.sub_items.map(s => ({ id: s.id, name: s.name, url: s.url })) : []
+      url: it.url
     }))
   }));
   return crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
@@ -200,23 +207,6 @@ function validateDataset(dataset) {
       }
       itemUrls.add(item.url);
       itemIds.add(item.id || item.name);
-
-      if (Array.isArray(item.sub_items)) {
-        const subUrls = new Set();
-        for (const sub of item.sub_items) {
-          if (!sub.name || !sub.url || typeof sub.name !== "string" || typeof sub.url !== "string") {
-            return false;
-          }
-          if (!isValidUrl(sub.url)) {
-            return false;
-          }
-          if (subUrls.has(sub.url)) {
-            return false;
-          }
-          subUrls.add(sub.url);
-        }
-      }
-
       totalItems++;
     }
   }
@@ -359,8 +349,7 @@ function parseHtml(html, fallbackData = null) {
         id: itemId,
         name: rawText,
         url: validUrl,
-        description: desc,
-        ...(subItems.length > 0 ? { sub_items: subItems } : {})
+        description: desc
       });
 
       itemIdx++;
@@ -432,6 +421,9 @@ function fetchUrl(targetUrl = DEFAULT_URL, timeoutMs = 10000) {
 }
 
 async function syncContentHub() {
+  if (!inMemoryDataset) {
+    initContentHub();
+  }
   if (isSyncing) return inMemoryDataset;
   isSyncing = true;
 

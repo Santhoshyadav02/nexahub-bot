@@ -1899,11 +1899,23 @@ function getContentHubCategoryListText(categoryId, page = 1) {
   const totalPages = Math.ceil(items.length / itemsPerPage) || 1;
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
-  return (
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
+
+  const header =
     `📁 <b>콘텐츠 허브 > ${escapeHTML(category.title)}</b>` +
     (totalPages > 1 ? ` (페이지 ${currentPage}/${totalPages})\n\n` : `\n\n`) +
-    `원하는 사이트를 선택하세요. 👇`
-  );
+    `원하는 사이트를 선택하세요. 👇\n\n`;
+
+  const itemBlocks = pageItems.map(item => {
+    let block = `🔗 <a href="${item.url}">${escapeHTML(item.name)}</a>`;
+    if (item.description) {
+      block += `\n${escapeHTML(item.description)}`;
+    }
+    return block;
+  });
+
+  return header + itemBlocks.join("\n\n");
 }
 
 function getContentHubCategoryKeyboard(categoryId, page = 1) {
@@ -1919,17 +1931,7 @@ function getContentHubCategoryKeyboard(categoryId, page = 1) {
   const totalPages = Math.ceil(items.length / itemsPerPage) || 1;
   const currentPage = Math.max(1, Math.min(page, totalPages));
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
   const rows = [];
-  const icon = category.icon || "📺";
-
-  pageItems.forEach((item) => {
-    rows.push([{
-      text: `${icon} ${item.name}`,
-      callback_data: `ch_item:${categoryId}:${item.id}:${currentPage}`
-    }]);
-  });
 
   if (totalPages > 1) {
     const navRow = [];
@@ -2013,7 +2015,7 @@ function getContentHubItemDetailKeyboard(categoryId, itemId, page = 1) {
 async function renderContentHubCategoryList(chatId, categoryId, page = 1, messageId = null) {
   const text = getContentHubCategoryListText(categoryId, page);
   const reply_markup = getContentHubCategoryKeyboard(categoryId, page);
-  const opts = { parse_mode: "HTML", reply_markup };
+  const opts = { parse_mode: "HTML", disable_web_page_preview: true, reply_markup };
   if (messageId) {
     return await editMessageTextSafe(chatId, messageId, text, opts);
   } else {
@@ -2066,13 +2068,13 @@ async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1
   const channel = channels[channelIndex];
 
   if (!channel || !channel.posts || channel.posts.length === 0) {
-    const text = `📺 <b>Channel Not Found</b>\n\nNo posts available.`;
+    const text = `📺 <b>채널을 찾을 수 없습니다</b>\n\n등록된 게시물이 없습니다.`;
     const opts = {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "◀ Back to Channels", callback_data: `featured:${cardId}:1` }],
-          [{ text: "🏠 Back to Main Menu", callback_data: "menu" }]
+          [{ text: "◀️ 채널 목록", callback_data: `featured:${cardId}:1` }],
+          [{ text: "🏠 메인 메뉴", callback_data: "menu" }]
         ]
       }
     };
@@ -2110,23 +2112,23 @@ async function renderFeaturedChannelPosts(chatId, cardId, channelIndex, page = 1
   if (totalPages > 1) {
     const navRow = [];
     if (currentPage > 1) {
-      navRow.push({ text: "◀ Previous", callback_data: `featured_ch:${cardId}:${channelIndex}:${currentPage - 1}` });
+      navRow.push({ text: "◀️ 이전", callback_data: `featured_ch:${cardId}:${channelIndex}:${currentPage - 1}` });
     }
-    navRow.push({ text: `Page ${currentPage}/${totalPages}`, callback_data: "none" });
+    navRow.push({ text: `[ ${currentPage} / ${totalPages} ]`, callback_data: "none" });
     if (currentPage < totalPages) {
-      navRow.push({ text: "Next ▶", callback_data: `featured_ch:${cardId}:${channelIndex}:${currentPage + 1}` });
+      navRow.push({ text: "다음 ▶️", callback_data: `featured_ch:${cardId}:${channelIndex}:${currentPage + 1}` });
     }
     rows.push(navRow);
   }
 
   // Open Channel button if valid channelUrl exists
   if (channelUrl) {
-    rows.push([{ text: `🔗 Open ${channel.name} Channel`, url: channelUrl }]);
+    rows.push([{ text: `🔗 ${channel.name} 채널 바로가기`, url: channelUrl }]);
   }
 
   rows.push([
-    { text: "◀ Back to Channels", callback_data: `featured:${cardId}:1` },
-    { text: "🏠 Back to Main Menu", callback_data: "menu" }
+    { text: "◀️ 채널 목록", callback_data: `featured:${cardId}:1` },
+    { text: "🏠 메인 메뉴", callback_data: "menu" }
   ]);
   const opts = {
     parse_mode: "HTML",
@@ -2371,7 +2373,7 @@ async function getBreakingNewsKeyboard() {
   // Additional category cards section (8 cards from Content Hub)
   const cats = getContentHubCategories();
   const catButtons = cats.map(c => ({
-    text: `${c.icon} ${c.title}`,
+    text: (c.icon && c.icon.trim().length > 0) ? `${c.icon} ${c.title}` : c.title,
     callback_data: `ch_cat:${c.id}`
   }));
   for (let i = 0; i < catButtons.length; i += 2) {
@@ -2386,7 +2388,7 @@ async function getBreakingNewsKeyboard() {
 async function getCategoryHubKeyboard() {
   const cats = getContentHubCategories();
   const buttons = cats.map(c => ({
-    text: `${c.icon} ${c.title}`,
+    text: (c.icon && c.icon.trim().length > 0) ? `${c.icon} ${c.title}` : c.title,
     callback_data: `ch_cat:${c.id}`
   }));
 
@@ -2463,7 +2465,7 @@ async function getTrendingKeyboard() {
   rows.push([{ text: "🌐 콘텐츠 허브", callback_data: "none" }]);
   const cats = getContentHubCategories();
   const catButtons = cats.map(c => ({
-    text: `${c.icon} ${c.title}`,
+    text: (c.icon && c.icon.trim().length > 0) ? `${c.icon} ${c.title}` : c.title,
     callback_data: `ch_cat:${c.id}`
   }));
   for (let i = 0; i < catButtons.length; i += 2) {
@@ -2648,7 +2650,7 @@ const TOPIC_NAMES = {
   "opening_up": "🔓 콘텐츠",
   "food_source": "🍴 미식 레시피",
   "finance": "💰 재테크 & 투자",
-  "adult": "🔞 성인 콘텐츠"
+  "adult": "성인 콘텐츠"
 };
 
 // ============================
