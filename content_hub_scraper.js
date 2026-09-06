@@ -136,12 +136,31 @@ function loadCachedDataset() {
   return null;
 }
 
+function isValidUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
+  if (trimmed.startsWith("javascript:") || trimmed.startsWith("#") || trimmed.includes("javascript:")) return false;
+  try {
+    const parsed = new URL(trimmed);
+    if (!parsed.hostname || parsed.hostname.length < 3 || !parsed.hostname.includes(".")) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function calculateHash(dataset) {
   if (!dataset || !Array.isArray(dataset.categories)) return "";
   const normalized = dataset.categories.map(c => ({
     id: c.id,
     title: c.title,
-    items: (c.items || []).map(it => ({ id: it.id, name: it.name, url: it.url }))
+    items: (c.items || []).map(it => ({
+      id: it.id,
+      name: it.name,
+      url: it.url,
+      sub_items: Array.isArray(it.sub_items) ? it.sub_items.map(s => ({ id: s.id, name: s.name, url: s.url })) : []
+    }))
   }));
   return crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
@@ -173,7 +192,7 @@ function validateDataset(dataset) {
       if (!item.name || !item.url || typeof item.name !== "string" || typeof item.url !== "string") {
         return false;
       }
-      if (!item.url.startsWith("http://") && !item.url.startsWith("https://")) {
+      if (!isValidUrl(item.url)) {
         return false;
       }
       if (itemUrls.has(item.url)) {
@@ -181,6 +200,23 @@ function validateDataset(dataset) {
       }
       itemUrls.add(item.url);
       itemIds.add(item.id || item.name);
+
+      if (Array.isArray(item.sub_items)) {
+        const subUrls = new Set();
+        for (const sub of item.sub_items) {
+          if (!sub.name || !sub.url || typeof sub.name !== "string" || typeof sub.url !== "string") {
+            return false;
+          }
+          if (!isValidUrl(sub.url)) {
+            return false;
+          }
+          if (subUrls.has(sub.url)) {
+            return false;
+          }
+          subUrls.add(sub.url);
+        }
+      }
+
       totalItems++;
     }
   }
@@ -311,6 +347,7 @@ function parseHtml(html, fallbackData = null) {
       const matchedFallback = fallbackMap.get(`${conf.id}:${rawText}`) || fallbackMap.get(`${conf.id}:${validUrl}`);
       let itemId = matchedFallback ? matchedFallback.id : generateItemId(rawText, validUrl, itemIdx);
       let desc = (matchedFallback && matchedFallback.description) ? matchedFallback.description : conf.defaultDescription;
+      const subItems = (matchedFallback && Array.isArray(matchedFallback.sub_items)) ? matchedFallback.sub_items : [];
 
       // Ensure item ID uniqueness within category
       if (seenIds.has(itemId)) {
@@ -322,7 +359,8 @@ function parseHtml(html, fallbackData = null) {
         id: itemId,
         name: rawText,
         url: validUrl,
-        description: desc
+        description: desc,
+        ...(subItems.length > 0 ? { sub_items: subItems } : {})
       });
 
       itemIdx++;
@@ -516,6 +554,7 @@ module.exports = {
   validateDataset,
   calculateHash,
   saveCacheAtomic,
+  isValidUrl,
   SYNC_INTERVAL_MS,
   CACHE_FILE,
   TMP_CACHE_FILE,

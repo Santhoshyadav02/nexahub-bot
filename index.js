@@ -1902,7 +1902,7 @@ function getContentHubCategoryListText(categoryId, page = 1) {
   return (
     `📁 <b>콘텐츠 허브 > ${escapeHTML(category.title)}</b>` +
     (totalPages > 1 ? ` (페이지 ${currentPage}/${totalPages})\n\n` : `\n\n`) +
-    `원하시는 사이트를 선택하세요. 👇`
+    `원하는 사이트를 선택하세요. 👇`
   );
 }
 
@@ -1910,7 +1910,7 @@ function getContentHubCategoryKeyboard(categoryId, page = 1) {
   const category = getContentHubCategoryById(categoryId);
   if (!category) {
     return {
-      inline_keyboard: [[{ text: "🔙 카테고리 목록", callback_data: "ch_hub" }]]
+      inline_keyboard: [[{ text: "📂 카테고리 목록", callback_data: "ch_hub" }]]
     };
   }
 
@@ -1922,11 +1922,11 @@ function getContentHubCategoryKeyboard(categoryId, page = 1) {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pageItems = items.slice(startIndex, startIndex + itemsPerPage);
   const rows = [];
+  const icon = category.icon || "📺";
 
-  pageItems.forEach((item, index) => {
-    const itemNumber = startIndex + index + 1;
+  pageItems.forEach((item) => {
     rows.push([{
-      text: `${itemNumber}. ${item.name}`,
+      text: `${icon} ${item.name}`,
       callback_data: `ch_item:${categoryId}:${item.id}:${currentPage}`
     }]);
   });
@@ -1948,7 +1948,7 @@ function getContentHubCategoryKeyboard(categoryId, page = 1) {
   }
 
   rows.push([
-    { text: "🔙 카테고리 목록", callback_data: "ch_hub" },
+    { text: "📂 카테고리 목록", callback_data: "ch_hub" },
     { text: "🏠 메인 메뉴", callback_data: "menu" }
   ]);
 
@@ -1960,13 +1960,26 @@ function getContentHubItemDetailText(categoryId, itemId) {
   const item = getContentHubItemById(categoryId, itemId);
   if (!category || !item) return `📁 <b>콘텐츠 허브</b>\n\n사이트 정보를 찾을 수 없습니다.`;
 
-  const icon = category.icon || "🔗";
+  const icon = category.icon || "📺";
   const desc = item.description ? `\n\n${escapeHTML(item.description)}` : "";
+  const subItems = Array.isArray(item.sub_items) ? item.sub_items : [];
+
+  if (subItems.length > 0) {
+    const subList = subItems.map((sub) => `• ${escapeHTML(sub.name)}`).join("\n");
+    return (
+      `${icon} <b>${escapeHTML(item.name)}</b>\n\n` +
+      `📁 <b>카테고리:</b> ${escapeHTML(category.title)}` +
+      desc + `\n\n` +
+      `📋 <b>주요 항목:</b>\n` +
+      subList
+    );
+  }
 
   return (
     `${icon} <b>${escapeHTML(item.name)}</b>\n\n` +
     `📁 <b>카테고리:</b> ${escapeHTML(category.title)}` +
-    desc
+    desc + `\n\n` +
+    `원본 사이트에서 콘텐츠를 확인할 수 있습니다.`
   );
 }
 
@@ -1974,19 +1987,27 @@ function getContentHubItemDetailKeyboard(categoryId, itemId, page = 1) {
   const item = getContentHubItemById(categoryId, itemId);
   if (!item) {
     return {
-      inline_keyboard: [[{ text: "🔙 카테고리 목록", callback_data: "ch_hub" }]]
+      inline_keyboard: [[{ text: "📂 전체 카테고리", callback_data: "ch_hub" }]]
     };
   }
 
-  return {
-    inline_keyboard: [
-      [{ text: "🔗 사이트 바로가기", url: item.url }],
-      [
-        { text: "🔙 목록으로", callback_data: `ch_page:${categoryId}:${page}` },
-        { text: "📁 전체 카테고리", callback_data: "ch_hub" }
-      ]
-    ]
-  };
+  const rows = [];
+  rows.push([{ text: "🔗 사이트 바로가기 ↗", url: item.url }]);
+
+  if (Array.isArray(item.sub_items) && item.sub_items.length > 0) {
+    for (const sub of item.sub_items) {
+      if (sub.name && sub.url && (sub.url.startsWith("http://") || sub.url.startsWith("https://"))) {
+        rows.push([{ text: `🔗 ${sub.name} ↗`, url: sub.url }]);
+      }
+    }
+  }
+
+  rows.push([
+    { text: "◀️ 목록으로", callback_data: `ch_page:${categoryId}:${page}` },
+    { text: "📂 전체 카테고리", callback_data: "ch_hub" }
+  ]);
+
+  return { inline_keyboard: rows };
 }
 
 async function renderContentHubCategoryList(chatId, categoryId, page = 1, messageId = null) {
