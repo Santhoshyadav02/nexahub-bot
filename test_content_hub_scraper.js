@@ -257,6 +257,31 @@ if (fs.existsSync(ledgerPath)) {
 } else {
   console.log("   ⚠️ published_ledger.json not found in test directory (skipping file check)");
 }
+// Test 17: Verify parseHtml excludes known broken URLs during parsing
+console.log("📌 Test 17: Verify parseHtml excludes known broken URLs during extraction");
+const htmlWithBrokenUrls = `
+  <div class="link_box">
+    <div class="title">성인방송</div>
+    <div class="list">
+      <a href="https://bj.afreecatv.com">아프리카TV</a>
+      <a href="https://pornworks.app/ko/">폰웍스 (Broken)</a>
+      <a href="https://www.twitch.tv">트위치</a>
+    </div>
+  </div>
+  <div class="link_box"><div class="title">인기커뮤니티</div><div class="list"><a href="https://www.dcinside.com">디시</a></div></div>
+  <div class="link_box"><div class="title">AI 도구</div><div class="list"><a href="https://chatgpt.com">ChatGPT</a></div></div>
+  <div class="link_box"><div class="title">유틸/도구</div><div class="list"><a href="https://tinypng.com">TinyPNG</a></div></div>
+  <div class="link_box"><div class="title">해외직구</div><div class="list"><a href="https://www.amazon.com">Amazon</a></div></div>
+  <div class="link_box"><div class="title">심리</div><div class="list"><a href="https://www.16personalities.com">16P</a></div></div>
+  <div class="link_box"><div class="title">미팅/연애</div><div class="list"><a href="https://tinder.com">Tinder</a></div></div>
+  <div class="link_box"><div class="title">한인교민</div><div class="list"><a href="http://www.hanindeul.com/">한인들 (Broken)</a><a href="https://www.heykorean.com">헤이코리안</a></div></div>
+`;
+const parsedBroken = contentHubScraper.parseHtml(htmlWithBrokenUrls, null);
+const adultItems = parsedBroken.categories.find(c => c.id === "adult_broadcast").items;
+assert(!adultItems.some(it => it.url.includes("pornworks")), "pornworks.app must be filtered out during parseHtml");
+const koreanDiasporaItems = parsedBroken.categories.find(c => c.id === "korean_diaspora").items;
+assert(!koreanDiasporaItems.some(it => it.url.includes("hanindeul")), "hanindeul.com must be filtered out during parseHtml");
+console.log("   ✅ Known broken URLs strictly filtered out during anchor parsing.");
 passedCount++;
 
 console.log("\n================================================================================");

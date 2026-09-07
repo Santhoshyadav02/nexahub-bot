@@ -328,6 +328,10 @@ function parseHtml(html, fallbackData = null) {
         continue;
       }
 
+      if (!isValidUrl(validUrl)) {
+        continue;
+      }
+
       if (seenUrls.has(validUrl)) {
         continue;
       }
