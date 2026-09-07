@@ -29,15 +29,17 @@ indexApp.getCategoryHubKeyboard().then(catKbd => {
   console.log("   ✅ Level 1 verified: 4x2 grid, zero 🔞 emoji, clean '성인방송' button.");
   passedCount++;
 
-  // Test 2: Level 2 Link-Style Text & Hyperlink Generation
-  console.log("\n📌 Test 2: Verifying Level 2 Blue Clickable Hyperlinks & Description...");
+  // Test 2: Level 2 Link-Style Text & Hyperlink Generation (Pure Description as Link)
+  console.log("\n📌 Test 2: Verifying Level 2 Blue Clickable Hyperlinks (Description as Link, No Site Name, No 🔗)...");
   const commText = indexApp.getContentHubCategoryListText("community", 1);
   assert(commText.includes("📁 <b>콘텐츠 허브 > 인기커뮤니티</b>"), "Level 2 header breadcrumb must be correct");
   assert(commText.includes("원하는 사이트를 선택하세요. 👇"), "Level 2 subtitle present");
-  assert(commText.includes('<a href="https://gall.dcinside.com/">디시인사이드</a>'), "Site name must be an HTML <a> hyperlink");
-  assert(commText.includes("국내 최대 규모의 인터넷 커뮤니티 및 갤러리"), "Verified description must be rendered");
+  assert(commText.includes('<a href="https://gall.dcinside.com/">국내 최대 규모의 인터넷 커뮤니티 및 갤러리</a>'), "Description itself must be an HTML <a> hyperlink");
+  assert(!commText.includes("디시인사이드"), "Site name '디시인사이드' must NOT be rendered");
+  assert(!commText.includes("에펨코리아"), "Site name '에펨코리아' must NOT be rendered");
+  assert(!commText.includes("🔗"), "Emoji '🔗' must NOT be rendered");
   assert(!/^\s*\d+[\.\)]/m.test(commText), "Level 2 text must NOT contain numeric prefixes (1., 01.)");
-  console.log("   ✅ Level 2 link-style text verified: blue HTML hyperlink, Korean description, no numeric prefixes.");
+  console.log("   ✅ Level 2 link-style text verified: description is blue HTML hyperlink, no site name, no 🔗, no numeric prefixes.");
   passedCount++;
 
   // Test 3: Level 2 Keyboard (No Large Grey Site Buttons, Only Navigation)
@@ -54,14 +56,18 @@ indexApp.getCategoryHubKeyboard().then(catKbd => {
   console.log("   ✅ Level 2 keyboard verified: navigation controls only, zero large grey site buttons.");
   passedCount++;
 
-  // Test 4: Direct 1:1 Link Rendering (Panda TV - No Static Sub-Items)
-  console.log("\n📌 Test 4: Verifying Direct 1:1 Link Rendering (Panda TV)...");
+  // Test 4: Direct 1:1 Link Rendering (Panda TV - Pure Description Link)
+  console.log("\n📌 Test 4: Verifying Direct 1:1 Link Rendering (Panda TV - Pure Description Link)...");
   const adultText = indexApp.getContentHubCategoryListText("adult_broadcast", 1);
-  assert(adultText.includes('<a href="https://www.pandalive.co.kr/">팬더티비</a>'), "Panda TV must be direct HTML link");
+  assert(adultText.includes('<a href="https://www.pandalive.co.kr/">한국 대표 개인방송 라이브 스트리밍 플랫폼</a>'), "Panda TV description must be direct HTML link");
+  assert(!adultText.includes("팬더티비"), "Site name '팬더티비' must NOT be rendered");
+  assert(!adultText.includes("팝콘티비"), "Site name '팝콘티비' must NOT be rendered");
+  assert(!adultText.includes("플렉스티비"), "Site name '플렉스티비' must NOT be rendered");
+  assert(!adultText.includes("🔗"), "Adult broadcast text must NOT contain 🔗 emoji");
   assert(!adultText.includes("/ranking"), "Panda TV must NOT contain /ranking");
   assert(!adultText.includes("/vod"), "Panda TV must NOT contain /vod");
   assert(!adultText.includes("🔞"), "Adult broadcast text must NOT contain 🔞 emoji");
-  console.log("   ✅ Pure direct link verified: direct HTML link format, zero 🔞 emoji, zero destination sub-items.");
+  console.log("   ✅ Pure description link verified: description is HTML link, zero site names, zero 🔗, zero 🔞 emoji, zero destination sub-items.");
   passedCount++;
 
   // Test 5: Broken URLs Exclusion

@@ -1908,11 +1908,8 @@ function getContentHubCategoryListText(categoryId, page = 1) {
     `원하는 사이트를 선택하세요. 👇\n\n`;
 
   const itemBlocks = pageItems.map(item => {
-    let block = `🔗 <a href="${item.url}">${escapeHTML(item.name)}</a>`;
-    if (item.description) {
-      block += `\n${escapeHTML(item.description)}`;
-    }
-    return block;
+    const displayText = (item.description && item.description.trim()) ? item.description.trim() : item.name;
+    return `<a href="${item.url}">${escapeHTML(displayText)}</a>`;
   });
 
   return header + itemBlocks.join("\n\n");
