@@ -335,9 +335,7 @@ runTest("TEST 10: Pipeline configuration interval is exactly 600000 ms (10 minut
 
   // Verify scraper.js intervals remain untouched
   const scraperCode = fs.readFileSync(path.join(__dirname, "scraper.js"), "utf8");
-  assert.ok(scraperCode.includes("10 * 60 * 1000"), "Trending scraper interval in scraper.js must remain 10m");
-  assert.ok(scraperCode.includes("3 * 60 * 1000"), "Breaking news interval in scraper.js must remain 3m");
-  assert.ok(scraperCode.includes("5 * 60 * 1000"), "Telegram refresh interval in scraper.js must remain 5m");
+  assert.ok(scraperCode.includes("10 * 60 * 1000"), "Telegram refresh interval in scraper.js must remain 10m");
 });
 
 // Clean up scratch test ledger

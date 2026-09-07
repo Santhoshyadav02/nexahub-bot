@@ -22,7 +22,8 @@ const { loadRoutingConfig } = require("./telegram_content_classifier");
 const { generateKoreanCaptionAsync } = require("./korean_caption_generator");
 const MTProtoChannelReader = require("./mtproto_reader");
 
-const LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+const DEFAULT_LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+const LEDGER_PATH = process.env.LEDGER_PATH || process.env.PUBLISHED_LEDGER_PATH || DEFAULT_LEDGER_PATH;
 const CONFIG_PATH = path.join(__dirname, "pipeline_config.json");
 
 function loadPipelineConfig() {
@@ -61,10 +62,36 @@ class PublishedLedger {
 
   load() {
     try {
+      const defaultBaselinePath = DEFAULT_LEDGER_PATH;
+
+      // If configured to a persistent path that does not exist yet, initialize from baseline
+      if (this.filePath !== defaultBaselinePath && !fs.existsSync(this.filePath)) {
+        if (fs.existsSync(defaultBaselinePath)) {
+          try {
+            const dir = path.dirname(this.filePath);
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+            }
+            const baselineContent = fs.readFileSync(defaultBaselinePath, "utf8");
+            const parsedBaseline = JSON.parse(baselineContent);
+            if (parsedBaseline && Array.isArray(parsedBaseline.records)) {
+              fs.writeFileSync(this.filePath, baselineContent, "utf8");
+              console.log(`📦 Initialized persistent ledger at [${this.filePath}] from baseline (${parsedBaseline.records.length} records)`);
+            }
+          } catch (initErr) {
+            console.error(`❌ Failed to initialize persistent ledger at [${this.filePath}]:`, initErr.message);
+            this.filePath = defaultBaselinePath;
+          }
+        }
+      }
+
       if (fs.existsSync(this.filePath)) {
         const raw = fs.readFileSync(this.filePath, "utf8");
         const parsed = JSON.parse(raw);
-        this.records = Array.isArray(parsed.records) ? parsed.records : [];
+        if (!parsed || !Array.isArray(parsed.records)) {
+          throw new Error("Invalid ledger structure: 'records' array is missing or not an array");
+        }
+        this.records = parsed.records;
         this.publishedIdentities = new Set();
         this.assignedDestinations = new Map();
         let successCount = 0;
@@ -100,11 +127,16 @@ class PublishedLedger {
         this.save();
       }
     } catch (err) {
-      console.warn("⚠️ Error loading published ledger, initializing empty:", err.message);
-      this.records = [];
-      this.publishedIdentities = new Set();
-      this.assignedDestinations = new Map();
-      this.nextRoundRobinIndex = 0;
+      console.error("⚠️ Error loading published ledger:", err.message);
+      if (this.records.length === 0 && !fs.existsSync(this.filePath)) {
+        this.records = [];
+        this.publishedIdentities = new Set();
+        this.assignedDestinations = new Map();
+        this.nextRoundRobinIndex = 0;
+      } else if (fs.existsSync(this.filePath)) {
+        // Do NOT overwrite corrupted persistent file with empty state
+        throw new Error(`Failed to safely load published ledger from [${this.filePath}]: ${err.message}`);
+      }
     }
   }
 

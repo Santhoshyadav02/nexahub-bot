@@ -2,6 +2,38 @@ const fs = require("fs");
 const path = require("path");
 
 const DATA_FILE = path.join(__dirname, "source_registry.json");
+const DEFAULT_LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+const LEDGER_PATH = process.env.LEDGER_PATH || process.env.PUBLISHED_LEDGER_PATH || DEFAULT_LEDGER_PATH;
+
+function getAuthoritativeLedgerSuccessMap() {
+  try {
+    let ledgerFile = LEDGER_PATH;
+    if (!fs.existsSync(ledgerFile)) {
+      ledgerFile = DEFAULT_LEDGER_PATH;
+    }
+    if (fs.existsSync(ledgerFile)) {
+      const raw = fs.readFileSync(ledgerFile, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.records)) {
+        const successMap = new Map();
+        for (const r of parsed.records) {
+          if (r.status === "SUCCESS" && r.sourceIdentity && r.destinationMessageId) {
+            if (r.destinationChannelId) {
+              successMap.set(`${r.destinationChannelId}:${r.destinationMessageId}`, r);
+            }
+            if (r.destinationUsername) {
+              successMap.set(`${r.destinationUsername.toLowerCase()}:${r.destinationMessageId}`, r);
+            }
+          }
+        }
+        return successMap;
+      }
+    }
+  } catch (e) {
+    console.warn("⚠️ Could not load authoritative ledger for UI filtering:", e.message);
+  }
+  return new Map();
+}
 
 // Initial 10 Curated Telegram Source Channels provided by the user
 const INITIAL_SOURCES = [
@@ -502,7 +534,7 @@ class SourceRegistry {
     }
   }
 
-  getPostsForKeyword(rawKeyword, videoOnly = false) {
+  getPostsForKeyword(rawKeyword, videoOnly = false, authoritativeOnly = true) {
     if (!rawKeyword) return [];
     const resolved = this.resolveKeyword(rawKeyword);
     const targetKwLower = resolved.trim().toLowerCase();
@@ -533,10 +565,41 @@ class SourceRegistry {
       );
     });
 
+    const ledgerSuccessMap = authoritativeOnly ? getAuthoritativeLedgerSuccessMap() : null;
+
     const isValidVideoRecord = p => {
       if (!p) return false;
       if (p.media_type !== "video") return false;
       if (!p.message_id || String(p.message_id).trim() === "") return false;
+
+      // Authoritative ledger validation (Parts 1 & 2):
+      // A destination post is displayable ONLY if:
+      // 1. destinationChannelId/username matches the requested destination
+      // 2. destinationMessageId matches the Telegram post
+      // 3. corresponding published_ledger entry has status === "SUCCESS"
+      // 4. published_ledger entry has a valid sourceIdentity (sourceChannelId:sourceMessageId)
+      if (authoritativeOnly && ledgerSuccessMap) {
+        const keyUser = p.username ? `${p.username.toLowerCase()}:${p.message_id}` : null;
+        const keyChat = p.chat_id ? `${p.chat_id}:${p.message_id}` : null;
+        const keySourceUser = source && source.username ? `${source.username.toLowerCase()}:${p.message_id}` : null;
+        const keySourceChat = source && source.chat_id ? `${source.chat_id}:${p.message_id}` : null;
+
+        const ledgerEntry = (keyUser && ledgerSuccessMap.get(keyUser)) ||
+                            (keyChat && ledgerSuccessMap.get(keyChat)) ||
+                            (keySourceUser && ledgerSuccessMap.get(keySourceUser)) ||
+                            (keySourceChat && ledgerSuccessMap.get(keySourceChat));
+
+        if (!ledgerEntry) return false;
+        if (ledgerEntry.status !== "SUCCESS") return false;
+        if (!ledgerEntry.sourceIdentity || !ledgerEntry.sourceIdentity.includes(":")) return false;
+
+        // Verify destination channel isolation
+        if (source) {
+          const matchesDest = (source.chat_id && ledgerEntry.destinationChannelId === source.chat_id) ||
+                              (source.username && ledgerEntry.destinationUsername && ledgerEntry.destinationUsername.toLowerCase() === source.username.toLowerCase());
+          if (!matchesDest) return false;
+        }
+      }
 
       let url = p.telegram_url;
       if (!url || !url.startsWith("http")) {
