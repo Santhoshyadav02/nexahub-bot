@@ -325,13 +325,13 @@ runTest("TEST 9: Legacy ledger lacking nextRoundRobinIndex derives initial index
   if (fs.existsSync(legacyLedgerPath)) fs.unlinkSync(legacyLedgerPath);
 });
 
-// TEST 10 — 15-MINUTE INTERVAL & UNTOUCHED SCRAPER.JS
-runTest("TEST 10: Pipeline configuration interval is exactly 900000 ms (15 minutes) and scraper.js is untouched", () => {
+// TEST 10 — 10-MINUTE INTERVAL & UNTOUCHED SCRAPER.JS
+runTest("TEST 10: Pipeline configuration interval is exactly 600000 ms (10 minutes) and scraper.js is untouched", () => {
   const config = loadPipelineConfig();
-  assert.strictEqual(config.schedulerIntervalMs, 900000, "schedulerIntervalMs in pipeline_config.json must be 900000 ms");
+  assert.strictEqual(config.schedulerIntervalMs, 600000, "schedulerIntervalMs in pipeline_config.json must be 600000 ms");
 
   const publisher = new TelegramPipelinePublisher();
-  assert.strictEqual(publisher.config.schedulerIntervalMs, 900000, "Publisher instance interval must be 900000 ms");
+  assert.strictEqual(publisher.config.schedulerIntervalMs, 600000, "Publisher instance interval must be 600000 ms");
 
   // Verify scraper.js intervals remain untouched
   const scraperCode = fs.readFileSync(path.join(__dirname, "scraper.js"), "utf8");

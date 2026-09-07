@@ -122,7 +122,7 @@ async function runTests() {
   it("Test 5: Pipeline configuration in pipeline_config.json has valid interval and enabled flag", () => {
     const config = loadPipelineConfig();
     assert.strictEqual(typeof config.enabled, "boolean", "pipeline_config.json enabled must be a boolean");
-    assert.strictEqual(config.schedulerIntervalMs, 900000, "Interval must be 900000ms (15 minutes)");
+    assert.strictEqual(config.schedulerIntervalMs, 600000, "Interval must be 600000ms (10 minutes)");
   });
 
   // TEST 6: Coexistence of Scraper and Publisher on Same Client
