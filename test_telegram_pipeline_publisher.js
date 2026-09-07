@@ -32,7 +32,7 @@ console.log("🧪 RUNNING TELEGRAM PIPELINE PUBLISHER UNIT TESTS");
 console.log("==================================================\n");
 
 const testLedgerPath = path.join(__dirname, "scratch", "test_temp_ledger.json");
-if (fs.existsSync(testLedgerPath)) fs.unlinkSync(testLedgerPath);
+fs.writeFileSync(testLedgerPath, JSON.stringify({ version: "1.0", totalPublished: 0, nextRoundRobinIndex: 0, records: [] }, null, 2), "utf8");
 
 // 1. Ledger tests
 runTest("PublishedLedger initializes cleanly and isPublished returns false initially", () => {
