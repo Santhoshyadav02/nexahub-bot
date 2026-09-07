@@ -1835,38 +1835,6 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     cachedFileId = null;
   }
 
-  // 2. Native Telegram Playable Video Delivery via copyMessage
-  if (fromChatId && item.message_id) {
-    try {
-      const res = await copyMessageSafe(chatId, fromChatId, parseInt(item.message_id, 10), {
-        caption: detailText,
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard }
-      });
-      if (res) {
-        const newFileId = (res.video && res.video.file_id) || (res.photo && Array.isArray(res.photo) && res.photo[res.photo.length - 1].file_id);
-        if (newFileId) {
-          sourceRegistry.updateVideoFileId(item.id || item.unique_hash || item.message_id, newFileId);
-          saveVideoCache(item.id || item.unique_hash, newFileId);
-        }
-        return res;
-      }
-    } catch (e) {}
-
-    // Fallback: Native forwardMessage
-    try {
-      const fwdRes = await forwardMessageSafe(chatId, fromChatId, parseInt(item.message_id, 10));
-      if (fwdRes) {
-        const fwdFileId = (fwdRes.video && fwdRes.video.file_id) || (fwdRes.photo && Array.isArray(fwdRes.photo) && fwdRes.photo[fwdRes.photo.length - 1].file_id);
-        if (fwdFileId) {
-          sourceRegistry.updateVideoFileId(item.id || item.unique_hash || item.message_id, fwdFileId);
-          saveVideoCache(item.id || item.unique_hash, fwdFileId);
-        }
-        return fwdRes;
-      }
-    } catch (e) {}
-  }
-
   if (process.env.DEBUG === "true" || process.env.LOG_LEVEL === "debug") {
     console.log("[VIDEO_DETAIL]");
     console.log(`message_id=${item.message_id || "N/A"}`);
