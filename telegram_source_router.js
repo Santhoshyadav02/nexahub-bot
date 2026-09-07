@@ -53,7 +53,7 @@ const DEFAULT_ROUTING_CONFIG = {
     },
     "2604815578": {
       destinationChannelId: "DESTINATION_7",
-      enabled: true,
+      enabled: false,
       username: "madougirl",
       name: "🫦91|麻豆|国产|反差|海角🫦"
     },
@@ -522,6 +522,7 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_ROUTING_CONFIG,
+  SOURCE_ROUTING_CONFIG: DEFAULT_ROUTING_CONFIG,
   SOURCE_CHANNELS_LIST,
   TelegramSourceRouter,
   generateSourceIdentity,

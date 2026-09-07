@@ -77,7 +77,7 @@ const SOURCE_FALLBACK_CONFIG = {
   // 7. @madougirl: 91porn / Madou model releases
   "2604815578": {
     username: "madougirl",
-    enabled: true,
+    enabled: false,
     fallbackDestination: "DESTINATION_10", // A Muse (Madou / 91porn / Model)
     fallbackCategory: "A Muse",
     reason: "Source is dedicated to 91porn and Madou creator video productions",
