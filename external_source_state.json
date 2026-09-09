@@ -1,0 +1,123 @@
+{
+  "version": "3.0.0",
+  "updatedAt": "2026-09-09T15:17:06.527Z",
+  "windowStartAt": "2026-09-09T15:17:06.526Z",
+  "externalDailyTarget": 15,
+  "channelDailyTarget": 15,
+  "externalDeliveredToday": 0,
+  "channelDeliveriesToday": {},
+  "lastSuccessfulPollAt": null,
+  "lastDiscoveredCount": 0,
+  "totalProcessedCount": 4,
+  "totalPermanentRecords": 4,
+  "retainedPoolSize": 4,
+  "maxTotalItems": 150,
+  "retainedPool": [
+    {
+      "sourceItemId": "item_4",
+      "sourceId": "external_source",
+      "uniqueHash": "h4",
+      "title": "Video 4",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "destinationUsername": "myanmar_dest",
+      "retainedAt": "2026-09-09T14:46:33.862Z"
+    },
+    {
+      "sourceItemId": "item_3",
+      "sourceId": "external_source",
+      "uniqueHash": "h3",
+      "title": "Video 3",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "destinationUsername": "myanmar_dest",
+      "retainedAt": "2026-09-09T14:46:33.858Z"
+    },
+    {
+      "sourceItemId": "item_2",
+      "sourceId": "external_source",
+      "uniqueHash": "h2",
+      "title": "Video 2",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "destinationUsername": "myanmar_dest",
+      "retainedAt": "2026-09-09T14:46:33.855Z"
+    },
+    {
+      "sourceItemId": "item_1",
+      "sourceId": "external_source",
+      "uniqueHash": "h1",
+      "title": "Video 1",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "destinationUsername": "myanmar_dest",
+      "retainedAt": "2026-09-09T14:46:33.851Z"
+    }
+  ],
+  "records": [
+    {
+      "sourceItemId": "item_1",
+      "sourceId": "external_source",
+      "canonicalUrl": null,
+      "uniqueHash": "h1",
+      "title": "Video 1",
+      "mediaUrl": null,
+      "firstSeenAt": "2026-09-09T14:46:33.848Z",
+      "lastSeenAt": "2026-09-09T14:46:33.848Z",
+      "processedAt": "2026-09-09T14:46:33.848Z",
+      "publishedAt": null,
+      "status": "RETAINED_IN_POOL",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "queuePosition": 4
+    },
+    {
+      "sourceItemId": "item_2",
+      "sourceId": "external_source",
+      "canonicalUrl": null,
+      "uniqueHash": "h2",
+      "title": "Video 2",
+      "mediaUrl": null,
+      "firstSeenAt": "2026-09-09T14:46:33.852Z",
+      "lastSeenAt": "2026-09-09T14:46:33.852Z",
+      "processedAt": "2026-09-09T14:46:33.852Z",
+      "publishedAt": null,
+      "status": "RETAINED_IN_POOL",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "queuePosition": 3
+    },
+    {
+      "sourceItemId": "item_3",
+      "sourceId": "external_source",
+      "canonicalUrl": null,
+      "uniqueHash": "h3",
+      "title": "Video 3",
+      "mediaUrl": null,
+      "firstSeenAt": "2026-09-09T14:46:33.857Z",
+      "lastSeenAt": "2026-09-09T14:46:33.857Z",
+      "processedAt": "2026-09-09T14:46:33.857Z",
+      "publishedAt": null,
+      "status": "RETAINED_IN_POOL",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "queuePosition": 2
+    },
+    {
+      "sourceItemId": "item_4",
+      "sourceId": "external_source",
+      "canonicalUrl": null,
+      "uniqueHash": "h4",
+      "title": "Video 4",
+      "mediaUrl": null,
+      "firstSeenAt": "2026-09-09T14:46:33.860Z",
+      "lastSeenAt": "2026-09-09T14:46:33.860Z",
+      "processedAt": "2026-09-09T14:46:33.860Z",
+      "publishedAt": null,
+      "status": "RETAINED_IN_POOL",
+      "routedTopicKey": "Myanmar",
+      "destinationChannel": "-1002000000001",
+      "queuePosition": 1
+    }
+  ]
+}

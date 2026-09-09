@@ -186,14 +186,20 @@ async function translateToKorean(text) {
         r.on("end", () => {
           try {
             const p = JSON.parse(data);
-            if (Array.isArray(p) && p[0] && typeof p[0] === "string") {
-              const t = p[0].trim();
-              if (isValidTranslation(t)) {
-                resolve(t);
-                return;
+            let t = null;
+            if (typeof p === "string") {
+              t = p.trim();
+            } else if (Array.isArray(p)) {
+              if (typeof p[0] === "string") {
+                t = p[0].trim();
+              } else if (Array.isArray(p[0]) && typeof p[0][0] === "string") {
+                t = p[0][0].trim();
+              } else if (Array.isArray(p[0]) && Array.isArray(p[0][0]) && typeof p[0][0][0] === "string") {
+                t = p[0][0][0].trim();
               }
-            } else if (typeof p === "string" && isValidTranslation(p.trim())) {
-              resolve(p.trim());
+            }
+            if (t && isValidTranslation(t)) {
+              resolve(t);
               return;
             }
             resolve(null);
@@ -591,5 +597,6 @@ module.exports = {
   FallbackCaptionSelector,
   loadFallbackCaptions,
   GENERIC_KOREAN_FALLBACKS,
+  captionTranslationCache,
   runLiveStage4Pipeline
 };
