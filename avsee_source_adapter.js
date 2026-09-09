@@ -149,17 +149,25 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       } catch (e) {}
     }
 
-    if (Array.isArray(item.iframes) && item.iframes[0]) {
-      try {
-        const parsed = new URL(item.iframes[0], this.apiUrl);
-        const p720 = parsed.searchParams.get("720");
-        const p1080 = parsed.searchParams.get("1080");
-        const p480 = parsed.searchParams.get("480");
-        const selected = p720 || p1080 || p480;
-        if (selected && (selected.startsWith("http://") || selected.startsWith("https://"))) {
-          return selected.trim();
-        }
-      } catch (e) {}
+    if (Array.isArray(item.iframes)) {
+      for (const iframe of item.iframes) {
+        if (!iframe || typeof iframe !== "string") continue;
+        try {
+          const parsed = new URL(iframe, this.apiUrl);
+          const p720 = parsed.searchParams.get("720");
+          const p1080 = parsed.searchParams.get("1080");
+          const p480 = parsed.searchParams.get("480");
+          const p360 = parsed.searchParams.get("360");
+          const selected = p720 || p1080 || p480 || p360;
+          if (selected && (selected.startsWith("http://") || selected.startsWith("https://"))) {
+            return selected.trim();
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (item.videoSrc && typeof item.videoSrc === "string" && (item.videoSrc.startsWith("http://") || item.videoSrc.startsWith("https://"))) {
+      return item.videoSrc.trim();
     }
 
     return null;
@@ -507,28 +515,46 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       console.log(`[AVSEE] page remained alive`);
 
       const items = await page.evaluate((b) => {
+        const map = new Map();
         const anchors = Array.from(document.querySelectorAll("a[href*='wr_id=']"));
-        const seen = new Set();
-        const results = [];
 
         anchors.forEach(a => {
           const m = a.href.match(/wr_id=(\d+)/);
-          if (m && !seen.has(m[1])) {
-            seen.add(m[1]);
-            const img = a.querySelector("img");
-            const parent = a.closest(".item-row, .list-row, .list-item, .media, tr, div");
-            const titleEl = (parent && parent.querySelector(".wr-subject, .item-title, .title, .subject")) || a;
-            results.push({
+          if (!m) return;
+          const wr_id = m[1];
+
+          if (!map.has(wr_id)) {
+            map.set(wr_id, {
               bo_table: b,
-              wr_id: m[1],
-              itemId: `${b}_${m[1]}`,
+              wr_id: wr_id,
+              itemId: `${b}_${wr_id}`,
               pageUrl: a.href,
-              title: titleEl.innerText.trim(),
-              thumbnailUrl: img ? img.src : null
+              title: "",
+              thumbnailUrl: null
             });
           }
+
+          const entry = map.get(wr_id);
+          const text = a.innerText ? a.innerText.trim() : "";
+          if (text && (!entry.title || entry.title.length < text.length)) {
+            entry.title = text;
+          }
+
+          const parent = a.closest(".item-row, .list-row, .list-item, .media, tr, li, div");
+          if (!entry.title && parent) {
+            const titleEl = parent.querySelector(".wr-subject, .item-title, .title, .subject, .bo_tit, .wr_subject, strong");
+            if (titleEl && titleEl.innerText) {
+              entry.title = titleEl.innerText.trim();
+            }
+          }
+
+          const img = a.querySelector("img") || (parent && parent.querySelector("img"));
+          if (img && img.src && !entry.thumbnailUrl) {
+            entry.thumbnailUrl = img.src;
+          }
         });
-        return results;
+
+        return Array.from(map.values()).filter(it => it.wr_id && it.title);
       }, board);
 
       console.log(`[AVSEE] parsed listings: ${items.length}`);
