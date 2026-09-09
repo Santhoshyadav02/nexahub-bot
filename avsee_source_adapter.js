@@ -15,12 +15,47 @@ const path = require("path");
 const crypto = require("crypto");
 const http = require("http");
 const https = require("https");
+const { execSync } = require("child_process");
 const { URL } = require("url");
 const { chromium } = require("playwright");
 const { ExternalSourceAdapter, CANONICAL_12_TOPIC_RULES } = require("./external_source_adapter");
 
 const AVSEE_ENABLED = process.env.AVSEE_ENABLED === "true";
 const AVSEE_DRY_RUN = process.env.AVSEE_DRY_RUN !== "false"; // default true
+
+/**
+ * Locate system Chromium executable if present
+ * @returns {string|null}
+ */
+function getSystemChromiumPath() {
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
+    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  }
+  try {
+    const stdout = execSync("which chromium || which google-chrome || which chromium-browser", {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "ignore"],
+      timeout: 2000
+    }).trim();
+    if (stdout && fs.existsSync(stdout)) {
+      return stdout;
+    }
+  } catch (e) {}
+
+  const standardPaths = [
+    "/root/.nix-profile/bin/chromium",
+    "/nix/var/nix/profiles/default/bin/chromium",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome"
+  ];
+  for (const p of standardPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
+}
 
 class AvseeSourceAdapter extends ExternalSourceAdapter {
   /**
@@ -260,23 +295,40 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
    * @returns {Promise<import('playwright').Browser>}
    */
   async launchBrowser(extraOptions = {}) {
+    const baseArgs = [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-first-run"
+    ];
+
     const launchOptions = {
       headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-first-run"
-      ],
+      args: baseArgs,
       ...extraOptions
     };
 
-    if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
-      launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    const sysPath = getSystemChromiumPath();
+    if (sysPath && !launchOptions.executablePath) {
+      launchOptions.executablePath = sysPath;
     }
 
-    return await chromium.launch(launchOptions);
+    try {
+      return await chromium.launch(launchOptions);
+    } catch (primaryErr) {
+      // If launched with a custom executablePath and failed, fallback to default Playwright browser
+      if (launchOptions.executablePath) {
+        try {
+          const fallbackOptions = { ...launchOptions };
+          delete fallbackOptions.executablePath;
+          return await chromium.launch(fallbackOptions);
+        } catch (fallbackErr) {
+          throw primaryErr;
+        }
+      }
+      throw primaryErr;
+    }
   }
 
   /**
@@ -286,6 +338,8 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
   async checkBrowserLaunch() {
     try {
       const browser = await this.launchBrowser();
+      const page = await browser.newPage();
+      await page.close();
       await browser.close();
       return { pass: true };
     } catch (err) {
