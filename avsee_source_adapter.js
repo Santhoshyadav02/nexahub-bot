@@ -255,6 +255,45 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
   // ============================================================
 
   /**
+   * Helper to launch Chromium with robust Linux container arguments and custom executable path support
+   * @param {object} [extraOptions]
+   * @returns {Promise<import('playwright').Browser>}
+   */
+  async launchBrowser(extraOptions = {}) {
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run"
+      ],
+      ...extraOptions
+    };
+
+    if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
+      launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    }
+
+    return await chromium.launch(launchOptions);
+  }
+
+  /**
+   * Diagnostic browser launch test without navigating or downloading
+   * @returns {Promise<{ pass: boolean, error?: string }>}
+   */
+  async checkBrowserLaunch() {
+    try {
+      const browser = await this.launchBrowser();
+      await browser.close();
+      return { pass: true };
+    } catch (err) {
+      return { pass: false, error: err.message };
+    }
+  }
+
+  /**
    * Fetches items from the authorized AVsee feed using browser session
    * @param {object} [options]
    * @param {string} [options.board="korea"]
@@ -273,7 +312,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
 
     console.log(`🌐 [AVSEE] Fetching board listings from: ${boardUrl} (limit: ${limit})`);
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await this.launchBrowser();
     try {
       const context = await browser.newContext({
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -337,7 +376,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
 
     console.log(`🌐 [AVSEE] Fetching item details from: ${pageUrl}`);
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await this.launchBrowser();
     try {
       const context = await browser.newContext({
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",

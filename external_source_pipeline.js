@@ -337,6 +337,18 @@ class ExternalSourcePipeline {
     console.log(`[EXTERNAL_SOURCE] publishing: ${this.publisher && this.publisher.publishEnabled ? "ENABLED" : "DISABLED"}`);
     console.log(`[EXTERNAL_SOURCE] media download: ${this.dryRun ? "DISABLED" : "ENABLED"}`);
 
+    if (this.adapter && typeof this.adapter.checkBrowserLaunch === "function") {
+      this.adapter.checkBrowserLaunch().then(res => {
+        if (res.pass) {
+          console.log("[EXTERNAL_SOURCE] Playwright browser launch check: PASS");
+        } else {
+          console.log(`[EXTERNAL_SOURCE] Playwright browser launch check: FAIL: ${res.error}`);
+        }
+      }).catch(err => {
+        console.log(`[EXTERNAL_SOURCE] Playwright browser launch check: FAIL: ${err.message}`);
+      });
+    }
+
     // Run initial backfill or immediate cycle on startup if requested
     if (options.immediate !== false) {
       const initialTask = options.runBackfillOnStart !== false 
