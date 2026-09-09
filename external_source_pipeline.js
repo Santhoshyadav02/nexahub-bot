@@ -14,11 +14,20 @@
 const fs = require("fs");
 const path = require("path");
 const { ExternalSourceAdapter } = require("./external_source_adapter");
+const { AvseeSourceAdapter } = require("./avsee_source_adapter");
 const { ExternalSourcePublisher } = require("./external_source_publisher");
 const { ExternalSourceState, MAX_GLOBAL_RETENTION } = require("./external_source_state");
 const { getDestinationForTopic } = require("./external_source_destinations");
 
 const POLLING_INTERVAL_MS = 30 * 60 * 1000; // Exact 30 minutes (1,800,000 ms)
+
+function createDefaultAdapter(config = {}) {
+  const sourceType = (config.sourceType || process.env.EXTERNAL_SOURCE_TYPE || "avsee").toLowerCase();
+  if (sourceType === "avsee") {
+    return new AvseeSourceAdapter(config);
+  }
+  return new ExternalSourceAdapter(config);
+}
 
 class ExternalSourcePipeline {
   /**
@@ -39,7 +48,7 @@ class ExternalSourcePipeline {
       maxTotalItems: this.maxTotalItems
     });
 
-    this.adapter = config.adapter || new ExternalSourceAdapter({
+    this.adapter = config.adapter || createDefaultAdapter({
       dryRun: this.dryRun
     });
 
@@ -317,8 +326,14 @@ class ExternalSourcePipeline {
 
     this.isStarted = true;
 
+    const authStatus = this.adapter && typeof this.adapter.getAuthorizationStatus === "function"
+      ? this.adapter.getAuthorizationStatus()
+      : { configDetected: Boolean(this.adapter && this.adapter.isAuthorized), validationPass: Boolean(this.adapter && this.adapter.isAuthorized) };
+
     console.log(`[EXTERNAL_SOURCE] scheduler initialized`);
     console.log(`[EXTERNAL_SOURCE] polling interval: 30 minutes`);
+    console.log(`[EXTERNAL_SOURCE] authorization configuration detected: ${authStatus.configDetected ? "YES" : "NO"}`);
+    console.log(`[EXTERNAL_SOURCE] authorization validation: ${authStatus.validationPass ? "PASS" : "FAIL"}`);
     console.log(`[EXTERNAL_SOURCE] publishing: ${this.publisher && this.publisher.publishEnabled ? "ENABLED" : "DISABLED"}`);
     console.log(`[EXTERNAL_SOURCE] media download: ${this.dryRun ? "DISABLED" : "ENABLED"}`);
 

@@ -163,20 +163,20 @@ class ExternalSourceAdapter {
   constructor(config = {}) {
     this.sourceId = config.sourceId || "external_authorized_source";
     this.sourceName = config.sourceName || "Authorized External Media Feed";
-    this.apiUrl = config.apiUrl || process.env.EXTERNAL_SOURCE_API_URL || null;
-    this.apiKey = config.apiKey || process.env.EXTERNAL_SOURCE_API_KEY || null;
-    this.licenseId = config.licenseId || process.env.EXTERNAL_SOURCE_LICENSE_ID || null;
+    this.apiUrl = config.apiUrl || process.env.EXTERNAL_SOURCE_API_URL || process.env.AVSEE_API_URL || null;
+    this.apiKey = config.apiKey || process.env.EXTERNAL_SOURCE_API_KEY || process.env.AVSEE_API_KEY || null;
+    this.licenseId = config.licenseId || process.env.EXTERNAL_SOURCE_LICENSE_ID || process.env.AVSEE_LICENSE_ID || null;
     
-    // Explicit authorization check
+    // Explicit authorization check from config or environment variables
     this.isAuthorized = config.isAuthorized !== undefined 
       ? Boolean(config.isAuthorized) 
-      : (process.env.EXTERNAL_SOURCE_AUTHORIZED === "true" || !!this.licenseId);
+      : (process.env.EXTERNAL_SOURCE_AUTHORIZED === "true" || process.env.AVSEE_AUTHORIZED === "true");
 
     // Whitelisted domains
     this.allowedDomains = config.allowedDomains || (
       process.env.EXTERNAL_SOURCE_ALLOWED_DOMAINS 
         ? process.env.EXTERNAL_SOURCE_ALLOWED_DOMAINS.split(",").map(d => d.trim().toLowerCase()) 
-        : ["authorized-cdn.com", "licensed-feed.org", "api.partner-media.com", "syndication.authorized.net"]
+        : ["02.avsee.is", "avsee.tv", "cdn.apiavsee.com", "apiavsee.com", "authorized-cdn.com", "licensed-feed.org", "api.partner-media.com", "syndication.authorized.net"]
     );
 
     // Dry-run mode (defaults to true for maximum safety unless explicitly disabled)
@@ -202,6 +202,21 @@ class ExternalSourceAdapter {
   // ============================================================
 
   /**
+   * Returns safe diagnostic authorization status (never exposes secret values)
+   * @param {string} [targetUrl]
+   * @returns {{ configDetected: boolean, validationPass: boolean, reason?: string|null }}
+   */
+  getAuthorizationStatus(targetUrl = null) {
+    const hasConfig = Boolean(this.licenseId || this.apiKey || process.env.EXTERNAL_SOURCE_AUTHORIZED === "true" || process.env.AVSEE_AUTHORIZED === "true");
+    const authResult = this.checkAuthorization(targetUrl);
+    return {
+      configDetected: hasConfig,
+      validationPass: authResult.authorized,
+      reason: authResult.reason || null
+    };
+  }
+
+  /**
    * Verifies that the adapter is explicitly authorized to ingest and process content.
    * @param {string} [targetUrl] Optional URL to check against domain whitelist
    * @returns {{ authorized: boolean, reason?: string }}
@@ -210,14 +225,14 @@ class ExternalSourceAdapter {
     if (!this.isAuthorized) {
       return { 
         authorized: false, 
-        reason: "Source is not authorized. Set isAuthorized=true or configure EXTERNAL_SOURCE_AUTHORIZED=true with valid licenseId." 
+        reason: "Source is not authorized. Set EXTERNAL_SOURCE_AUTHORIZED=true (or AVSEE_AUTHORIZED=true) with valid EXTERNAL_SOURCE_LICENSE_ID." 
       };
     }
 
     if (!this.licenseId && !this.apiKey) {
       return { 
         authorized: false, 
-        reason: "Missing authorization credentials (licenseId or apiKey is required)." 
+        reason: "Missing authorization credentials. Set EXTERNAL_SOURCE_LICENSE_ID (or AVSEE_LICENSE_ID) or EXTERNAL_SOURCE_API_KEY in environment variables." 
       };
     }
 

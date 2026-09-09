@@ -27,10 +27,17 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
    * @param {object} [config]
    */
   constructor(config = {}) {
+    const isAuthorized = config.isAuthorized !== undefined 
+      ? Boolean(config.isAuthorized) 
+      : (process.env.AVSEE_AUTHORIZED === "true" || process.env.EXTERNAL_SOURCE_AUTHORIZED === "true");
+
+    const licenseId = config.licenseId || process.env.AVSEE_LICENSE_ID || process.env.EXTERNAL_SOURCE_LICENSE_ID || null;
+    const apiKey = config.apiKey || process.env.AVSEE_API_KEY || process.env.EXTERNAL_SOURCE_API_KEY || null;
+
     super({
       sourceId: "avsee",
       sourceName: "AVsee Authorized Content Feed",
-      apiUrl: config.apiUrl || "https://02.avsee.is",
+      apiUrl: config.apiUrl || process.env.AVSEE_API_URL || "https://02.avsee.is",
       allowedDomains: config.allowedDomains || [
         "02.avsee.is",
         "avsee.tv",
@@ -38,8 +45,9 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         "apiavsee.com",
         "authorized-cdn.com"
       ],
-      isAuthorized: config.isAuthorized !== undefined ? Boolean(config.isAuthorized) : true,
-      licenseId: config.licenseId || process.env.AVSEE_LICENSE_ID || "LIC-AVSEE-AUTHORIZED",
+      isAuthorized: isAuthorized,
+      licenseId: licenseId,
+      apiKey: apiKey,
       dryRun: config.dryRun !== undefined ? Boolean(config.dryRun) : AVSEE_DRY_RUN,
       ledgerPath: config.ledgerPath || path.join(__dirname, "avsee_source_ledger.json"),
       ...config
