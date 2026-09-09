@@ -300,7 +300,12 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--no-first-run"
+      "--no-first-run",
+      "--no-zygote",
+      "--disable-breakpad",
+      "--disable-software-rasterizer",
+      "--disable-extensions",
+      "--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess"
     ];
 
     const launchOptions = {
@@ -309,15 +314,14 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       ...extraOptions
     };
 
-    const sysPath = getSystemChromiumPath();
-    if (sysPath && !launchOptions.executablePath) {
-      launchOptions.executablePath = sysPath;
+    if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
+      launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     }
 
     try {
       return await chromium.launch(launchOptions);
     } catch (primaryErr) {
-      // If launched with a custom executablePath and failed, fallback to default Playwright browser
+      // If launch with custom executablePath failed, fallback to default Playwright browser
       if (launchOptions.executablePath) {
         try {
           const fallbackOptions = { ...launchOptions };
@@ -374,8 +378,20 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       });
       const page = await context.newPage();
 
-      await page.goto(boardUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+      // Lifecycle diagnostics
+      page.on("crash", () => console.warn("⚠️ [AVSEE] Page crashed"));
+      page.on("pageerror", (err) => console.warn(`⚠️ [AVSEE] Page error: ${err.message}`));
+
+      // Abort heavy media/images/fonts to avoid renderer crash and save RAM
+      await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,otf,eot,mp4,webm,avi,mkv,ts,flv,mp3,wav,ogg}", route => {
+        route.abort();
+      });
+
+      const response = await page.goto(boardUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+      console.log(`[AVSEE] navigation successful (status: ${response ? response.status() : "loaded"})`);
+
       await this.waitForTurnstile(page);
+      console.log(`[AVSEE] page remained alive`);
 
       const items = await page.evaluate((b) => {
         const anchors = Array.from(document.querySelectorAll("a[href*='wr_id=']"));
@@ -402,6 +418,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         return results;
       }, board);
 
+      console.log(`[AVSEE] parsed listings: ${items.length}`);
       return items.slice(0, limit);
     } finally {
       await browser.close();
@@ -438,8 +455,20 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       });
       const page = await context.newPage();
 
-      await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+      // Lifecycle diagnostics
+      page.on("crash", () => console.warn("⚠️ [AVSEE] Page crashed"));
+      page.on("pageerror", (err) => console.warn(`⚠️ [AVSEE] Page error: ${err.message}`));
+
+      // Abort heavy media/images/fonts to avoid renderer crash and save RAM
+      await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,otf,eot,mp4,webm,avi,mkv,ts,flv,mp3,wav,ogg}", route => {
+        route.abort();
+      });
+
+      const response = await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+      console.log(`[AVSEE] navigation successful (status: ${response ? response.status() : "loaded"})`);
+
       await this.waitForTurnstile(page);
+      console.log(`[AVSEE] page remained alive`);
 
       const parsed = await page.evaluate(() => {
         const h1 = document.querySelector("h1[itemprop='headline'], .view-wrap h1, #view_title, .view-title, .title");
@@ -492,16 +521,35 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
   }
 
   /**
-   * Helper: Waits for Cloudflare Turnstile challenge resolution
+   * Helper: Waits for Cloudflare challenge or DOM content resolution cleanly
    * @param {import('playwright').Page} page 
    */
   async waitForTurnstile(page) {
-    for (let i = 0; i < 15; i++) {
-      const title = await page.title();
-      if (!title.includes("Just a moment") && !title.includes("02.avsee.is") && title.trim().length > 0) {
-        return;
-      }
-      await page.waitForTimeout(1500);
+    if (!page || page.isClosed()) return;
+
+    for (let i = 0; i < 10; i++) {
+      if (page.isClosed()) return;
+      try {
+        const hasContent = await page.evaluate(() => {
+          return Boolean(
+            document.querySelector("a[href*='wr_id=']") ||
+            document.querySelector("#view_content") ||
+            document.querySelector(".view-wrap") ||
+            document.querySelector(".view-title, #view_title, h1")
+          );
+        }).catch(() => false);
+
+        if (hasContent) {
+          return;
+        }
+
+        const title = await page.title().catch(() => "");
+        if (title && !title.toLowerCase().includes("just a moment") && !title.toLowerCase().includes("cloudflare")) {
+          return;
+        }
+      } catch (e) {}
+
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 
