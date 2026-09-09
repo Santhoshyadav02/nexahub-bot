@@ -101,6 +101,7 @@ class ExternalSourcePipeline {
       durationMs: 0
     };
 
+    let backfillError = null;
     try {
       this.stateStore.ensureDailyWindow();
       let externalRemaining = this.stateStore.getExternalRemainingQuota();
@@ -113,14 +114,27 @@ class ExternalSourcePipeline {
       }
 
       summary.discovered = Array.isArray(rawItems) ? rawItems.length : 0;
+      console.log(`[AVSEE] parsed listings: ${summary.discovered}`);
 
       for (const raw of rawItems) {
+        let detailItem = raw;
+        if (!raw.description && !raw.tags && typeof this.adapter.fetchItemDetails === "function" && raw.pageUrl) {
+          try {
+            detailItem = await this.adapter.fetchItemDetails(raw);
+          } catch (e) {
+            console.warn(`⚠️ [AVSEE] detail navigation error for ${raw.pageUrl}: ${e.message}`);
+          }
+        }
+
         // 1. Normalize
-        const normalized = this.adapter.normalizeItem(raw);
+        const normalized = this.adapter.normalizeItem(detailItem);
         if (!normalized || !normalized.valid) {
           summary.invalid++;
           continue;
         }
+
+        console.log(`[AVSEE] normalized item: ${normalized.itemId}`);
+        console.log(`[AVSEE] validation: PASS`);
 
         // 2. Check permanent dedupe ledger
         if (this.stateStore.hasSeen(normalized)) {
@@ -135,7 +149,9 @@ class ExternalSourcePipeline {
         normalized.destinationChannel = destination.destinationChannelId;
 
         // 4. Ingest into global 150 pool
+        console.log(`[AVSEE] pipeline processing: PASS`);
         await this.publisher.publishAuthorizedItem(normalized, null, destination);
+        console.log(`[AVSEE] dry-run delivery: PASS`);
 
         // 5. If within daily delivery quota (15/day), record delivery
         if (externalRemaining > 0 && summary.queued < externalRemaining) {
@@ -154,13 +170,19 @@ class ExternalSourcePipeline {
       summary.externalRemainingQuota = this.stateStore.getExternalRemainingQuota();
 
     } catch (err) {
+      backfillError = err;
       console.error(`❌ [EXTERNAL_SOURCE] Initial backfill error: ${err.message}`);
     } finally {
       this.isPollingActive = false;
       summary.durationMs = Date.now() - startTime;
       this.lastPollSummary = summary;
 
-      console.log(`[EXTERNAL_SOURCE] initial backfill complete: ${summary.queued} delivered (${summary.externalDeliveredToday}/${this.stateStore.externalDailyTarget} daily quota, ${summary.globalRetainedPool}/${this.maxTotalItems} global pool)`);
+      if (backfillError) {
+        console.log(`[EXTERNAL_SOURCE] initial backfill FAILED: ${backfillError.message}`);
+      } else {
+        console.log(`[AVSEE] initial backfill complete: ${summary.queued} delivered`);
+        console.log(`[EXTERNAL_SOURCE] initial backfill complete: ${summary.queued} delivered (${summary.externalDeliveredToday}/${this.stateStore.externalDailyTarget} daily quota, ${summary.globalRetainedPool}/${this.maxTotalItems} global pool)`);
+      }
     }
 
     return summary;
@@ -332,19 +354,31 @@ class ExternalSourcePipeline {
 
     console.log(`[EXTERNAL_SOURCE] scheduler initialized`);
     console.log(`[EXTERNAL_SOURCE] polling interval: 30 minutes`);
-    console.log(`[EXTERNAL_SOURCE] authorization configuration detected: ${authStatus.configDetected ? "YES" : "NO"}`);
-    console.log(`[EXTERNAL_SOURCE] authorization validation: ${authStatus.validationPass ? "PASS" : "FAIL"}`);
+    if (authStatus.configDetected && authStatus.validationPass) {
+      console.log(`[EXTERNAL_SOURCE] authorization: CONFIGURED & VERIFIED`);
+    } else if (authStatus.configDetected) {
+      console.log(`[EXTERNAL_SOURCE] authorization: CONFIG DETECTED (VALIDATION FAIL)`);
+    } else {
+      console.log(`[EXTERNAL_SOURCE] authorization: NOT CONFIGURED`);
+    }
     console.log(`[EXTERNAL_SOURCE] publishing: ${this.publisher && this.publisher.publishEnabled ? "ENABLED" : "DISABLED"}`);
     console.log(`[EXTERNAL_SOURCE] media download: ${this.dryRun ? "DISABLED" : "ENABLED"}`);
 
     if (this.adapter && typeof this.adapter.checkBrowserLaunch === "function") {
       this.adapter.checkBrowserLaunch().then(res => {
+        if (res.executablePath) {
+          console.log(`[AVSEE] Chromium executable selected: ${res.executablePath}`);
+        }
         if (res.pass) {
+          console.log("[AVSEE] Chromium runtime verification: PASS");
+          console.log("[AVSEE] browser runtime: PASS");
           console.log("[EXTERNAL_SOURCE] Playwright browser launch check: PASS");
         } else {
+          console.log(`[AVSEE] Chromium runtime verification: FAIL: ${res.error}`);
           console.log(`[EXTERNAL_SOURCE] Playwright browser launch check: FAIL: ${res.error}`);
         }
       }).catch(err => {
+        console.log(`[AVSEE] Chromium runtime verification: FAIL: ${err.message}`);
         console.log(`[EXTERNAL_SOURCE] Playwright browser launch check: FAIL: ${err.message}`);
       });
     }

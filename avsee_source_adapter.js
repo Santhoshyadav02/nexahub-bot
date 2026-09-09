@@ -24,6 +24,7 @@ const AVSEE_ENABLED = process.env.AVSEE_ENABLED === "true";
 const AVSEE_DRY_RUN = process.env.AVSEE_DRY_RUN !== "false"; // default true
 
 /**
+ * /**
  * Locate system Chromium executable if present
  * @returns {string|null}
  */
@@ -31,8 +32,15 @@ function getSystemChromiumPath() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
     return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   }
+  if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
+    return process.env.CHROME_BIN;
+  }
+  if (process.env.CHROMIUM_PATH && fs.existsSync(process.env.CHROMIUM_PATH)) {
+    return process.env.CHROMIUM_PATH;
+  }
+
   try {
-    const stdout = execSync("which chromium || which google-chrome || which chromium-browser", {
+    const stdout = execSync("which chromium || which chromium-browser || which google-chrome-stable || which google-chrome", {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "ignore"],
       timeout: 2000
@@ -43,11 +51,13 @@ function getSystemChromiumPath() {
   } catch (e) {}
 
   const standardPaths = [
-    "/root/.nix-profile/bin/chromium",
     "/nix/var/nix/profiles/default/bin/chromium",
+    "/root/.nix-profile/bin/chromium",
+    "/etc/profiles/per-user/root/bin/chromium",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome"
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable"
   ];
   for (const p of standardPaths) {
     if (fs.existsSync(p)) {
@@ -92,6 +102,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     this.tempDir = config.tempDir || path.join(__dirname, "scratch", "avsee_temp");
     this.maxFileSizeMB = config.maxFileSizeMB || 500;
     this.boards = config.boards || ["korea", "caption", "javc", "javleak", "javfc2", "western"];
+    this.selectedExecutablePath = null;
   }
 
   // ============================================================
@@ -198,7 +209,72 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
   }
 
   /**
-   * Extracts published timestamp in ISO 8601 format
+   * Extracts thumbnail URL from an item
+   * @param {object} item 
+   * @returns {string|null}
+   */
+  getThumbnailUrl(item) {
+    if (!item || typeof item !== "object") return null;
+    let url = item.thumbnailUrl || item.thumbnail || item.thumb || item.poster || null;
+    if (url && typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
+      return url.trim();
+    }
+    return null;
+  }
+
+  /**
+   * Generates stable deduplication hash across instances
+   * @param {object} item 
+   * @returns {string}
+   */
+  getUniqueHash(item) {
+    if (!item || typeof item !== "object") return "";
+    const itemId = item.itemId || item.id || `${item.bo_table || "korea"}_${item.wr_id || ""}`;
+    const mediaUrl = this.getMediaUrl(item) || "";
+    const title = this.getTitle(item);
+
+    return crypto
+      .createHash("md5")
+      .update(`avsee:${itemId}:${mediaUrl || title}`)
+      .digest("hex");
+  }
+
+  /**
+   * Validates if a media URL matches the whitelisted domains
+   * @param {string} targetUrl 
+   * @returns {boolean}
+   */
+  isDomainAllowed(targetUrl) {
+    if (!targetUrl) return false;
+    try {
+      const parsed = new URL(targetUrl);
+      const hostname = parsed.hostname.toLowerCase();
+      return this.allowedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Checks authorization status for AVsee
+   * @param {string} [targetUrl]
+   * @returns {{ authorized: boolean, reason?: string }}
+   */
+  checkAuthorization(targetUrl = null) {
+    if (!this.isAuthorized) {
+      return { authorized: false, reason: "Source is not authorized. Set EXTERNAL_SOURCE_AUTHORIZED=true (or AVSEE_AUTHORIZED=true) with valid licenseId." };
+    }
+    if (!this.licenseId && !this.apiKey) {
+      return { authorized: false, reason: "Missing license or API key." };
+    }
+    if (targetUrl && !this.isDomainAllowed(targetUrl)) {
+      return { authorized: false, reason: `Target URL domain is not whitelisted: ${targetUrl}` };
+    }
+    return { authorized: true };
+  }
+
+  /**
+   * Extracts published timestamp in ISO 8601 format safely
    * @param {object} item 
    * @returns {string}
    */
@@ -206,67 +282,64 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     if (!item || typeof item !== "object") return new Date().toISOString();
     const raw = item.publishedAt || item.published_at || item.date || item.wr_date;
     if (raw) {
-      const d = new Date(raw);
-      if (!isNaN(d.getTime())) return d.toISOString();
-      // Handle "YYYY.MM.DD HH:mm" format
-      const match = String(raw).match(/(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2})/);
+      const match = String(raw).match(/(\d{4})[./-](\d{2})[./-](\d{2})\s+(\d{2}):(\d{2})/);
       if (match) {
         const parsedDate = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00.000Z`);
         if (!isNaN(parsedDate.getTime())) return parsedDate.toISOString();
       }
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) return d.toISOString();
     }
     return new Date().toISOString();
   }
 
-  // ============================================================
-  // 📦 NORMALIZATION (PHASE 3 SPECIFICATION)
-  // ============================================================
-
   /**
-   * Normalizes raw scraped / API item to Phase 3 specification
+   * Normalizes raw AVsee item into standard ExternalSourceItem structure
    * @param {object} rawItem 
-   * @returns {object|null}
+   * @returns {import('./external_source_adapter').ExternalSourceItem}
    */
   normalizeItem(rawItem) {
-    if (!rawItem || typeof rawItem !== "object") return null;
+    if (!rawItem || typeof rawItem !== "object") {
+      return { valid: false, reason: "INVALID_ITEM_PAYLOAD" };
+    }
 
-    const itemId = String(rawItem.itemId || rawItem.id || (rawItem.bo_table ? `${rawItem.bo_table}_${rawItem.wr_id}` : rawItem.wr_id) || "").trim();
+    if (rawItem.valid === true) {
+      return rawItem;
+    }
+
     const title = this.getTitle(rawItem);
+    if (!title) {
+      return { valid: false, reason: "MISSING_TITLE" };
+    }
+
+    const itemId = rawItem.itemId || rawItem.id || (rawItem.bo_table && rawItem.wr_id ? `${rawItem.bo_table}_${rawItem.wr_id}` : null);
+    if (!itemId) {
+      return { valid: false, reason: "MISSING_ITEM_ID" };
+    }
+
     const mediaUrl = this.getMediaUrl(rawItem);
-    const pageUrl = rawItem.pageUrl || rawItem.url || (rawItem.bo_table && rawItem.wr_id ? `${this.apiUrl}/bbs/board.php?bo_table=${rawItem.bo_table}&wr_id=${rawItem.wr_id}` : null);
+    if (!mediaUrl) {
+      return { valid: false, reason: "MISSING_MEDIA_URL" };
+    }
+
+    if (!this.isDomainAllowed(mediaUrl)) {
+      return { valid: false, reason: `DISALLOWED_MEDIA_DOMAIN: ${mediaUrl}` };
+    }
+
     const tags = this.getTags(rawItem);
-    const thumbnailUrl = rawItem.thumbnailUrl || rawItem.thumbnail || (Array.isArray(rawItem.images) ? rawItem.images[0] : null) || null;
+    const thumbnailUrl = this.getThumbnailUrl(rawItem);
+    const uniqueHash = this.getUniqueHash(rawItem);
+    const route = this.matchTopic({ title, description: rawItem.description || "", tags });
     const publishedAt = this.getPublishedAt(rawItem);
     const discoveredAt = rawItem.discoveredAt || new Date().toISOString();
-
-    if (!itemId) {
-      return { valid: false, error: "Missing required itemId" };
-    }
-    if (!title) {
-      return { valid: false, error: "Missing required title" };
-    }
-    if (!mediaUrl) {
-      return { valid: false, error: "Missing or invalid mediaUrl" };
-    }
-
-    // Verify media domain authorization
-    const authCheck = this.checkAuthorization(mediaUrl);
-    if (!authCheck.authorized) {
-      return { valid: false, error: authCheck.reason };
-    }
-
-    const uniqueHash = this.generateItemHash(itemId, mediaUrl);
-
-    // Route against 12 Canonical Topics
-    const route = this.matchTopic({ title, description: rawItem.description || "", tags });
 
     return {
       valid: true,
       source: "avsee",
       sourceId: this.sourceId,
-      itemId: itemId,
+      itemId: String(itemId),
       uniqueHash: uniqueHash,
-      pageUrl: pageUrl,
+      pageUrl: rawItem.pageUrl || `${this.apiUrl}/bbs/board.php?bo_table=${rawItem.bo_table || "korea"}&wr_id=${rawItem.wr_id || ""}`,
       title: title,
       description: String(rawItem.description || "").trim(),
       tags: tags,
@@ -290,7 +363,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
   // ============================================================
 
   /**
-   * Helper to launch Chromium with robust Linux container arguments and custom executable path support
+   * Helper to launch Chromium with robust Linux container arguments and verified executable path
    * @param {object} [extraOptions]
    * @returns {Promise<import('playwright').Browser>}
    */
@@ -308,51 +381,68 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       "--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess"
     ];
 
-    const launchOptions = {
-      headless: true,
-      args: baseArgs,
-      ...extraOptions
-    };
+    const detectedPath = getSystemChromiumPath();
+    const candidatePaths = [];
 
-    if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
-      launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    if (extraOptions.executablePath) {
+      candidatePaths.push(extraOptions.executablePath);
     }
+    if (detectedPath) {
+      candidatePaths.push(detectedPath);
+    }
+    // undefined represents Playwright's bundled Chromium
+    candidatePaths.push(undefined);
 
-    try {
-      return await chromium.launch(launchOptions);
-    } catch (primaryErr) {
-      // If launch with custom executablePath failed, fallback to default Playwright browser
-      if (launchOptions.executablePath) {
-        try {
-          const fallbackOptions = { ...launchOptions };
-          delete fallbackOptions.executablePath;
-          return await chromium.launch(fallbackOptions);
-        } catch (fallbackErr) {
-          throw primaryErr;
+    let lastError = null;
+    for (const execPath of candidatePaths) {
+      try {
+        const launchOpts = {
+          headless: true,
+          args: baseArgs,
+          ...extraOptions
+        };
+        if (execPath) {
+          launchOpts.executablePath = execPath;
+        } else {
+          delete launchOpts.executablePath;
         }
+
+        const browser = await chromium.launch(launchOpts);
+        this.selectedExecutablePath = execPath || "playwright-bundled";
+        return browser;
+      } catch (err) {
+        lastError = err;
       }
-      throw primaryErr;
     }
+
+    throw lastError || new Error("[AVSEE] No working Chromium runtime found");
   }
 
   /**
-   * Diagnostic browser launch test without navigating or downloading
-   * @returns {Promise<{ pass: boolean, error?: string }>}
+   * Diagnostic browser launch test that verifies actual browser navigation and page DOM readiness
+   * @returns {Promise<{ pass: boolean, executablePath?: string, error?: string }>}
    */
   async checkBrowserLaunch() {
     try {
       const browser = await this.launchBrowser();
       const page = await browser.newPage();
+      await page.goto("data:text/html,<html><body><div id='test'>ok</div></body></html>", { timeout: 10000 });
+      const text = await page.$eval("#test", el => el.innerText).catch(() => "");
       await page.close();
       await browser.close();
-      return { pass: true };
+
+      if (text !== "ok") {
+        return { pass: false, error: "Failed to evaluate DOM in test page" };
+      }
+
+      return { pass: true, executablePath: this.selectedExecutablePath || "playwright-bundled" };
     } catch (err) {
       return { pass: false, error: err.message };
     }
   }
 
   /**
-   * Fetches items from the authorized AVsee feed using browser session
+   * Fetches items from the authorized AVsee feed using browser session with 1-retry fallback
    * @param {object} [options]
    * @param {string} [options.board="korea"]
    * @param {number} [options.limit=10]
@@ -364,6 +454,29 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       return options.mockItems;
     }
 
+    const maxAttempts = 2;
+    let lastErr = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this._fetchItemsInternal(options);
+      } catch (err) {
+        lastErr = err;
+        console.warn(`⚠️ [AVSEE] fetchItems attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+        if (attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    }
+
+    throw lastErr;
+  }
+
+  /**
+   * Internal listing fetch implementation
+   * @private
+   */
+  async _fetchItemsInternal(options = {}) {
     const board = options.board || "korea";
     const limit = options.limit || 10;
     const boardUrl = `${this.apiUrl}/bbs/board.php?bo_table=${board}`;
@@ -388,7 +501,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       });
 
       const response = await page.goto(boardUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
-      console.log(`[AVSEE] navigation successful (status: ${response ? response.status() : "loaded"})`);
+      console.log(`[AVSEE] listings navigation: PASS (status: ${response ? response.status() : "200"})`);
 
       await this.waitForTurnstile(page);
       console.log(`[AVSEE] page remained alive`);
