@@ -14,8 +14,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const MAX_GLOBAL_RETENTION = 150;
-const EXTERNAL_DAILY_TARGET = 15;
-const TELEGRAM_CHANNEL_DAILY_TARGET = 15;
+const DEFAULT_CHANNEL_DAILY_TARGET = 100;
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 class ExternalSourceState {
@@ -23,24 +22,26 @@ class ExternalSourceState {
    * @param {object} [config]
    * @param {string} [config.stateFilePath] Path to persistent JSON state store
    * @param {number} [config.maxTotalItems=150] Max items in global retention pool
-   * @param {number} [config.externalDailyTarget=15] Max external items delivered per 24h
-   * @param {number} [config.channelDailyTarget=15] Max items delivered per Telegram channel per 24h
    */
   constructor(config = {}) {
     this.stateFilePath = config.stateFilePath || config.retentionStorePath || path.join(__dirname, "external_source_state.json");
     this.maxTotalItems = config.maxTotalItems || config.maxRetentionPerTopic || MAX_GLOBAL_RETENTION;
-    this.externalDailyTarget = config.externalDailyTarget || EXTERNAL_DAILY_TARGET;
-    this.channelDailyTarget = config.channelDailyTarget || TELEGRAM_CHANNEL_DAILY_TARGET;
+    this.externalDailyTarget = config.externalDailyTarget !== undefined ? config.externalDailyTarget : Infinity; // Default: No daily video limit for external source
+    this.channelDailyTarget = config.channelDailyTarget || DEFAULT_CHANNEL_DAILY_TARGET;
 
     // In-memory data structures
-    this.records = new Map(); // primary key: sourceItemId or uniqueHash -> record object
+    this.records = new Map(); // primary key: sourceItemId, uniqueHash, or deliveryKey -> record object
+    this.deliveryLedger = new Map(); // primary key: `${sourcePostId}:${destinationChannelId}` -> delivery record
     this.urlIndex = new Map(); // canonicalUrl -> uniqueHash
     this.retainedPool = []; // Global newest-first retained items (max 150)
+    this.candidateQueue = []; // Persistent candidate FIFO queue: [{ sourcePostId, itemId, title, pageUrl, mediaUrl, topicKey, cardNum, channelIndex, destinationChannelId, destinationUsername, discoveredAt, retryCount, nextRetryAt, status }]
+    this.roundRobinPointer = 1; // 1 to 10
     this.lastSuccessfulPollAt = null;
     this.lastDiscoveredCount = 0;
     this.totalProcessedCount = 0;
+    this.lastSuccessfulDeliveryAt = null;
 
-    // 24-Hour Delivery Quota State
+    // 24-Hour Delivery Quota State (Telegram channels tracking)
     this.windowStartAt = null;
     this.externalDeliveredToday = 0;
     this.channelDeliveriesToday = {}; // { [channelKey]: count }
@@ -233,6 +234,24 @@ class ExternalSourceState {
           this.externalDeliveredToday = typeof parsed.externalDeliveredToday === "number" ? parsed.externalDeliveredToday : 0;
           this.channelDeliveriesToday = (parsed.channelDeliveriesToday && typeof parsed.channelDeliveriesToday === "object") ? parsed.channelDeliveriesToday : {};
 
+          // Round-robin & Queue state
+          if (typeof parsed.roundRobinPointer === "number" && parsed.roundRobinPointer >= 1 && parsed.roundRobinPointer <= 10) {
+            this.roundRobinPointer = parsed.roundRobinPointer;
+          }
+          if (Array.isArray(parsed.candidateQueue)) {
+            this.candidateQueue = parsed.candidateQueue;
+          }
+          this.lastSuccessfulDeliveryAt = parsed.lastSuccessfulDeliveryAt || null;
+
+          // Load delivery ledger
+          if (Array.isArray(parsed.deliveryLedger)) {
+            for (const entry of parsed.deliveryLedger) {
+              if (entry && entry.deliveryKey) {
+                this.deliveryLedger.set(entry.deliveryKey, entry);
+              }
+            }
+          }
+
           // Load permanent records
           if (Array.isArray(parsed.records)) {
             for (const rec of parsed.records) {
@@ -286,10 +305,13 @@ class ExternalSourceState {
       }
 
       const data = {
-        version: "3.0.0",
+        version: "4.0.0",
         updatedAt: new Date().toISOString(),
+        roundRobinPointer: this.roundRobinPointer,
+        candidateQueue: this.candidateQueue,
+        lastSuccessfulDeliveryAt: this.lastSuccessfulDeliveryAt,
+        deliveryLedger: Array.from(this.deliveryLedger.values()),
         windowStartAt: this.windowStartAt,
-        externalDailyTarget: this.externalDailyTarget,
         channelDailyTarget: this.channelDailyTarget,
         externalDeliveredToday: this.externalDeliveredToday,
         channelDeliveriesToday: this.channelDeliveriesToday,
@@ -506,11 +528,262 @@ class ExternalSourceState {
     return [...this.retainedPool];
   }
 
+  // ============================================================
+  // 🔄 ROUND-ROBIN & DESTINATION-SPECIFIC DEDUPE HELPERS
+  // ============================================================
+
+  /**
+   * Generates deterministic unique delivery key for destination-specific dedupe.
+   * Format: `${sourcePostId}:${destinationChannelId}`
+   * @param {string} sourcePostId 
+   * @param {string} destinationChannelId 
+   * @returns {string}
+   */
+  getDeliveryKey(sourcePostId, destinationChannelId) {
+    const sId = String(sourcePostId || "").trim();
+    const dId = String(destinationChannelId || "").trim();
+    return `${sId}:${dId}`;
+  }
+
+  /**
+   * Checks if a source post has already been successfully delivered to a specific destination channel.
+   * @param {string} sourcePostId 
+   * @param {string} destinationChannelId 
+   * @returns {boolean}
+   */
+  isDeliveredToDestination(sourcePostId, destinationChannelId) {
+    if (!sourcePostId || !destinationChannelId) return false;
+    const key = this.getDeliveryKey(sourcePostId, destinationChannelId);
+    const rec = this.deliveryLedger.get(key);
+    return Boolean(rec && rec.status === "DELIVERED");
+  }
+
+  /**
+   * Records the outcome of a delivery attempt for a specific source-post + destination channel.
+   * @param {object} item 
+   * @param {string} destinationChannelId 
+   * @param {object} [result]
+   * @returns {object}
+   */
+  recordDeliveryResult(item, destinationChannelId, result = {}) {
+    const sourceItemId = String(item.sourceItemId || item.itemId || item.id || "").trim();
+    const key = this.getDeliveryKey(sourceItemId, destinationChannelId);
+    const now = new Date().toISOString();
+
+    const deliveryRecord = {
+      deliveryKey: key,
+      sourceItemId: sourceItemId,
+      itemId: sourceItemId,
+      sourceId: item.sourceId || "external_source",
+      title: item.title,
+      destinationChannelId: destinationChannelId,
+      status: result.status || "DELIVERED",
+      deliveredAt: result.status === "DELIVERED" ? now : null,
+      updatedAt: now,
+      telegramMessageId: result.telegramMessageId || null,
+      error: result.error || null,
+      duration: result.duration || null,
+      sizeBytes: result.sizeBytes || null
+    };
+
+    this.deliveryLedger.set(key, deliveryRecord);
+
+    if (result.status === "DELIVERED") {
+      this.lastSuccessfulDeliveryAt = now;
+    }
+
+    // Keep permanent record updated
+    this.recordPermanentItem(item, {
+      status: result.status || "DELIVERED",
+      isDelivered: result.status === "DELIVERED",
+      destinationChannel: destinationChannelId,
+      deliveredAt: result.status === "DELIVERED" ? now : null,
+      telegramMessageId: result.telegramMessageId || null
+    });
+
+    this.saveState();
+    return deliveryRecord;
+  }
+
+  /**
+   * Returns current round-robin channel pointer (1 to 10)
+   * @returns {number}
+   */
+  getRoundRobinPointer() {
+    return this.roundRobinPointer;
+  }
+
+  /**
+   * Sets round-robin pointer explicitly (1 to 10)
+   * @param {number} idx 
+   */
+  setRoundRobinPointer(idx) {
+    const val = parseInt(idx, 10);
+    if (!isNaN(val) && val >= 1 && val <= 10) {
+      this.roundRobinPointer = val;
+    } else {
+      this.roundRobinPointer = 1;
+    }
+    this.saveState();
+  }
+
+  /**
+   * Advances the round-robin pointer sequentially: 1 -> 2 -> ... -> 10 -> 1
+   * @returns {number} New pointer position
+   */
+  advanceRoundRobinPointer() {
+    this.roundRobinPointer = (this.roundRobinPointer % 10) + 1;
+    this.saveState();
+    return this.roundRobinPointer;
+  }
+
+  /**
+   * Enqueues newly discovered candidate posts into the persistent FIFO queue.
+   * Filters out candidates already in queue or already DELIVERED to that destination.
+   * @param {Array<object>} candidates 
+   * @returns {{ enqueued: number, totalInQueue: number }}
+   */
+  enqueueCandidates(candidates) {
+    if (!Array.isArray(candidates)) return { enqueued: 0, totalInQueue: this.candidateQueue.length };
+    let enqueued = 0;
+
+    for (const item of candidates) {
+      if (!item || typeof item !== "object") continue;
+      const sId = String(item.sourceItemId || item.itemId || item.id || "").trim();
+      if (!sId) continue;
+
+      const destChannelId = item.destinationChannelId || item.destinationChannel || null;
+      const channelIndex = typeof item.channelIndex === "number" ? item.channelIndex : 1;
+
+      // Check if already DELIVERED for this destination
+      if (destChannelId && this.isDeliveredToDestination(sId, destChannelId)) {
+        continue;
+      }
+
+      // Check if already in candidate queue
+      const inQueue = this.candidateQueue.some(
+        q => String(q.sourceItemId || q.itemId || q.id) === sId && String(q.destinationChannelId || "") === String(destChannelId || "")
+      );
+      if (inQueue) continue;
+
+      this.candidateQueue.push({
+        sourceItemId: sId,
+        itemId: sId,
+        sourceId: item.sourceId || "external_source",
+        title: item.title || "",
+        pageUrl: item.pageUrl || "",
+        mediaUrl: item.mediaUrl || null,
+        topicKey: item.topicKey || "General",
+        koreanName: item.koreanName || "",
+        cardNum: item.cardNum || null,
+        channelIndex: channelIndex,
+        destinationChannelId: destChannelId,
+        destinationUsername: item.destinationUsername || null,
+        discoveredAt: item.discoveredAt || new Date().toISOString(),
+        retryCount: 0,
+        nextRetryAt: null,
+        status: "QUEUED"
+      });
+
+      enqueued++;
+    }
+
+    if (enqueued > 0) {
+      this.saveState();
+    }
+
+    return { enqueued, totalInQueue: this.candidateQueue.length };
+  }
+
+  /**
+   * Checks if candidate queue has pending eligible items for a specific channel
+   * @param {number} channelIndex (1 to 10)
+   * @returns {boolean}
+   */
+  hasPendingForChannel(channelIndex) {
+    const idx = parseInt(channelIndex, 10);
+    const now = Date.now();
+    return this.candidateQueue.some(
+      q => q.channelIndex === idx && (!q.nextRetryAt || now >= new Date(q.nextRetryAt).getTime())
+    );
+  }
+
+  /**
+   * Pops the next pending eligible candidate for the specified channelIndex from candidateQueue.
+   * @param {number} channelIndex (1 to 10)
+   * @returns {object|null}
+   */
+  popNextForChannel(channelIndex) {
+    const idx = parseInt(channelIndex, 10);
+    const now = Date.now();
+    const itemIndex = this.candidateQueue.findIndex(
+      q => q.channelIndex === idx && (!q.nextRetryAt || now >= new Date(q.nextRetryAt).getTime())
+    );
+
+    if (itemIndex >= 0) {
+      const [item] = this.candidateQueue.splice(itemIndex, 1);
+      this.saveState();
+      return item;
+    }
+
+    return null;
+  }
+
+  /**
+   * Re-queues a failed item for retry with backoff.
+   * @param {object} item 
+   * @param {number} [backoffMs=60000]
+   */
+  requeueForRetry(item, backoffMs = 60000) {
+    if (!item) return;
+    const sId = String(item.sourceItemId || item.itemId || item.id || "").trim();
+    const retryCount = (item.retryCount || 0) + 1;
+
+    if (retryCount <= 3) {
+      this.candidateQueue.push({
+        ...item,
+        retryCount,
+        nextRetryAt: new Date(Date.now() + backoffMs).toISOString(),
+        status: "RETRYABLE"
+      });
+    } else {
+      this.recordDeliveryResult(item, item.destinationChannelId, {
+        status: "FAILED_MAX_RETRIES",
+        error: "Exceeded 3 download/processing retry attempts"
+      });
+    }
+    this.saveState();
+  }
+
+  /**
+   * Returns summary metrics of the candidate queue
+   * @returns {object}
+   */
+  getQueueStatus() {
+    const counts = {};
+    for (let i = 1; i <= 10; i++) counts[i] = 0;
+    this.candidateQueue.forEach(q => {
+      const ch = q.channelIndex || 1;
+      counts[ch] = (counts[ch] || 0) + 1;
+    });
+
+    return {
+      queueLength: this.candidateQueue.length,
+      roundRobinPointer: this.roundRobinPointer,
+      pendingByChannel: counts,
+      lastSuccessfulDeliveryAt: this.lastSuccessfulDeliveryAt
+    };
+  }
+
   /**
    * Clears state completely (primarily for testing)
    */
   clear() {
     this.records.clear();
+    this.deliveryLedger.clear();
+    this.candidateQueue = [];
+    this.roundRobinPointer = 1;
+    this.lastSuccessfulDeliveryAt = null;
     this.urlIndex.clear();
     this.retainedPool = [];
     this.lastSuccessfulPollAt = null;

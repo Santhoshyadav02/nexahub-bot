@@ -19,7 +19,7 @@ const { ExternalSourcePublisher } = require("./external_source_publisher");
 const { ExternalSourceState, MAX_GLOBAL_RETENTION } = require("./external_source_state");
 const { getDestinationForTopic } = require("./external_source_destinations");
 
-const POLLING_INTERVAL_MS = 30 * 60 * 1000; // Exact 30 minutes (1,800,000 ms)
+const POLLING_INTERVAL_MS = 20 * 60 * 1000; // Exact 20 minutes (1,200,000 ms)
 
 function createDefaultAdapter(config = {}) {
   const sourceType = (config.sourceType || process.env.EXTERNAL_SOURCE_TYPE || "avsee").toLowerCase();
@@ -322,7 +322,7 @@ class ExternalSourcePipeline {
         console.log(`[EXTERNAL_SOURCE] selected: ${summary.queued}`);
         console.log(`[EXTERNAL_SOURCE] daily quota: ${summary.externalDeliveredToday}/${this.stateStore.externalDailyTarget}`);
       }
-      console.log(`[EXTERNAL_SOURCE] next check in 30 minutes`);
+      console.log(`[EXTERNAL_SOURCE] next check in 20 minutes`);
       console.log(`[EXTERNAL_SOURCE] poll complete`);
     }
 
@@ -334,7 +334,7 @@ class ExternalSourcePipeline {
   // ============================================================
 
   /**
-   * Starts the 30-minute recurring scheduler.
+   * Starts the 20-minute recurring scheduler.
    * Protected against double initialization and overlapping instances.
    * @param {object} [options]
    * @param {boolean} [options.immediate=true] Whether to run an immediate initial cycle on start
@@ -353,7 +353,7 @@ class ExternalSourcePipeline {
       : { configDetected: Boolean(this.adapter && this.adapter.isAuthorized), validationPass: Boolean(this.adapter && this.adapter.isAuthorized) };
 
     console.log(`[EXTERNAL_SOURCE] scheduler initialized`);
-    console.log(`[EXTERNAL_SOURCE] polling interval: 30 minutes`);
+    console.log(`[EXTERNAL_SOURCE] polling interval: 20 minutes`);
     if (authStatus.configDetected && authStatus.validationPass) {
       console.log(`[EXTERNAL_SOURCE] authorization: CONFIGURED & VERIFIED`);
     } else if (authStatus.configDetected) {

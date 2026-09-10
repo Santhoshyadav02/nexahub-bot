@@ -21,6 +21,7 @@ const fs = require("fs");
 const { discoverBoardPosts, filterNewPosts } = require("./board_discovery");
 const { AvseePipelineOrchestrator, PIPELINE_STATES } = require("./pipeline_orchestrator");
 const { redactUrl } = require("./player_resolver");
+const { getDestinationForTopic } = require("../external_source_destinations");
 
 const WORKER_STATES = Object.freeze({
   IDLE: "IDLE",
@@ -31,9 +32,10 @@ const WORKER_STATES = Object.freeze({
 });
 
 const DEFAULT_WORKER_CONFIG = Object.freeze({
-  pollIntervalMs: parseInt(process.env.EXTERNAL_SOURCE_POLL_INTERVAL_MS, 10) || 30 * 60 * 1000,
+  pollIntervalMs: parseInt(process.env.EXTERNAL_SOURCE_POLL_INTERVAL_MS, 10) || 20 * 60 * 1000, // Exact 20 minutes (1,200,000 ms)
   dryRun: process.env.AVSEE_DRY_RUN !== "false",
   maxConsecutiveFailures: 5,
+  discoveryBatchLimit: 100, // Maximum 100 candidates per scraping poll
   timeouts: {
     boardDiscoveryTimeoutMs: 30000,
     playerResolutionTimeoutMs: 30000,
@@ -51,6 +53,7 @@ class AvseeAutomatedWorker {
     this.pollIntervalMs = config.pollIntervalMs || DEFAULT_WORKER_CONFIG.pollIntervalMs;
     this.dryRun = config.dryRun !== undefined ? Boolean(config.dryRun) : DEFAULT_WORKER_CONFIG.dryRun;
     this.maxConsecutiveFailures = config.maxConsecutiveFailures || DEFAULT_WORKER_CONFIG.maxConsecutiveFailures;
+    this.discoveryBatchLimit = config.discoveryBatchLimit || DEFAULT_WORKER_CONFIG.discoveryBatchLimit;
 
     this.timeouts = {
       ...DEFAULT_WORKER_CONFIG.timeouts,
@@ -79,6 +82,7 @@ class AvseeAutomatedWorker {
     this.lastSuccessAt = null;
     this.lastFailureAt = null;
     this.lastProcessedPostId = null;
+    this.lastProcessedChannel = null;
     this.lastError = null;
     this.consecutiveFailures = 0;
     this.totalRuns = 0;
@@ -124,9 +128,9 @@ class AvseeAutomatedWorker {
   async runOnce(options = {}) {
     const runId = this._generateRunId();
 
-    // 1. Mutex Guard: Reject overlapping runs
+    // 1. Mutex Guard: Reject overlapping runs (preserves long-running downloads)
     if (this.isExecutionLocked) {
-      console.warn(`⚠️ [WORKER_MUTEX] [${runId}] Another worker run is already active. Action: SKIP_OVERLAPPING_RUN`);
+      console.warn(`⏳ [WORKER_MUTEX] [${runId}] Another download or worker run is already active. Action: SKIP_SLOT_PRESERVE_ACTIVE_DOWNLOAD`);
       return {
         success: false,
         runId,
@@ -150,7 +154,7 @@ class AvseeAutomatedWorker {
     this.totalRuns++;
 
     console.log(`\n============================================================`);
-    console.log(`⚙️ [WORKER RUN START] ${runId} | Time: ${this.lastRunAt}`);
+    console.log(`⚙️ [WORKER RUN START] ${runId} | Time: ${this.lastRunAt} | Interval: ${this.pollIntervalMs}ms`);
     console.log(`============================================================`);
 
     try {
@@ -163,7 +167,10 @@ class AvseeAutomatedWorker {
         if (cycleResult.selectedPostId) {
           this.lastProcessedPostId = cycleResult.selectedPostId;
         }
-      } else if (cycleResult.status !== "NO_NEW_POSTS" && cycleResult.status !== "SKIPPED_DUPLICATE") {
+        if (cycleResult.channelIndex) {
+          this.lastProcessedChannel = cycleResult.channelIndex;
+        }
+      } else if (cycleResult.status !== "NO_NEW_POSTS" && cycleResult.status !== "SKIPPED_DUPLICATE" && cycleResult.status !== "CHANNEL_SKIPPED_EMPTY") {
         this.consecutiveFailures++;
         this.lastFailureAt = new Date().toISOString();
         this.lastError = cycleResult.error || "Unknown cycle failure";
@@ -197,54 +204,74 @@ class AvseeAutomatedWorker {
   }
 
   /**
-   * Internal cycle execution logic
+   * Internal cycle execution logic with persistent round-robin channel rotation
    * @private
    */
   async _executeCycle(runId, options = {}) {
-    const targetBoardUrl = options.boardUrl || this.boardUrl;
-    console.log(`[${runId}] Step 1: Discovering board listings from ${redactUrl(targetBoardUrl)}...`);
+    const stateStore = this.orchestrator.stateStore;
+    const currentChannel = stateStore.getRoundRobinPointer();
+    console.log(`[${runId}] [ROUND_ROBIN] Current Channel Slot: Channel ${currentChannel}/10`);
 
-    // 1. Board Discovery
-    const discovery = await discoverBoardPosts(targetBoardUrl, {
-      headless: options.headless !== false,
-      pageTimeoutMs: this.timeouts.boardDiscoveryTimeoutMs,
-      limit: options.limit || 20
-    });
+    // 1. Check if candidate queue has items. If empty, perform discovery poll.
+    if (!stateStore.candidateQueue || stateStore.candidateQueue.length === 0 || options.forceDiscovery === true) {
+      const targetBoardUrl = options.boardUrl || this.boardUrl;
+      console.log(`[${runId}] Candidate backlog is empty. Discovering board listings from ${redactUrl(targetBoardUrl)} (limit: ${this.discoveryBatchLimit})...`);
 
-    if (!discovery.success) {
-      console.warn(`[${runId}] Discovery failed: ${discovery.error}`);
-      return {
-        success: false,
-        runId,
-        status: "DISCOVERY_FAILED",
-        error: discovery.error
-      };
+      const discovery = await discoverBoardPosts(targetBoardUrl, {
+        headless: options.headless !== false,
+        pageTimeoutMs: this.timeouts.boardDiscoveryTimeoutMs,
+        limit: options.limit || this.discoveryBatchLimit
+      });
+
+      if (discovery.success && Array.isArray(discovery.posts)) {
+        console.log(`[${runId}] Discovered ${discovery.posts.length} raw post(s) on board`);
+
+        // Classify and map candidates to channels
+        const classifiedCandidates = [];
+        for (const raw of discovery.posts) {
+          const match = this.orchestrator.adapter.matchTopic(raw);
+          const dest = getDestinationForTopic(match.topicKey);
+          classifiedCandidates.push({
+            ...raw,
+            topicKey: match.topicKey,
+            koreanName: match.koreanName,
+            cardNum: match.cardNum,
+            channelIndex: dest.channelIndex || 1,
+            destinationChannelId: dest.destinationChannelId,
+            destinationUsername: dest.destinationUsername
+          });
+        }
+
+        const enqueueResult = stateStore.enqueueCandidates(classifiedCandidates);
+        console.log(`[${runId}] Enqueued ${enqueueResult.enqueued} new eligible candidate(s) (Queue Size: ${enqueueResult.totalInQueue})`);
+      } else {
+        console.warn(`[${runId}] Discovery attempt completed with status: ${discovery.error || "no posts"}`);
+      }
     }
 
-    const allPosts = discovery.posts || [];
-    console.log(`[${runId}] Discovered ${allPosts.length} post(s) on board`);
+    // 2. Pop next candidate for the active round-robin channel
+    const selectedCandidate = stateStore.popNextForChannel(currentChannel);
 
-    // 2. Dedupe Filtering
-    const newPosts = filterNewPosts(allPosts, this.orchestrator.stateStore);
-    console.log(`[${runId}] Found ${newPosts.length} new un-seen post(s)`);
+    if (!selectedCandidate) {
+      console.log(`[${runId}] [ROUND_ROBIN] Channel ${currentChannel} has no pending items. Skipping safely and advancing rotation.`);
+      const nextPointer = stateStore.advanceRoundRobinPointer();
+      console.log(`[${runId}] [ROUND_ROBIN] Advanced pointer to Channel ${nextPointer}/10 for next 20m slot.`);
 
-    if (newPosts.length === 0) {
-      console.log(`[${runId}] No new posts to process. Waiting for next interval.`);
       return {
         success: true,
         runId,
-        status: "NO_NEW_POSTS",
-        discoveredCount: allPosts.length,
-        newPostsCount: 0
+        status: "CHANNEL_SKIPPED_EMPTY",
+        channelIndex: currentChannel,
+        nextChannelIndex: nextPointer,
+        queueStatus: stateStore.getQueueStatus()
       };
     }
 
-    // 3. Process the newest un-seen post
-    const selectedPost = newPosts[0];
-    const selectedPostId = selectedPost.itemId || selectedPost.postId;
-    console.log(`[${runId}] Step 2: Processing post "${selectedPost.title}" (${selectedPostId})...`);
+    // 3. Process the selected post through the complete pipeline
+    const selectedPostId = selectedCandidate.sourceItemId || selectedCandidate.itemId || selectedCandidate.id;
+    console.log(`[${runId}] Processing Channel ${currentChannel} item "${selectedCandidate.title}" (${selectedPostId})...`);
 
-    const pipelineResult = await this.orchestrator.processAuthorizedPost(selectedPost, {
+    const pipelineResult = await this.orchestrator.processAuthorizedPost(selectedCandidate, {
       pageTimeoutMs: this.timeouts.playerResolutionTimeoutMs,
       playerTimeoutMs: this.timeouts.playerResolutionTimeoutMs,
       logDiagnostics: options.logDiagnostics !== undefined ? options.logDiagnostics : false
@@ -252,24 +279,43 @@ class AvseeAutomatedWorker {
 
     if (!pipelineResult || !pipelineResult.success) {
       console.warn(`[${runId}] Pipeline processing failed for ${selectedPostId}: ${pipelineResult ? pipelineResult.error : "Unknown"}`);
+
+      // Re-queue with backoff or mark failed; do NOT mark DELIVERED
+      stateStore.requeueForRetry(selectedCandidate, 60000);
+      const nextPointer = stateStore.advanceRoundRobinPointer();
+
       return {
         success: false,
         runId,
         selectedPostId,
+        channelIndex: currentChannel,
+        nextChannelIndex: nextPointer,
         status: pipelineResult ? pipelineResult.pipelineState : "PIPELINE_FAILED",
         error: pipelineResult ? pipelineResult.error : "Pipeline failed",
         pipelineResult
       };
     }
 
-    console.log(`[${runId}] Pipeline processing successful for ${selectedPostId}. Ledger Decision: ${pipelineResult.ledgerDecision}`);
+    // 4. Successful delivery: Record in destination-specific ledger and advance round-robin pointer
+    stateStore.recordDeliveryResult(selectedCandidate, selectedCandidate.destinationChannelId, {
+      status: "DELIVERED",
+      telegramMessageId: pipelineResult.telegramMessageId || null,
+      duration: pipelineResult.downloadedDuration || null,
+      sizeBytes: pipelineResult.sizeBytes || null
+    });
+
+    const nextPointer = stateStore.advanceRoundRobinPointer();
+    console.log(`[${runId}] Successfully delivered ${selectedPostId} to Channel ${currentChannel}. Advanced pointer to Channel ${nextPointer}/10.`);
 
     return {
       success: true,
       runId,
       selectedPostId,
+      channelIndex: currentChannel,
+      nextChannelIndex: nextPointer,
       status: pipelineResult.pipelineState || "SUCCESS",
-      pipelineResult
+      pipelineResult,
+      queueStatus: stateStore.getQueueStatus()
     };
   }
 

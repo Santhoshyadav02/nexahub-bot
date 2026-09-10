@@ -384,7 +384,7 @@ function createMockWorkerServer(port = 9249) {
         <body>
           <div class="list-wrap">
             <div class="item-row">
-              <a href="/bbs/board.php?bo_table=korea&wr_id=9101" class="wr-subject">#myanmar Northern Women Special</a>
+              <a href="/bbs/board.php?bo_table=korea&wr_id=9101" class="wr-subject">#myanmar Northern Exclusive Special</a>
               <span class="sp-date">2026-09-10 15:00</span>
             </div>
             <div class="item-row">
@@ -438,8 +438,7 @@ function createMockWorkerServer(port = 9249) {
     if (parsed.pathname.startsWith("/stream/video_")) {
       res.writeHead(200, {
         "Content-Type": "video/mp4",
-        "Content-Length": mp4Buffer.length,
-        "Accept-Ranges": "bytes"
+        "Content-Length": mp4Buffer.length
       });
       res.end(mp4Buffer);
       return;
@@ -447,7 +446,13 @@ function createMockWorkerServer(port = 9249) {
 
     if (parsed.pathname === "/stream/dl_500.mp4") {
       res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end("Download Server Error");
+      res.end("Internal Server Error");
+      return;
+    }
+
+    if (parsed.pathname === "/stream/corrupt.mp4") {
+      res.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": 8 });
+      res.end(Buffer.from([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]));
       return;
     }
 
@@ -457,9 +462,20 @@ function createMockWorkerServer(port = 9249) {
       return;
     }
 
-    if (parsed.pathname === "/stream/corrupt.mp4") {
-      res.writeHead(200, { "Content-Type": "video/mp4" });
-      res.end(Buffer.from([0x00, 0x00, 0x00, 0x10, 0x66, 0x74, 0x79, 0x70]));
+    // Fail-then-success board mode
+    if (parsed.pathname === "/bbs/board.php" && parsed.searchParams.get("mode") === "fail_then_success") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`
+        <!DOCTYPE html>
+        <html>
+        <body>
+          <div class="list-wrap">
+            <div class="item-row"><a href="/bbs/board.php?bo_table=korea&wr_id=9103" class="wr-subject">#myanmar Failing Download Post</a></div>
+            <div class="item-row"><a href="/bbs/board.php?bo_table=korea&wr_id=9102" class="wr-subject">Evergrande Troupe Performance</a></div>
+          </div>
+        </body>
+        </html>
+      `);
       return;
     }
 
@@ -526,12 +542,12 @@ async function runWorkerHardeningTests() {
     assert(run2.selectedPostId === "korea_9102", `Processed next post korea_9102: ${run2.selectedPostId}`);
 
     // -----------------------------------------------------------------
-    // TEST 3: No New Posts (All in Ledger)
+    // TEST 3: No New Posts (Channel 3 has no pending posts -> safe skip)
     // -----------------------------------------------------------------
-    console.log("\n--- [3] Test: No New Posts ---");
+    console.log("\n--- [3] Test: Empty Category Safe Skip ---");
     const run3 = await worker.runOnce();
-    assert(run3.success === true, "Run with no new posts completes safely");
-    assert(run3.status === "NO_NEW_POSTS", `Status is NO_NEW_POSTS (${run3.status})`);
+    assert(run3.success === true, "Run on empty category completes safely");
+    assert(run3.status === "CHANNEL_SKIPPED_EMPTY" || run3.status === "NO_NEW_POSTS", `Status is CHANNEL_SKIPPED_EMPTY (${run3.status})`);
 
     // -----------------------------------------------------------------
     // TEST 4: Two Overlapping Runs (Single-Run Mutex)

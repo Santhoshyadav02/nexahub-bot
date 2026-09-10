@@ -78,7 +78,7 @@ async function runTests() {
     adapter: adapter,
     publisher: publisher,
     stateStore: stateStore,
-    pollingIntervalMs: 30 * 60 * 1000,
+    pollingIntervalMs: 20 * 60 * 1000,
     maxTotalItems: 150,
     dryRun: true
   });
@@ -209,11 +209,11 @@ async function runTests() {
   );
 
   // ----------------------------------------------------
-  // SECTION J: Scheduler remains exactly 30 minutes
+  // SECTION J: Scheduler remains exactly 20 minutes
   // ----------------------------------------------------
   record(
-    "J. Scheduler interval is exactly 30 minutes (1,800,000 ms)",
-    POLLING_INTERVAL_MS === 30 * 60 * 1000 && pipeline.pollingIntervalMs === 1800000
+    "J. Scheduler interval is exactly 20 minutes (1,200,000 ms)",
+    POLLING_INTERVAL_MS === 20 * 60 * 1000 && pipeline.pollingIntervalMs === 1200000
   );
 
   // ----------------------------------------------------
