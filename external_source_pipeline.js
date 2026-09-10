@@ -42,7 +42,7 @@ class ExternalSourcePipeline {
   constructor(config = {}) {
     this.pollingIntervalMs = config.pollingIntervalMs || POLLING_INTERVAL_MS;
     this.maxTotalItems = config.maxTotalItems || MAX_GLOBAL_RETENTION;
-    this.dryRun = config.dryRun !== undefined ? Boolean(config.dryRun) : true;
+    this.dryRun = config.dryRun !== undefined ? Boolean(config.dryRun) : (process.env.AVSEE_DRY_RUN !== "false");
 
     this.stateStore = config.stateStore || new ExternalSourceState({
       maxTotalItems: this.maxTotalItems
