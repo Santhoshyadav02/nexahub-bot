@@ -721,7 +721,10 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
 
   /**
    * Downloads authorized media stream to a temporary directory.
-   * Enforces chunked streaming, file size cap, timeout, and checksum verification.
+   * Enforces chunked streaming, file size cap, activity heartbeat, and checksum verification.
+   * Progressively tracks data flow: NEVER aborts while data is actively streaming.
+   * Aborts only if no bytes are received for inactivityTimeoutMs.
+   * 
    * @param {object} item Normalized item
    * @param {object} [options]
    * @returns {Promise<{ localPath: string, checksum: string, sizeBytes: number }>}
@@ -748,75 +751,144 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     const filename = `${item.uniqueHash || crypto.randomBytes(8).toString("hex")}.mp4`;
     const destPath = path.join(this.tempDir, filename);
 
-    console.log(`📥 [AVSEE] Streaming media for "${item.title}" -> ${filename}`);
+    // Inactivity timeout (resets on every incoming data chunk)
+    const inactivityTimeoutMs = options.inactivityTimeoutMs ||
+      parseInt(process.env.MEDIA_DOWNLOAD_INACTIVITY_TIMEOUT_MS, 10) ||
+      60000; // 60 seconds default inactivity threshold
+
+    const logProgress = options.logProgress !== false;
+    const startTime = Date.now();
+
+    console.log(`📥 [AVSEE] Streaming media for "${item.title}" -> ${filename} (Inactivity timeout: ${inactivityTimeoutMs}ms)`);
 
     return await this.executeWithRetry(async () => {
+      // Clean up any partial file from previous attempts
+      if (fs.existsSync(destPath)) {
+        try { fs.unlinkSync(destPath); } catch (e) {}
+      }
+
       return await new Promise((resolve, reject) => {
+        let isSettled = false;
+        let inactivityTimer = null;
+        let lastByteTimestamp = Date.now();
+        let totalBytes = 0;
+        let lastProgressLogTime = Date.now();
+        const maxBytes = this.maxFileSizeMB * 1024 * 1024;
+        let req = null;
+        let fileStream = null;
+
+        const cleanupAndReject = (err) => {
+          if (isSettled) return;
+          isSettled = true;
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          if (req) {
+            try { req.destroy(); } catch (e) {}
+          }
+          if (fileStream) {
+            try { fileStream.destroy(); } catch (e) {}
+          }
+          if (fs.existsSync(destPath)) {
+            try { fs.unlinkSync(destPath); } catch (e) {}
+          }
+          reject(err);
+        };
+
+        const resetInactivityTimer = () => {
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = setTimeout(() => {
+            const idleMs = Date.now() - lastByteTimestamp;
+            cleanupAndReject(new Error(`Download stalled: no data received for ${idleMs}ms (threshold: ${inactivityTimeoutMs}ms)`));
+          }, inactivityTimeoutMs);
+        };
+
         const parsed = new URL(item.mediaUrl);
         const client = parsed.protocol === "https:" ? https : http;
 
-        const req = client.get(item.mediaUrl, {
+        // Start initial connection inactivity timer
+        resetInactivityTimer();
+
+        req = client.get(item.mediaUrl, {
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": this.apiUrl
-          },
-          timeout: this.timeoutMs * 2
+          }
         }, (res) => {
           if (res.statusCode < 200 || res.statusCode >= 300) {
             res.resume();
-            return reject(new Error(`Download HTTP ${res.statusCode} ${res.statusMessage}`));
+            return cleanupAndReject(new Error(`Download HTTP ${res.statusCode} ${res.statusMessage}`));
           }
 
           const contentType = (res.headers["content-type"] || "").toLowerCase();
           if (contentType.includes("text/html") || contentType.includes("application/json")) {
             res.resume();
-            return reject(new Error(`Invalid content-type "${contentType}". Expected video stream.`));
+            return cleanupAndReject(new Error(`Invalid content-type "${contentType}". Expected video stream.`));
           }
 
-          const fileStream = fs.createWriteStream(destPath);
+          fileStream = fs.createWriteStream(destPath);
           const hash = crypto.createHash("sha256");
-          let totalBytes = 0;
-          const maxBytes = this.maxFileSizeMB * 1024 * 1024;
 
           res.on("data", chunk => {
+            lastByteTimestamp = Date.now();
             totalBytes += chunk.length;
+
+            // Reset inactivity timer on every data packet received
+            resetInactivityTimer();
+
             if (totalBytes > maxBytes) {
-              req.destroy();
-              fileStream.close();
-              if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-              return reject(new Error(`File size exceeded maximum limit of ${this.maxFileSizeMB}MB`));
+              return cleanupAndReject(new Error(`File size exceeded maximum limit of ${this.maxFileSizeMB}MB`));
             }
+
             hash.update(chunk);
             fileStream.write(chunk);
+
+            if (logProgress && Date.now() - lastProgressLogTime > 5000) {
+              lastProgressLogTime = Date.now();
+              const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+              console.log(`[DOWNLOAD_PROGRESS] Received ${(totalBytes / 1024).toFixed(1)} KB in ${elapsedSec}s | State: STREAMING`);
+            }
+          });
+
+          res.on("end", () => {
+            if (isSettled) return;
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+
+            // Wait for file stream flush
+            fileStream.end();
           });
 
           fileStream.on("finish", () => {
+            if (isSettled) return;
+            isSettled = true;
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+
+            if (!fs.existsSync(destPath)) {
+              return reject(new Error("Download completed but destination file is missing"));
+            }
+
+            const stat = fs.statSync(destPath);
+            if (stat.size === 0 || stat.size !== totalBytes) {
+              if (fs.existsSync(destPath)) try { fs.unlinkSync(destPath); } catch (e) {}
+              return reject(new Error(`Download size mismatch: received ${totalBytes} bytes, file on disk is ${stat.size} bytes`));
+            }
+
             const checksum = hash.digest("hex");
+            const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+            console.log(`[DOWNLOAD_PROGRESS] Completed: ${totalBytes} bytes in ${elapsedSec}s | State: FINISHED | Checksum: ${checksum}`);
+
             resolve({
               localPath: destPath,
               checksum: checksum,
               sizeBytes: totalBytes,
+              elapsedSeconds: elapsedSec,
               dryRun: false
             });
           });
 
-          res.on("end", () => {
-            fileStream.end();
-          });
-
-          res.on("error", err => {
-            fileStream.close();
-            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-            reject(err);
-          });
+          res.on("error", cleanupAndReject);
+          fileStream.on("error", cleanupAndReject);
         });
 
-        req.on("error", reject);
-        req.on("timeout", () => {
-          req.destroy();
-          if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-          reject(new Error(`Download timed out after ${this.timeoutMs * 2}ms`));
-        });
+        req.on("error", cleanupAndReject);
       });
     });
   }
