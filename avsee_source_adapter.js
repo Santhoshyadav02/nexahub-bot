@@ -88,6 +88,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         "avsee.tv",
         "cdn.apiavsee.com",
         "apiavsee.com",
+        "data.cdn.avsee.is",
         "authorized-cdn.com"
       ],
       isAuthorized: isAuthorized,
@@ -640,6 +641,28 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
           iframes
         };
       });
+
+      // Attempt to capture initialized player stream URL from child frame if ready
+      try {
+        const frames = page.frames();
+        const playerFrame = frames.find(f => f.url().includes("player.php"));
+        if (playerFrame) {
+          const streamUrl = await playerFrame.evaluate(() => {
+            const v = document.querySelector("video");
+            if (v && (v.currentSrc || v.src)) return v.currentSrc || v.src;
+            const jw = window.jwplayer ? window.jwplayer() : null;
+            if (jw && typeof jw.getPlaylistItem === "function") {
+              const item = jw.getPlaylistItem();
+              if (item && item.file) return item.file;
+            }
+            return null;
+          }).catch(() => null);
+
+          if (streamUrl && typeof streamUrl === "string" && (streamUrl.startsWith("http://") || streamUrl.startsWith("https://"))) {
+            parsed.videoSrc = streamUrl;
+          }
+        }
+      } catch (e) {}
 
       // Extract itemId from URL
       const wrMatch = pageUrl.match(/wr_id=(\d+)/);
