@@ -767,8 +767,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
             fileStream.write(chunk);
           });
 
-          res.on("end", () => {
-            fileStream.end();
+          fileStream.on("finish", () => {
             const checksum = hash.digest("hex");
             resolve({
               localPath: destPath,
@@ -776,6 +775,10 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
               sizeBytes: totalBytes,
               dryRun: false
             });
+          });
+
+          res.on("end", () => {
+            fileStream.end();
           });
 
           res.on("error", err => {
