@@ -1,0 +1,108 @@
+{
+  "phase": "4D",
+  "timestamp": "2026-09-11T18:30:16.061Z",
+  "authorizedTest": true,
+  "discovery": {
+    "batchLimit": 100,
+    "totalDiscovered": 10,
+    "enqueued": 10
+  },
+  "categoryQueue": {
+    "capacity": 150,
+    "totalQueued": 2,
+    "byCategory": {
+      "cat_1": 10,
+      "cat_2": 10,
+      "cat_3": 5,
+      "cat_4": 8,
+      "cat_5": 9,
+      "cat_6": 10,
+      "cat_7": 10,
+      "cat_8": 10,
+      "cat_9": 10,
+      "cat_10": 10
+    }
+  },
+  "sidebarFallback": {
+    "active": true,
+    "verified": true
+  },
+  "roundRobin": {
+    "sequence": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "initialPointer": 1,
+    "finalPointer": 6,
+    "pointerPersistence": true
+  },
+  "quotas": {
+    "perChannel24h": 10,
+    "global24h": 100,
+    "channelUsage": {
+      "1": 0,
+      "2": 0,
+      "3": 5,
+      "4": 2,
+      "5": 1,
+      "6": 0,
+      "7": 0,
+      "8": 0,
+      "9": 0,
+      "10": 0
+    },
+    "globalUsage": 8
+  },
+  "mediaPipeline": {
+    "playerResolution": "PASS",
+    "streamingDownload": "PASS",
+    "eofFlush": "PASS",
+    "deepMp4Validation": "PASS",
+    "durationGuard": "PASS"
+  },
+  "metadata": {
+    "koreanTitleMapping": "PASS",
+    "durationAndResolution": "PASS"
+  },
+  "dedupe": {
+    "verified": true,
+    "zeroQuotaOnDuplicate": true
+  },
+  "ledger": {
+    "orderedProgression": "PASS",
+    "finalState": "DELIVERED"
+  },
+  "stagingDelivery": {
+    "verified": true,
+    "simulated": true
+  },
+  "readBack": {
+    "verified": true,
+    "messageCount": 23
+  },
+  "restartRecovery": {
+    "verified": true
+  },
+  "failureRecovery": {
+    "http500Handled": true,
+    "pointerPreserved": true,
+    "zeroQuotaConsumed": true
+  },
+  "mediaDownloaded": 0,
+  "productionTelegramPublished": 0,
+  "railwayTouched": false,
+  "summary": {
+    "totalTests": 24,
+    "passed": 24,
+    "failed": 0,
+    "finalStatus": "PASS"
+  }
+}

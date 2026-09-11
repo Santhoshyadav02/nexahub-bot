@@ -1,0 +1,323 @@
+{
+  "phase": "4E",
+  "timestamp": "2026-09-11T18:30:04.946Z",
+  "health": {
+    "state": "IDLE",
+    "currentSourcePostId": "javleak_601",
+    "currentCategory": "cat_6",
+    "currentDestination": "-1002000000006",
+    "currentQueueDepth": 8,
+    "roundRobinPointer": 7,
+    "globalQuotaUsage": 2,
+    "perChannelQuotaUsage": 0,
+    "consecutiveFailures": 0,
+    "lastSuccessfulDelivery": "2026-09-11T18:30:04.943Z",
+    "lastSuccessfulDiscovery": "2026-09-11T18:29:59.850Z",
+    "lastWorkerTick": "2026-09-11T18:30:04.542Z",
+    "downloadProgress": {
+      "bytesReceived": 0,
+      "startedAt": null,
+      "elapsedMs": 0,
+      "speedBytesPerSec": 0
+    }
+  },
+  "metrics": {
+    "counters": {
+      "discovered": 10,
+      "queued": 10,
+      "duplicates": 0,
+      "skipped": 1,
+      "processing": 15,
+      "downloadStarted": 14,
+      "downloadCompleted": 14,
+      "downloadFailed": 0,
+      "validationPassed": 14,
+      "validationFailed": 0,
+      "deliveryStarted": 14,
+      "deliverySucceeded": 14,
+      "deliveryFailed": 1,
+      "quotaBlocked": 0,
+      "emptyCategorySkipped": 0,
+      "sidebarFallbackUsed": 0,
+      "retries": 0,
+      "cleanupCompleted": 14
+    },
+    "timings": {
+      "discoveryDuration": {
+        "count": 1,
+        "avgMs": 2636,
+        "minMs": 2636,
+        "maxMs": 2636
+      },
+      "playerResolutionDuration": {
+        "count": 15,
+        "avgMs": 314,
+        "minMs": 272,
+        "maxMs": 389
+      },
+      "downloadDuration": {
+        "count": 14,
+        "avgMs": 8,
+        "minMs": 3,
+        "maxMs": 27
+      },
+      "validationDuration": {
+        "count": 14,
+        "avgMs": 1,
+        "minMs": 0,
+        "maxMs": 2
+      },
+      "deliveryDuration": {
+        "count": 14,
+        "avgMs": 0,
+        "minMs": 0,
+        "maxMs": 1
+      },
+      "fullPipelineDuration": {
+        "count": 15,
+        "avgMs": 335,
+        "minMs": 294,
+        "maxMs": 402
+      }
+    }
+  },
+  "queue": {
+    "totalQueued": 8,
+    "maxCapacity": 150,
+    "capacityAvailable": 142,
+    "completedCount": 14,
+    "byCategory": {
+      "cat_1": {
+        "categoryId": "cat_1",
+        "categoryCode": "myanmar",
+        "categoryName": "Myanmar Documentary",
+        "channelIndex": 1,
+        "destinationChannelId": "-1002000000001",
+        "status": "ACTIVE",
+        "queueLength": 0,
+        "items": []
+      },
+      "cat_2": {
+        "categoryId": "cat_2",
+        "categoryCode": "evergrande",
+        "categoryName": "Evergrande Troupe Arts",
+        "channelIndex": 2,
+        "destinationChannelId": "-1002000000002",
+        "status": "ACTIVE",
+        "queueLength": 0,
+        "items": []
+      },
+      "cat_3": {
+        "categoryId": "cat_3",
+        "categoryCode": "korea",
+        "categoryName": "Korean Media Feature",
+        "channelIndex": 3,
+        "destinationChannelId": "-1002000000003",
+        "status": "ACTIVE",
+        "queueLength": 1,
+        "items": [
+          {
+            "sourcePostId": "korea_quota_e_10",
+            "title": "Korea Item E10",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      },
+      "cat_4": {
+        "categoryId": "cat_4",
+        "categoryCode": "caption",
+        "categoryName": "Captioned Series",
+        "channelIndex": 4,
+        "destinationChannelId": "-1002000000004",
+        "status": "ACTIVE",
+        "queueLength": 1,
+        "items": [
+          {
+            "sourcePostId": "caption_atomic_501",
+            "title": "Caption Atomic Test",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      },
+      "cat_5": {
+        "categoryId": "cat_5",
+        "categoryCode": "javc",
+        "categoryName": "Asian Cinema Classics",
+        "channelIndex": 5,
+        "destinationChannelId": "-1002000000005",
+        "status": "ACTIVE",
+        "queueLength": 2,
+        "items": [
+          {
+            "sourcePostId": "javc_501",
+            "title": "#javc Asian Feature",
+            "status": "RETRY_PENDING",
+            "retryCount": 1,
+            "discoverySource": "MAIN_BOARD"
+          },
+          {
+            "sourcePostId": "fail_post_777",
+            "title": "Fail 500 Test",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      },
+      "cat_6": {
+        "categoryId": "cat_6",
+        "categoryCode": "javleak",
+        "categoryName": "Special Releases",
+        "channelIndex": 6,
+        "destinationChannelId": "-1002000000006",
+        "status": "ACTIVE",
+        "queueLength": 0,
+        "items": []
+      },
+      "cat_7": {
+        "categoryId": "cat_7",
+        "categoryCode": "javfc2",
+        "categoryName": "Independent Creator Works",
+        "channelIndex": 7,
+        "destinationChannelId": "-1002000000007",
+        "status": "ACTIVE",
+        "queueLength": 1,
+        "items": [
+          {
+            "sourcePostId": "javfc2_701",
+            "title": "#javfc2 Independent Work",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      },
+      "cat_8": {
+        "categoryId": "cat_8",
+        "categoryCode": "western",
+        "categoryName": "Western Feature Cinema",
+        "channelIndex": 8,
+        "destinationChannelId": "-1002000000008",
+        "status": "ACTIVE",
+        "queueLength": 1,
+        "items": [
+          {
+            "sourcePostId": "western_801",
+            "title": "#western Cinema Feature",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      },
+      "cat_9": {
+        "categoryId": "cat_9",
+        "categoryCode": "general",
+        "categoryName": "General Entertainment",
+        "channelIndex": 9,
+        "destinationChannelId": "-1002000000009",
+        "status": "ACTIVE",
+        "queueLength": 1,
+        "items": [
+          {
+            "sourcePostId": "general_901",
+            "title": "#general Entertainment",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      },
+      "cat_10": {
+        "categoryId": "cat_10",
+        "categoryCode": "archive",
+        "categoryName": "Historical Archive",
+        "channelIndex": 10,
+        "destinationChannelId": "-1002000000010",
+        "status": "ACTIVE",
+        "queueLength": 1,
+        "items": [
+          {
+            "sourcePostId": "archive_1001",
+            "title": "#archive Classic Vault",
+            "status": "QUEUED",
+            "retryCount": 0,
+            "discoverySource": "MAIN_BOARD"
+          }
+        ]
+      }
+    },
+    "stats": {
+      "totalEnqueued": 22,
+      "totalDequeued": 15,
+      "totalCompleted": 14,
+      "totalFailed": 0,
+      "totalRetries": 1,
+      "duplicatesBlocked": 1,
+      "capacityRejections": 0,
+      "mismatchesBlocked": 0,
+      "malformedBlocked": 0,
+      "mainBoardDiscovered": 22,
+      "sidebarDiscovered": 0
+    }
+  },
+  "roundRobin": {
+    "currentPointer": 7,
+    "totalChannels": 10,
+    "sequence": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ]
+  },
+  "quotas": {
+    "perChannel24h": 10,
+    "global24h": 100,
+    "globalUsage": 2
+  },
+  "download": {
+    "completionBased": true,
+    "inactivityHeartbeatMs": 60000,
+    "totalTimeout": null
+  },
+  "ledger": {
+    "status": "ATOMIC",
+    "totalCompleted": 14
+  },
+  "recovery": {
+    "stateRestoration": "VERIFIED",
+    "crashResilience": "PASS"
+  },
+  "concurrency": {
+    "mutexLocking": "VERIFIED",
+    "doubleDispatchBlocked": true
+  },
+  "scheduler": {
+    "intervalMs": 1200000,
+    "activeDownloadPreserved": true
+  },
+  "cleanup": {
+    "stalePartFilesCleaned": true,
+    "persistentStateUntouched": true
+  },
+  "productionMediaDownloaded": 0,
+  "productionTelegramPublished": 0,
+  "railwayTouched": false,
+  "summary": {
+    "totalTests": 25,
+    "passed": 25,
+    "failed": 0,
+    "finalStatus": "PASS"
+  }
+}

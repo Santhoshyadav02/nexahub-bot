@@ -119,10 +119,18 @@ async function discoverBoardPosts(boardUrl, options = {}) {
     });
 
     try {
-      await page.goto(boardUrl, {
+      const resp = await page.goto(boardUrl, {
         waitUntil: "domcontentloaded",
         timeout: timeoutMs
       });
+      if (resp && resp.status() >= 400) {
+        return {
+          success: false,
+          boardUrl,
+          posts: [],
+          error: `Board navigation HTTP ${resp.status()}`
+        };
+      }
     } catch (navErr) {
       return {
         success: false,

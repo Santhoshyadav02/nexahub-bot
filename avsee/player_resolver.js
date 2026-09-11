@@ -294,6 +294,23 @@ async function resolvePlayer(postUrl, options = {}) {
       };
     }
 
+    if (navResponse && navResponse.status() >= 400) {
+      log(`Page navigation returned HTTP error status: ${navResponse.status()}`);
+      return {
+        success: false,
+        state: RESOLVER_STATES.PAGE_LOAD_FAILED,
+        error: `Page load failed with HTTP ${navResponse.status()}`,
+        postUrl,
+        playerFrameUrl: null,
+        mediaUrl: null,
+        duration: null,
+        width: null,
+        height: null,
+        readyState: null,
+        networkState: null
+      };
+    }
+
     // 3. Challenge detection and graceful wait
     const challengePresent = await detectChallenge(page);
     if (challengePresent) {

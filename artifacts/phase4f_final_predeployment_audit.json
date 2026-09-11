@@ -1,0 +1,142 @@
+{
+  "phase": "4F",
+  "timestamp": "2026-09-11T18:29:56.766Z",
+  "auditSummary": {
+    "status": "PASS",
+    "totalAssertions": 15,
+    "passedAssertions": 15,
+    "failedAssertions": 0
+  },
+  "architecture": {
+    "status": "VERIFIED",
+    "componentsConnected": 22,
+    "disconnectedComponents": 0
+  },
+  "configuration": {
+    "schedulerIntervalMs": 1200000,
+    "discoveryBatchLimit": 100,
+    "queueCapacityLimit": 150,
+    "channelRollingQuota24h": 10,
+    "globalRollingQuota24h": 100,
+    "legacyQuotaActive": false,
+    "singleActiveDownloadMutex": true,
+    "completionBasedDownloader": true,
+    "inactivityProtectionEnabled": true
+  },
+  "persistence": {
+    "categoryQueueState": "PERSISTENT",
+    "schedulerPointerState": "PERSISTENT",
+    "quotaTimestampState": "PERSISTENT",
+    "dedupeLedgerState": "PERSISTENT",
+    "crashRecoveryVerified": true,
+    "testIsolationVerified": true
+  },
+  "dataflow": {
+    "canonicalPreservation": "VERIFIED",
+    "koreanCardEnrichment": "VERIFIED",
+    "stagingReadBack": "VERIFIED"
+  },
+  "realMedia": {
+    "fixturePath": "scratch/test_30min_h264.mp4",
+    "validContainer": true,
+    "hasVideoTrack": true,
+    "codec": "avc1",
+    "durationSeconds": 1800,
+    "dimensions": "720x1280",
+    "frameCount": 54000,
+    "fileSizeBytes": 440248,
+    "decodable": true
+  },
+  "roundRobin": {
+    "sequence": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "pointerAdvanceOnDeliveredOnly": true,
+    "emptyCategorySkip": true
+  },
+  "quotas": {
+    "perChannelLimit": 10,
+    "globalLimit": 100,
+    "rollingWindowHours": 24,
+    "zeroQuotaOnFailureOrDuplicate": true,
+    "rollingExpiryVerified": true
+  },
+  "dedupe": {
+    "ingestionDedupeVerified": true,
+    "destinationDedupeVerified": true,
+    "sidebarMainBoardCoalesced": true
+  },
+  "download": {
+    "streaming": true,
+    "completionBased": true,
+    "inactivityHeartbeatMs": 60000,
+    "arbitraryTimeoutRemoved": true,
+    "cleanupOnFailure": true
+  },
+  "failureMatrix": {
+    "scenariosTested": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "J",
+      "K",
+      "L",
+      "M",
+      "N",
+      "O",
+      "P",
+      "Q",
+      "R",
+      "S"
+    ],
+    "falseDeliveredCount": 0,
+    "quotaLeakCount": 0,
+    "pointerCorruptionCount": 0
+  },
+  "observability": {
+    "healthModelStates": 12,
+    "structuredLoggingEnabled": true,
+    "correlationIdsPresent": true,
+    "metricsCollectorActive": true,
+    "tokenRedactionVerified": true
+  },
+  "security": {
+    "cloudflareBypass": "NONE",
+    "captchaSolvers": "NONE",
+    "stealthTooling": "NONE",
+    "fingerprintSpoofing": "NONE",
+    "hardcodedCredentials": "NONE",
+    "secretsInArtifacts": "NONE"
+  },
+  "regression": {
+    "telegramSourceIngestion": "UNTOUCHED",
+    "mtprotoLifecycle": "UNTOUCHED",
+    "sourceRegistry": "UNTOUCHED",
+    "rankingAndTrending": "UNTOUCHED",
+    "bot12CardMapping": "ALIGNED",
+    "channelRoutingDefinitions": "PRESERVED"
+  },
+  "git": {
+    "cleanliness": "VERIFIED",
+    "testPollutionReverted": true
+  },
+  "railway": {
+    "deployed": false,
+    "modified": false
+  }
+}

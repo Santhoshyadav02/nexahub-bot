@@ -1,0 +1,143 @@
+{
+  "phase": "4B",
+  "timestamp": "2026-09-11T18:30:18.717Z",
+  "authorizedTest": true,
+  "categories": [
+    {
+      "categoryId": "cat_1",
+      "categoryCode": "myanmar",
+      "categoryName": "Myanmar Documentary",
+      "channelIndex": 1,
+      "destinationChannelId": "-1002000000001",
+      "status": "ERROR",
+      "queuedCount": 4
+    },
+    {
+      "categoryId": "cat_2",
+      "categoryCode": "evergrande",
+      "categoryName": "Evergrande Troupe Arts",
+      "channelIndex": 2,
+      "destinationChannelId": "-1002000000002",
+      "status": "ACTIVE",
+      "queuedCount": 2
+    },
+    {
+      "categoryId": "cat_3",
+      "categoryCode": "korea",
+      "categoryName": "Korean Media Feature",
+      "channelIndex": 3,
+      "destinationChannelId": "-1002000000003",
+      "status": "ACTIVE",
+      "queuedCount": 1
+    },
+    {
+      "categoryId": "cat_4",
+      "categoryCode": "caption",
+      "categoryName": "Captioned Series",
+      "channelIndex": 4,
+      "destinationChannelId": "-1002000000004",
+      "status": "ACTIVE",
+      "queuedCount": 1
+    },
+    {
+      "categoryId": "cat_5",
+      "categoryCode": "javc",
+      "categoryName": "Asian Cinema Classics",
+      "channelIndex": 5,
+      "destinationChannelId": "-1002000000005",
+      "status": "ACTIVE",
+      "queuedCount": 100
+    },
+    {
+      "categoryId": "cat_6",
+      "categoryCode": "javleak",
+      "categoryName": "Special Releases",
+      "channelIndex": 6,
+      "destinationChannelId": "-1002000000006",
+      "status": "ACTIVE",
+      "queuedCount": 42
+    },
+    {
+      "categoryId": "cat_7",
+      "categoryCode": "javfc2",
+      "categoryName": "Independent Creator Works",
+      "channelIndex": 7,
+      "destinationChannelId": "-1002000000007",
+      "status": "ACTIVE",
+      "queuedCount": 0
+    },
+    {
+      "categoryId": "cat_8",
+      "categoryCode": "western",
+      "categoryName": "Western Feature Cinema",
+      "channelIndex": 8,
+      "destinationChannelId": "-1002000000008",
+      "status": "ACTIVE",
+      "queuedCount": 0
+    },
+    {
+      "categoryId": "cat_9",
+      "categoryCode": "general",
+      "categoryName": "General Entertainment",
+      "channelIndex": 9,
+      "destinationChannelId": "-1002000000009",
+      "status": "ACTIVE",
+      "queuedCount": 0
+    },
+    {
+      "categoryId": "cat_10",
+      "categoryCode": "archive",
+      "categoryName": "Historical Archive",
+      "channelIndex": 10,
+      "destinationChannelId": "-1002000000010",
+      "status": "ACTIVE",
+      "queuedCount": 0
+    }
+  ],
+  "queue": {
+    "total": 150,
+    "maxCapacity": 150,
+    "capacityAvailable": 0,
+    "completedCount": 1,
+    "byCategory": {
+      "cat_1": 4,
+      "cat_2": 2,
+      "cat_3": 1,
+      "cat_4": 1,
+      "cat_5": 100,
+      "cat_6": 42,
+      "cat_7": 0,
+      "cat_8": 0,
+      "cat_9": 0,
+      "cat_10": 0
+    }
+  },
+  "discovery": {
+    "mainBoardDiscovered": 49,
+    "sidebarDiscovered": 102
+  },
+  "duplicatesPrevented": 5,
+  "mismatchesPrevented": 1,
+  "capacityRejections": 1,
+  "restartRecovery": {
+    "verified": true,
+    "processingItemsRecovered": true
+  },
+  "failureRecovery": {
+    "corruptedFileHandled": true,
+    "http500Handled": true
+  },
+  "capacityTest": {
+    "maxLimit": 150,
+    "enforced": true
+  },
+  "mediaDownloaded": 0,
+  "telegramPublished": 0,
+  "railwayTouched": false,
+  "summary": {
+    "totalTests": 22,
+    "passed": 22,
+    "failed": 0,
+    "finalStatus": "PASS"
+  }
+}
