@@ -6,5 +6,16 @@ user_preferences.json
 video_cache.json
 channels_cache.json
 
+# Python artifacts
+__pycache__/
+*.py[cod]
+.venv/
 
+# Video Scrapper runtime artifacts
+video-scrapper/**/browser-profile/
+video-scrapper/**/output/
+video-scrapper/**/downloads/
 
+# Test workspace & runtime artifacts
+scratch/
+artifacts/
