@@ -268,7 +268,7 @@ class CategoryDiscovery {
     }
 
     if (!discoveryRes || !discoveryRes.success) {
-      if (lastError && (lastError.includes('Challenge') || lastError.includes('blocked'))) {
+      if (lastError && (lastError.includes('Challenge') || lastError.includes('blocked') || lastError.includes('403') || lastError.includes('401') || lastError.includes('Forbidden'))) {
         categoryResult.status = CATEGORY_STATUS.BLOCKED;
       } else {
         categoryResult.status = CATEGORY_STATUS.ERROR;

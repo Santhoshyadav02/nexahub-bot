@@ -435,8 +435,11 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     try {
       const browser = await this.launchBrowser();
       const page = await browser.newPage();
-      await page.goto("data:text/html,<html><body><div id='test'>ok</div></body></html>", { timeout: 10000 });
-      const text = await page.$eval("#test", el => el.innerText).catch(() => "");
+      await page.setContent("<html><body><div id='test'>ok</div></body></html>", { timeout: 10000 });
+      const text = await page.evaluate(() => {
+        const el = document.getElementById("test");
+        return el ? el.innerText.trim() : "";
+      }).catch(() => "");
       await page.close();
       await browser.close();
 
@@ -510,7 +513,12 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       });
 
       const response = await page.goto(boardUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
-      console.log(`[AVSEE] listings navigation: PASS (status: ${response ? response.status() : "200"})`);
+      const navStatus = response ? response.status() : 200;
+      if (navStatus >= 400) {
+        console.warn(`[AVSEE] listings navigation: BLOCKED (status: ${navStatus})`);
+        return [];
+      }
+      console.log(`[AVSEE] listings navigation: PASS (status: ${navStatus})`);
 
       await this.waitForTurnstile(page);
       console.log(`[AVSEE] page remained alive`);

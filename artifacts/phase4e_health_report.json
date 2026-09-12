@@ -1,6 +1,6 @@
 {
   "phase": "4E",
-  "timestamp": "2026-09-11T18:30:04.946Z",
+  "timestamp": "2026-09-11T19:29:35.825Z",
   "health": {
     "state": "IDLE",
     "currentSourcePostId": "javleak_601",
@@ -11,9 +11,9 @@
     "globalQuotaUsage": 2,
     "perChannelQuotaUsage": 0,
     "consecutiveFailures": 0,
-    "lastSuccessfulDelivery": "2026-09-11T18:30:04.943Z",
-    "lastSuccessfulDiscovery": "2026-09-11T18:29:59.850Z",
-    "lastWorkerTick": "2026-09-11T18:30:04.542Z",
+    "lastSuccessfulDelivery": "2026-09-11T19:29:35.824Z",
+    "lastSuccessfulDiscovery": "2026-09-11T19:29:30.198Z",
+    "lastWorkerTick": "2026-09-11T19:29:35.452Z",
     "downloadProgress": {
       "bytesReceived": 0,
       "startedAt": null,
@@ -45,39 +45,39 @@
     "timings": {
       "discoveryDuration": {
         "count": 1,
-        "avgMs": 2636,
-        "minMs": 2636,
-        "maxMs": 2636
+        "avgMs": 3495,
+        "minMs": 3495,
+        "maxMs": 3495
       },
       "playerResolutionDuration": {
         "count": 15,
-        "avgMs": 314,
-        "minMs": 272,
-        "maxMs": 389
+        "avgMs": 362,
+        "minMs": 304,
+        "maxMs": 424
       },
       "downloadDuration": {
         "count": 14,
-        "avgMs": 8,
+        "avgMs": 4,
         "minMs": 3,
-        "maxMs": 27
+        "maxMs": 9
       },
       "validationDuration": {
         "count": 14,
         "avgMs": 1,
         "minMs": 0,
-        "maxMs": 2
+        "maxMs": 1
       },
       "deliveryDuration": {
         "count": 14,
         "avgMs": 0,
         "minMs": 0,
-        "maxMs": 1
+        "maxMs": 0
       },
       "fullPipelineDuration": {
         "count": 15,
-        "avgMs": 335,
-        "minMs": 294,
-        "maxMs": 402
+        "avgMs": 373,
+        "minMs": 308,
+        "maxMs": 437
       }
     }
   },
