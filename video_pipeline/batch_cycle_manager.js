@@ -417,6 +417,18 @@ class BatchCycleManager {
     return { status: 'STARTED' };
   }
 
+  startScheduler(intervalMs = DEFAULT_INTERVAL_MS, options = {}) {
+    return this.start(intervalMs, options);
+  }
+
+  isSchedulerActive() {
+    return this._timerId !== null;
+  }
+
+  getLastCycleSummary() {
+    return this._lastCycleSummary;
+  }
+
   _scheduledTick() {
     if (!this._acceptingRuns) return;
     const currentState = this.batchState.getControllerState();
