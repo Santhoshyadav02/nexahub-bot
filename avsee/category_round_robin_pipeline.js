@@ -714,6 +714,9 @@ class CategoryRoundRobinPipeline {
 
     this.categoryQueue.saveState();
     this.scheduler.saveState();
+    if (this.adapter && typeof this.adapter.resetShutdown === 'function') {
+      this.adapter.resetShutdown();
+    }
     this.healthState = HEALTH_STATE.IDLE;
     this.isStopping = false;
     return true;
