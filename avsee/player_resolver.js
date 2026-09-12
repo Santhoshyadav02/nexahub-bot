@@ -419,7 +419,7 @@ async function resolvePlayer(postUrl, options = {}) {
 
         if (videoMetadata && videoMetadata.hasVideoEl) {
           const hasSrc = Boolean(videoMetadata.currentSrc || videoMetadata.src);
-          const isInitialized = videoMetadata.readyState >= 1 || videoMetadata.duration > 0;
+          const isInitialized = videoMetadata.readyState >= 1 || videoMetadata.duration > 0 || (hasSrc && (String(videoMetadata.src || videoMetadata.currentSrc).startsWith("http")));
 
           if (hasSrc && isInitialized) {
             break;
@@ -466,7 +466,7 @@ async function resolvePlayer(postUrl, options = {}) {
       };
     }
 
-    if (videoMetadata.readyState === 0 && (!videoMetadata.duration || videoMetadata.duration <= 0)) {
+    if (videoMetadata.readyState === 0 && (!videoMetadata.duration || videoMetadata.duration <= 0) && !resolvedMediaUrl.startsWith("http")) {
       log("Video element did not initialize within timeout.");
       return {
         success: false,

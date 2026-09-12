@@ -642,6 +642,24 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
 
         const iframes = Array.from(document.querySelectorAll("iframe")).map(f => f.src);
 
+        // Inspect DOM video/source tags and data attributes directly
+        let videoSrc = null;
+        const v = document.querySelector("video");
+        if (v) {
+          if (v.src) videoSrc = v.src;
+          else if (v.currentSrc) videoSrc = v.currentSrc;
+          else {
+            const s = v.querySelector("source");
+            if (s && s.src) videoSrc = s.src;
+          }
+        }
+        if (!videoSrc) {
+          const dataEl = document.querySelector("[data-video-url], [data-src], [data-file], [data-url]");
+          if (dataEl) {
+            videoSrc = dataEl.getAttribute("data-video-url") || dataEl.getAttribute("data-src") || dataEl.getAttribute("data-file") || dataEl.getAttribute("data-url");
+          }
+        }
+
         return {
           title,
           description: description.substring(0, 500),
@@ -649,7 +667,8 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
           date,
           tags,
           thumbnailUrl,
-          iframes
+          iframes,
+          videoSrc
         };
       });
 
@@ -657,7 +676,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       try {
         const frames = page.frames();
         const playerFrame = frames.find(f => f.url().includes("player.php"));
-        if (playerFrame) {
+        if (playerFrame && !parsed.videoSrc) {
           const streamUrl = await playerFrame.evaluate(() => {
             const v = document.querySelector("video");
             if (v && (v.currentSrc || v.src)) return v.currentSrc || v.src;
@@ -674,6 +693,23 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
           }
         }
       } catch (e) {}
+
+      // If videoSrc is still missing and player resolution is requested, use resolvePlayer
+      if (!parsed.videoSrc && options.resolvePlayer !== false) {
+        try {
+          const { resolvePlayer } = require("./avsee/player_resolver");
+          const playerRes = await resolvePlayer(pageUrl, {
+            headless: true,
+            pageTimeoutMs: options.playerPageTimeoutMs || 15000,
+            playerTimeoutMs: options.playerTimeoutMs || 10000,
+            logDiagnostics: false
+          });
+          if (playerRes && playerRes.success && playerRes.mediaUrl) {
+            parsed.videoSrc = playerRes.mediaUrl;
+            parsed.playerDuration = playerRes.duration || 0;
+          }
+        } catch (pErr) {}
+      }
 
       // Extract itemId from URL
       const wrMatch = pageUrl.match(/wr_id=(\d+)/);

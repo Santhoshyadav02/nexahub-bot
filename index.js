@@ -123,6 +123,9 @@ async function handleProcessExit(signal) {
     contentHubScraper.stopContentHubScheduler();
   } catch (err) {}
   try {
+    getPipelineInstance().stopScheduler();
+  } catch (err) {}
+  try {
     if (bot.isPolling()) {
       await bot.stopPolling();
       console.log(`✅ [PID:${APP_PID}] Bot polling stopped cleanly for ${signal}.`);

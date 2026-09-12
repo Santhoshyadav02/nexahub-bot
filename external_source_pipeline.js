@@ -20,6 +20,7 @@ const { ExternalSourceState, MAX_GLOBAL_RETENTION } = require("./external_source
 const { getDestinationForTopic } = require("./external_source_destinations");
 
 const POLLING_INTERVAL_MS = 20 * 60 * 1000; // Exact 20 minutes (1,200,000 ms)
+const AVSEE_MEDIA_PIPELINE_ENABLED = process.env.AVSEE_MEDIA_PIPELINE_ENABLED === "true";
 
 function createDefaultAdapter(config = {}) {
   const sourceType = (config.sourceType || process.env.EXTERNAL_SOURCE_TYPE || "avsee").toLowerCase();
@@ -38,11 +39,15 @@ class ExternalSourcePipeline {
    * @param {number} [config.pollingIntervalMs=1800000]
    * @param {number} [config.maxTotalItems=150]
    * @param {boolean} [config.dryRun=true]
+   * @param {boolean} [config.mediaPipelineEnabled]
    */
   constructor(config = {}) {
     this.pollingIntervalMs = config.pollingIntervalMs || POLLING_INTERVAL_MS;
     this.maxTotalItems = config.maxTotalItems || MAX_GLOBAL_RETENTION;
     this.dryRun = config.dryRun !== undefined ? Boolean(config.dryRun) : (process.env.AVSEE_DRY_RUN !== "false");
+    this.mediaPipelineEnabled = config.mediaPipelineEnabled !== undefined
+      ? Boolean(config.mediaPipelineEnabled)
+      : AVSEE_MEDIA_PIPELINE_ENABLED;
 
     this.stateStore = config.stateStore || new ExternalSourceState({
       maxTotalItems: this.maxTotalItems
@@ -56,6 +61,20 @@ class ExternalSourcePipeline {
       stateStore: this.stateStore,
       maxTotalItems: this.maxTotalItems
     });
+
+    this.mediaPipeline = null;
+    if (this.mediaPipelineEnabled) {
+      try {
+        const { CategoryRoundRobinPipeline } = require("./avsee/category_round_robin_pipeline");
+        this.mediaPipeline = config.mediaPipeline || new CategoryRoundRobinPipeline({
+          dryRun: this.dryRun,
+          baseUrl: config.apiUrl || this.adapter.apiUrl,
+          ...config
+        });
+      } catch (e) {
+        console.warn("⚠️ [EXTERNAL_SOURCE] CategoryRoundRobinPipeline init warning:", e.message);
+      }
+    }
 
     this.timerId = null;
     this.isPollingActive = false;
@@ -405,12 +424,34 @@ class ExternalSourcePipeline {
   }
 
   /**
+   * Executes a single media cycle via CategoryRoundRobinPipeline when enabled
+   * @param {object} [options]
+   * @returns {Promise<object>}
+   */
+  async executeMediaCycle(options = {}) {
+    if (!this.mediaPipeline) {
+      const { CategoryRoundRobinPipeline } = require("./avsee/category_round_robin_pipeline");
+      this.mediaPipeline = new CategoryRoundRobinPipeline({
+        dryRun: this.dryRun,
+        baseUrl: options.apiUrl || this.adapter.apiUrl,
+        ...options
+      });
+    }
+    return await this.mediaPipeline.executeCycle(options);
+  }
+
+  /**
    * Stops the recurring scheduler cleanly
    */
   stopScheduler() {
     if (this.timerId) {
       clearInterval(this.timerId);
       this.timerId = null;
+    }
+    if (this.mediaPipeline && typeof this.mediaPipeline.stopPipeline === "function") {
+      try {
+        this.mediaPipeline.stopPipeline();
+      } catch (e) {}
     }
     this.isStarted = false;
     this.isPollingActive = false;
