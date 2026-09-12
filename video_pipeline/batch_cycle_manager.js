@@ -27,6 +27,7 @@ const { BatchState } = require('./batch_state');
 const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
 const DEFAULT_ACQUISITION_TIMEOUT_MS = 20 * 60 * 1000;
+const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
 
 function generateCycleId() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -174,8 +175,9 @@ class BatchCycleManager {
     if (this._activeRunPromise) {
       return { status: 'SKIPPED', reason: 'A cycle is already running in this process' };
     }
-    if (this.batchState.getControllerState() === 'ACQUIRING') {
-      return { status: 'SKIPPED', reason: 'Controller state is already ACQUIRING' };
+    const currentState = this.batchState.getControllerState();
+    if (ACTIVE_CYCLE_STATES.includes(currentState)) {
+      return { status: 'SKIPPED', reason: `Controller state is already ${currentState}` };
     }
 
     const run = this._runOnceInternal();
@@ -225,6 +227,7 @@ class BatchCycleManager {
       const downloaded = this._countDownloaded();
 
       // 3/4. Scan downloads using the existing, unmodified MediaIngestor.
+      this.batchState.setControllerState('INGESTING');
       const scanSummary = await this.mediaIngestor.scanOnce();
 
       // 5/6/7. Freeze this cycle's READY media and mark the cycle BATCH_READY.
@@ -259,13 +262,14 @@ class BatchCycleManager {
         + `(discovered=${discovered}, downloaded=${downloaded}, ready=${updated.ready}, `
         + `duplicates=${updated.duplicates}, failed=${updated.failed})`);
 
-      // Optional Phase 4C auto-publishing against frozen BATCH_READY snapshot
+      // Optional auto-publishing against frozen BATCH_READY snapshot
       if (this.autoPublish && this.videoBatchPublisher) {
         console.log(`${LOG_PREFIX} Auto-publishing cycle ${cycleId} via VideoBatchPublisher...`);
         const pubResult = await this.videoBatchPublisher.publishBatch(cycleId, this.publishOptions);
         summary.publishResult = pubResult;
         summary.status = pubResult.status;
         this._lastCycleSummary = summary;
+        this.batchState.setControllerState('IDLE');
       }
 
       return summary;
@@ -273,7 +277,7 @@ class BatchCycleManager {
       const completedAt = new Date().toISOString();
       this.batchState.updateCycle(cycleId, { status: 'FAILED', completedAt, lastError: err.message });
       this.batchState.data.currentCycleId = null;
-      this.batchState.setControllerState('FAILED');
+      this.batchState.setControllerState('IDLE');
       console.error(`${LOG_PREFIX} Cycle ${cycleId} FAILED: ${err.message}`);
       const summary = { cycleId, status: 'FAILED', startedAt, completedAt, error: err.message };
       this._lastCycleSummary = summary;
@@ -415,8 +419,9 @@ class BatchCycleManager {
 
   _scheduledTick() {
     if (!this._acceptingRuns) return;
-    if (this._activeRunPromise || this.batchState.getControllerState() === 'ACQUIRING') {
-      const reason = 'Previous acquisition cycle was still ACQUIRING when the next scheduled time arrived';
+    const currentState = this.batchState.getControllerState();
+    if (this._activeRunPromise || ACTIVE_CYCLE_STATES.includes(currentState)) {
+      const reason = `Previous cycle was still active (state=${currentState}) when the next scheduled time arrived`;
       console.warn(`${LOG_PREFIX} Scheduled cycle skipped: ${reason}`);
       this.batchState.recordSkippedTick(reason);
       return;

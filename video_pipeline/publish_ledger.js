@@ -120,7 +120,26 @@ class PublishLedger {
     } finally {
       fs.closeSync(fd);
     }
-    fs.renameSync(tmpPath, this.ledgerPath);
+    for (let i = 0; i < 10; i++) {
+      try {
+        fs.renameSync(tmpPath, this.ledgerPath);
+        return;
+      } catch (err) {
+        if ((err.code === 'EPERM' || err.code === 'EBUSY') && i < 9) {
+          const waitMs = (i + 1) * 10;
+          const start = Date.now();
+          while (Date.now() - start < waitMs) {}
+        } else {
+          try {
+            fs.copyFileSync(tmpPath, this.ledgerPath);
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            return;
+          } catch (_) {
+            throw err;
+          }
+        }
+      }
+    }
   }
 
   async _withLock(fn) {

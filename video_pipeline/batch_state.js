@@ -114,7 +114,26 @@ class BatchState {
     } finally {
       fs.closeSync(fd);
     }
-    fs.renameSync(tmpPath, this.statePath);
+    for (let i = 0; i < 10; i++) {
+      try {
+        fs.renameSync(tmpPath, this.statePath);
+        return;
+      } catch (err) {
+        if ((err.code === 'EPERM' || err.code === 'EBUSY') && i < 9) {
+          const waitMs = (i + 1) * 10;
+          const start = Date.now();
+          while (Date.now() - start < waitMs) {}
+        } else {
+          try {
+            fs.copyFileSync(tmpPath, this.statePath);
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            return;
+          } catch (_) {
+            throw err;
+          }
+        }
+      }
+    }
   }
 
   getControllerState() {
