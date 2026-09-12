@@ -52,6 +52,12 @@ function getFixedProxyConfig(customEnv = process.env) {
       server: sanitizedServer
     };
 
+    if (env.FIXED_PROXY_BYPASS) {
+      config.bypass = String(env.FIXED_PROXY_BYPASS).trim();
+    } else {
+      config.bypass = "localhost, 127.0.0.1, <local>";
+    }
+
     if (username) {
       config.username = username;
     }
