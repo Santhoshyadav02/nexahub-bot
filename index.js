@@ -126,18 +126,15 @@ async function handleProcessExit(signal) {
     getPipelineInstance().stopScheduler();
   } catch (err) {}
   try {
-    // Phase 1: orchestration only. The manager is never started automatically in
-    // production yet (see video_pipeline/video_pipeline_manager.js), so this is a
-    // safe no-op today - it exists so the shutdown path is already correct once
-    // a later phase does start it.
-    const { getManager } = require("./video_pipeline/video_pipeline_manager");
-    const videoPipelineManager = getManager();
-    videoPipelineManager.preventFurtherStarts();
-    if (videoPipelineManager.isRunning()) {
-      await videoPipelineManager.stop();
-      console.log(`✅ [PID:${APP_PID}] Video Pipeline Manager stopped cleanly for ${signal}.`);
+    const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
+    const videoRuntime = getVideoPipelineRuntime();
+    if (videoRuntime.isStarted()) {
+      await videoRuntime.stop();
+      console.log(`✅ [PID:${APP_PID}] Video Pipeline Runtime stopped cleanly for ${signal}.`);
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error(`⚠️ [PID:${APP_PID}] Error stopping Video Pipeline Runtime on ${signal}:`, err.message);
+  }
   try {
     if (bot.isPolling()) {
       await bot.stopPolling();
@@ -3247,6 +3244,15 @@ if (isMainModule) {
     getPipelineInstance().startScheduler();
   } catch (extErr) {
     console.error("[EXTERNAL_SOURCE] scheduler startup failed:", extErr.message);
+  }
+
+  // 🎬 Automated Batched Video Pipeline Runtime (Phase 6)
+  try {
+    const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
+    const videoRuntime = getVideoPipelineRuntime();
+    videoRuntime.start();
+  } catch (videoErr) {
+    console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
   }
 
   console.log("✅ NewsSearch Main Bot is running...");
