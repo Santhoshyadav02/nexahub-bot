@@ -137,6 +137,8 @@ class CategoryRoundRobinPipeline {
 
     this.logger = new StructuredLogger({ prefix: 'external-worker' });
     this.metrics = new MetricsCollector();
+    this.isStopping = false;
+    this.activeCyclePromise = null;
   }
 
   /**
@@ -250,6 +252,15 @@ class CategoryRoundRobinPipeline {
    * }>}
    */
   async executeCycle(options = {}) {
+    if (this.isStopping || this.healthState === HEALTH_STATE.STOPPING) {
+      return {
+        success: false,
+        status: 'PIPELINE_STOPPING',
+        error: 'Pipeline is stopping/shutting down',
+        stageProgress: []
+      };
+    }
+
     const cycleStartTime = Date.now();
     this.cycleCounter++;
     const currentCycle = this.cycleCounter;
@@ -269,6 +280,18 @@ class CategoryRoundRobinPipeline {
       };
     }
 
+    const cyclePromise = this._executeCycleInternal(options, currentCycle, cycleStartTime);
+    this.activeCyclePromise = cyclePromise;
+    try {
+      return await cyclePromise;
+    } finally {
+      if (this.activeCyclePromise === cyclePromise) {
+        this.activeCyclePromise = null;
+      }
+    }
+  }
+
+  async _executeCycleInternal(options = {}, currentCycle, cycleStartTime) {
     this.isLocked = true;
     this.lastWorkerTick = new Date().toISOString();
     const stageProgress = [];
@@ -666,13 +689,42 @@ class CategoryRoundRobinPipeline {
 
   /**
    * Graceful shutdown handler.
+   * @param {object} [options]
    */
-  async shutdown() {
+  async shutdown(options = {}) {
+    this.isStopping = true;
     this.healthState = HEALTH_STATE.STOPPING;
+
+    // Abort any active adapter downloads immediately
+    if (this.adapter && typeof this.adapter.abortActiveDownloads === 'function') {
+      try {
+        this.adapter.abortActiveDownloads('Pipeline shutting down');
+      } catch (e) {}
+    }
+
+    // Await active cycle completion up to timeout
+    if (this.activeCyclePromise) {
+      try {
+        await Promise.race([
+          this.activeCyclePromise,
+          new Promise(resolve => setTimeout(resolve, options.timeoutMs || 4000))
+        ]);
+      } catch (e) {}
+    }
+
     this.categoryQueue.saveState();
     this.scheduler.saveState();
     this.healthState = HEALTH_STATE.IDLE;
+    this.isStopping = false;
     return true;
+  }
+
+  /**
+   * Alias for shutdown
+   * @param {object} [options]
+   */
+  async stop(options = {}) {
+    return await this.shutdown(options);
   }
 
   /**
@@ -683,6 +735,8 @@ class CategoryRoundRobinPipeline {
     this.scheduler.clear();
     this.stagingPublishedMessages.clear();
     this.isLocked = false;
+    this.isStopping = false;
+    this.activeCyclePromise = null;
     this.healthState = HEALTH_STATE.IDLE;
     this.currentSourcePostId = null;
     this.currentCategory = null;

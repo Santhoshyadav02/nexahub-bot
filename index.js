@@ -107,7 +107,15 @@ async function handleProcessExit(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
-  console.log(`🛑 [PID:${APP_PID}] Received ${signal}. Closing bot polling connection...`);
+  console.log(`🛑 [PID:${APP_PID}] Received ${signal}. Starting graceful bounded shutdown...`);
+
+  // Bounded fallback: hard 5000ms timeout guard to ensure container exit even if a resource hangs
+  const forceExitTimer = setTimeout(() => {
+    console.warn(`⚠️ [PID:${APP_PID}] Graceful shutdown timed out for ${signal} after 5000ms. Forcing exit.`);
+    process.exit(0);
+  }, 5000);
+  forceExitTimer.unref();
+
   try {
     stopPipelineScheduler();
   } catch (err) {}
@@ -129,6 +137,9 @@ async function handleProcessExit(signal) {
       console.log(`✅ [PID:${APP_PID}] MTProto client disconnected cleanly for ${signal}.`);
     }
   } catch (err) {}
+
+  clearTimeout(forceExitTimer);
+  console.log(`✅ [PID:${APP_PID}] Graceful shutdown completed cleanly for ${signal}.`);
   process.exit(0);
 }
 

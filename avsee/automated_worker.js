@@ -406,6 +406,13 @@ class AvseeAutomatedWorker {
       } catch (e) {}
     }
     this.activeResources.tempFiles.clear();
+
+    // 3. Abort active adapter downloads if present
+    if (this.orchestrator && this.orchestrator.adapter && typeof this.orchestrator.adapter.abortActiveDownloads === "function") {
+      try {
+        this.orchestrator.adapter.abortActiveDownloads("Worker stopped");
+      } catch (e) {}
+    }
   }
 
   /**

@@ -105,6 +105,8 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     this.maxFileSizeMB = config.maxFileSizeMB || 500;
     this.boards = config.boards || ["korea", "caption", "javc", "javleak", "javfc2", "western"];
     this.selectedExecutablePath = null;
+    this.activeDownloads = new Set();
+    this.isShuttingDown = false;
   }
 
   // ============================================================
@@ -739,6 +741,10 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
    * @returns {Promise<{ localPath: string, checksum: string, sizeBytes: number }>}
    */
   async downloadAuthorizedMedia(item, options = {}) {
+    if (this.isShuttingDown) {
+      throw new Error("[AVSEE DOWNLOAD ERROR] Adapter is shutting down");
+    }
+
     if (this.dryRun) {
       console.log(`🛡️ [AVSEE DRY_RUN] Media download skipped in dry-run mode for item "${item.title}"`);
       return {
@@ -771,6 +777,10 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     console.log(`📥 [AVSEE] Streaming media for "${item.title}" -> ${filename} (Inactivity timeout: ${inactivityTimeoutMs}ms)`);
 
     return await this.executeWithRetry(async () => {
+      if (this.isShuttingDown) {
+        throw new Error("[AVSEE DOWNLOAD ERROR] Adapter is shutting down");
+      }
+
       // Clean up any partial file from previous attempts
       if (fs.existsSync(destPath)) {
         try { fs.unlinkSync(destPath); } catch (e) {}
@@ -786,9 +796,17 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         let req = null;
         let fileStream = null;
 
+        const downloadContext = {
+          destPath,
+          abort: (reason = "Download aborted") => {
+            cleanupAndReject(new Error(`[AVSEE_ABORT] ${reason}`));
+          }
+        };
+
         const cleanupAndReject = (err) => {
           if (isSettled) return;
           isSettled = true;
+          this.activeDownloads.delete(downloadContext);
           if (inactivityTimer) clearTimeout(inactivityTimer);
           if (req) {
             try { req.destroy(); } catch (e) {}
@@ -801,6 +819,8 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
           }
           reject(err);
         };
+
+        this.activeDownloads.add(downloadContext);
 
         const resetInactivityTimer = () => {
           if (inactivityTimer) clearTimeout(inactivityTimer);
@@ -868,6 +888,7 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
           fileStream.on("finish", () => {
             if (isSettled) return;
             isSettled = true;
+            this.activeDownloads.delete(downloadContext);
             if (inactivityTimer) clearTimeout(inactivityTimer);
 
             if (!fs.existsSync(destPath)) {
@@ -900,6 +921,65 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         req.on("error", cleanupAndReject);
       });
     });
+  }
+
+  /**
+   * Aborts all active in-flight media downloads immediately and cleans up disk files.
+   * @param {string} [reason]
+   */
+  abortActiveDownloads(reason = "Process shutting down") {
+    this.isShuttingDown = true;
+    for (const ctx of Array.from(this.activeDownloads)) {
+      if (typeof ctx.abort === "function") {
+        try {
+          ctx.abort(reason);
+        } catch (e) {}
+      }
+    }
+    this.activeDownloads.clear();
+  }
+
+  /**
+   * Alias for abortActiveDownloads
+   * @param {string} [reason]
+   */
+  abortActiveDownload(reason = "Process shutting down") {
+    this.abortActiveDownloads(reason);
+  }
+
+  /**
+   * Resets shutdown flag (useful for testing or worker reset)
+   */
+  resetShutdown() {
+    this.isShuttingDown = false;
+  }
+
+  /**
+   * Executes an asynchronous task with retry, immediately cancelling if shutdown is requested
+   * @param {Function} taskFn 
+   * @returns {Promise<any>}
+   */
+  async executeWithRetry(taskFn) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      if (this.isShuttingDown) {
+        throw new Error("[AVSEE_ABORT] Operation cancelled: shutting down");
+      }
+      try {
+        return await taskFn();
+      } catch (err) {
+        lastError = err;
+        if (this.isShuttingDown || (err && err.message && err.message.includes("[AVSEE_ABORT]"))) {
+          throw err;
+        }
+        console.warn(`⚠️ [EXTERNAL_SOURCE] Attempt ${attempt}/${this.maxRetries} failed: ${err.message}`);
+        if (attempt < this.maxRetries) {
+          const delay = this.retryBaseDelayMs * Math.pow(2, attempt - 1);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    throw new Error(`[EXTERNAL_SOURCE] Failed after ${this.maxRetries} attempts: ${lastError.message}`);
   }
 
   /**
