@@ -18,6 +18,19 @@ const path = require('path');
 
 const BATCH_STATE_VERSION = '1.0.0';
 
+const BATCH_LIFECYCLE_STATES = [
+  'IDLE',
+  'ACQUIRING',
+  'INGESTING',
+  'BATCH_READY',
+  'PUBLISHING',
+  'COMPLETED',
+  'COMPLETED_PARTIAL',
+  'COMPLETED_EMPTY',
+  'FAILED',
+  'STOPPING'
+];
+
 class BatchState {
   /**
    * @param {object} [config]
@@ -173,4 +186,4 @@ class BatchState {
   }
 }
 
-module.exports = { BatchState, BATCH_STATE_VERSION };
+module.exports = { BatchState, BATCH_STATE_VERSION, BATCH_LIFECYCLE_STATES };

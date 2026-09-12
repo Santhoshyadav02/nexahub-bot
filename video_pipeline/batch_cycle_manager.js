@@ -83,6 +83,9 @@ class BatchCycleManager {
       stabilityCheckMs: config.stabilityCheckMs
     });
     this.batchState = config.batchState || new BatchState({ statePath: config.batchStatePath });
+    this.videoBatchPublisher = config.videoBatchPublisher || null;
+    this.autoPublish = Boolean(config.autoPublish);
+    this.publishOptions = config.publishOptions || {};
 
     this._timerId = null;
     this._acceptingRuns = true;
@@ -99,30 +102,40 @@ class BatchCycleManager {
   _recoverOnStartup() {
     const state = this.batchState.getControllerState();
     const cycleId = this.batchState.getCurrentCycleId();
-    if (state !== 'ACQUIRING' || !cycleId) return;
+    if (!cycleId) return;
 
-    const cycle = this.batchState.getCycle(cycleId);
-    const pid = cycle ? cycle.acquisitionPid : null;
-    const stillAlive = isPidAlive(pid);
+    if (state === 'ACQUIRING') {
+      const cycle = this.batchState.getCycle(cycleId);
+      const pid = cycle ? cycle.acquisitionPid : null;
+      const stillAlive = isPidAlive(pid);
 
-    if (stillAlive) {
-      console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ACQUIRING when this process last stopped, and PID ${pid} `
-        + `still appears to be alive. Not resuming automatically - a stray acquisition process may still be running. `
-        + `Marking the cycle FAILED and returning the controller to IDLE; stop PID ${pid} manually if still active.`);
-    } else {
-      console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (ACQUIRING, no live acquisition process). `
-        + `Marking it FAILED. Any media already downloaded/validated by the Media Ingestor remains intact and untouched.`);
+      if (stillAlive) {
+        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ACQUIRING when this process last stopped, and PID ${pid} `
+          + `still appears to be alive. Not resuming automatically - a stray acquisition process may still be running. `
+          + `Marking the cycle FAILED and returning the controller to IDLE; stop PID ${pid} manually if still active.`);
+      } else {
+        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (ACQUIRING, no live acquisition process). `
+          + `Marking it FAILED. Any media already downloaded/validated by the Media Ingestor remains intact and untouched.`);
+      }
+
+      this.batchState.updateCycle(cycleId, {
+        status: 'FAILED',
+        completedAt: new Date().toISOString(),
+        lastError: stillAlive
+          ? `Recovered at startup: acquisition PID ${pid} may still be running independently; cycle marked FAILED without touching media.`
+          : 'Recovered at startup: process restarted mid-acquisition with no live acquisition process; cycle marked FAILED without touching media.'
+      });
+      this.batchState.data.currentCycleId = null;
+      this.batchState.setControllerState('IDLE');
+    } else if (state === 'PUBLISHING') {
+      console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted in state PUBLISHING. `
+        + `PublishLedger recovers any stuck UPLOADING items to PENDING safely. Resetting cycle status to BATCH_READY for clean retry.`);
+      this.batchState.updateCycle(cycleId, {
+        status: 'BATCH_READY',
+        lastError: 'Recovered at startup: publishing was interrupted mid-batch; reset to BATCH_READY without media loss.'
+      });
+      this.batchState.setControllerState('IDLE');
     }
-
-    this.batchState.updateCycle(cycleId, {
-      status: 'FAILED',
-      completedAt: new Date().toISOString(),
-      lastError: stillAlive
-        ? `Recovered at startup: acquisition PID ${pid} may still be running independently; cycle marked FAILED without touching media.`
-        : 'Recovered at startup: process restarted mid-acquisition with no live acquisition process; cycle marked FAILED without touching media.'
-    });
-    this.batchState.data.currentCycleId = null;
-    this.batchState.setControllerState('IDLE');
   }
 
   // ============================================================
@@ -245,6 +258,16 @@ class BatchCycleManager {
       console.log(`${LOG_PREFIX} Cycle ${cycleId} -> BATCH_READY `
         + `(discovered=${discovered}, downloaded=${downloaded}, ready=${updated.ready}, `
         + `duplicates=${updated.duplicates}, failed=${updated.failed})`);
+
+      // Optional Phase 4C auto-publishing against frozen BATCH_READY snapshot
+      if (this.autoPublish && this.videoBatchPublisher) {
+        console.log(`${LOG_PREFIX} Auto-publishing cycle ${cycleId} via VideoBatchPublisher...`);
+        const pubResult = await this.videoBatchPublisher.publishBatch(cycleId, this.publishOptions);
+        summary.publishResult = pubResult;
+        summary.status = pubResult.status;
+        this._lastCycleSummary = summary;
+      }
+
       return summary;
     } catch (err) {
       const completedAt = new Date().toISOString();
@@ -256,6 +279,25 @@ class BatchCycleManager {
       this._lastCycleSummary = summary;
       return summary;
     }
+  }
+
+  /**
+   * Publishes an existing BATCH_READY cycle using the configured VideoBatchPublisher.
+   * @param {string} cycleId
+   * @param {object} [options]
+   * @returns {Promise<object>}
+   */
+  async publishCycle(cycleId, options = {}) {
+    if (!this.videoBatchPublisher) {
+      throw new Error('VideoBatchPublisher is not configured on BatchCycleManager.');
+    }
+    const pubOptions = { ...this.publishOptions, ...options };
+    const pubResult = await this.videoBatchPublisher.publishBatch(cycleId, pubOptions);
+    if (this._lastCycleSummary && this._lastCycleSummary.cycleId === cycleId) {
+      this._lastCycleSummary.publishResult = pubResult;
+      this._lastCycleSummary.status = pubResult.status;
+    }
+    return pubResult;
   }
 
   _countDiscovered() {

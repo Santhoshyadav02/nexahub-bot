@@ -142,7 +142,7 @@ async function runE2ETest() {
 
     const pubSummary = await publisher.publishBatch(cycleSummary.cycleId);
 
-    check('Publisher status is PUBLISHED', pubSummary.status === 'PUBLISHED');
+    check('Publisher status is PUBLISHED or COMPLETED', ['PUBLISHED', 'COMPLETED'].includes(pubSummary.status));
     check('Published count is 1', pubSummary.published === 1);
     check('Telegram message ID recorded', pubSummary.items[0].telegramMessageId === '998877');
     check('Publish ledger recorded PUBLISHED state', publishLedger.isPublished(frozenBatch.media[0].mediaId, '-1009998888') === true);

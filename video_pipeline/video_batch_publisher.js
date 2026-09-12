@@ -1,8 +1,9 @@
 /**
  * ============================================================
- * 📤 VIDEO BATCH PUBLISHER (Phase 4A - Isolated Telegram Staging Video Publisher)
+ * 📤 VIDEO BATCH PUBLISHER (Phase 4C - Local Publishing Lifecycle)
  * ============================================================
- * Consumes ONLY a frozen BATCH_READY batch produced by BatchCycleManager and
+ * Consumes ONLY a frozen BATCH_READY batch produced by BatchCycleManager,
+ * generates a deterministic publish plan via VideoDestinationRouter, and
  * publishes authorized/non-explicit test MP4 files to a configured Telegram
  * STAGING destination.
  *
@@ -10,7 +11,7 @@
  *   - Refuses to run if VIDEO_PIPELINE_STAGING_CHAT_ID is missing or matches
  *     a known production channel.
  *   - Never modifies production routing or production channels.
- *   - Never deletes media files.
+ *   - Deletes media files ONLY after confirmed publication via MediaCleaner.
  *   - Deterministic captions using frozen media.title only (no re-scraping).
  *   - Strictly sequential publishing (no parallel Telegram uploads).
  *   - Idempotent: skips any mediaId already marked PUBLISHED for this destination.
@@ -21,6 +22,8 @@ const path = require('path');
 
 const { BatchState } = require('./batch_state');
 const { PublishLedger } = require('./publish_ledger');
+const { MediaCleaner } = require('./media_cleaner');
+const { VideoDestinationRouter } = require('./video_destination_router');
 const { validateMediaFile } = require('./media_validator');
 
 const LOG_PREFIX = '[VIDEO_BATCH_PUBLISHER]';
@@ -32,11 +35,13 @@ function sleep(ms) {
 
 // Known production channel usernames/IDs to strictly forbid as staging destinations
 const FORBIDDEN_PRODUCTION_DESTINATIONS = new Set([
-  'ccsfvk', 'cccsefk', 'e5brygh', 'ccdjxc', 'r8dne7',
-  'q8dne7', 'e9fjr8', 't9ekd7', 'y8ekd7', 'bzd4wrf',
-  'romanticvibe', 'dating', 'romance', 'crotch', 'sister snake',
+  'ccsfvk', 'cccsefk', 'e5brygh', 'ccdjxc', 'vsdxda',
+  'tfccdet', 'sfgfem', 'ddkicr', 'cccddghhgf', 'bzd4wrf',
+  'romantic vibe', 'dating', 'romance', 'crotch', 'mosa',
+  'bunny girl cosplay date', 'lustful hostess', 'concubine',
+  'saki mizumi', 'a muse', 'romanticvibe', 'sister snake',
   'has work', 'bullying & sex', 'da ci ge', 'senior year love story',
-  'sichuan mother & son', 'hu siyuan', 'kept lover', 'a muse'
+  'sichuan mother & son', 'hu siyuan', 'kept lover'
 ]);
 
 class VideoBatchPublisher {
@@ -46,18 +51,24 @@ class VideoBatchPublisher {
    * @param {object} [config.telegramClient] Injected Telegram client (must provide sendVideo or sendFile method)
    * @param {BatchState} [config.batchState]
    * @param {PublishLedger} [config.publishLedger]
+   * @param {MediaCleaner} [config.mediaCleaner]
+   * @param {VideoDestinationRouter} [config.destinationRouter]
    * @param {Function} [config.mediaValidator]
    * @param {number} [config.rateLimitDelayMs] Delay between sequential uploads (ms)
    * @param {number} [config.maxRetries=1]
+   * @param {boolean} [config.enableCleanup=false] Whether to clean media files after confirmed publication
    */
   constructor(config = {}) {
     this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
     this.telegramClient = config.telegramClient || null;
     this.batchState = config.batchState || new BatchState({ statePath: config.batchStatePath });
     this.publishLedger = config.publishLedger || new PublishLedger({ ledgerPath: config.publishLedgerPath });
+    this.mediaCleaner = config.mediaCleaner || new MediaCleaner({ publishLedger: this.publishLedger });
+    this.destinationRouter = config.destinationRouter || new VideoDestinationRouter();
     this.mediaValidator = config.mediaValidator || validateMediaFile;
     this.rateLimitDelayMs = config.rateLimitDelayMs !== undefined ? config.rateLimitDelayMs : DEFAULT_RATE_LIMIT_DELAY_MS;
     this.maxRetries = config.maxRetries !== undefined ? config.maxRetries : 1;
+    this.enableCleanup = Boolean(config.enableCleanup);
 
     this._validateStagingDestination(this.stagingChatId);
   }
@@ -94,11 +105,44 @@ class VideoBatchPublisher {
   }
 
   /**
+   * Builds a deterministic publish plan for a frozen batch using the router.
+   * @param {string} batchId
+   * @param {Array<object>} mediaList
+   * @param {string} targetChatId
+   * @returns {Array<object>} Publish plan items
+   */
+  createPublishPlan(batchId, mediaList, targetChatId) {
+    if (!Array.isArray(mediaList)) return [];
+    return mediaList.map(media => {
+      const routingDecision = this.destinationRouter.routeMedia(media);
+      const canonicalDest = routingDecision.primaryDestination
+        ? routingDecision.primaryDestination.id
+        : 'DESTINATION_1';
+
+      return {
+        planId: `plan_${batchId}_${media.mediaId}`,
+        cycleId: batchId,
+        mediaId: media.mediaId,
+        title: media.title || '',
+        filePath: media.filePath,
+        contentSha256: media.contentSha256,
+        canonicalDestination: canonicalDest,
+        targetDestinationId: targetChatId,
+        routingDecision,
+        status: 'PENDING',
+        attempts: 0
+      };
+    });
+  }
+
+  /**
    * Publishes all eligible media from an explicit BATCH_READY cycle to STAGING.
+   * Transitions batch state: BATCH_READY -> PUBLISHING -> COMPLETED | COMPLETED_PARTIAL | FAILED.
    * @param {string} batchId Cycle ID to publish
    * @param {object} [options]
    * @param {string} [options.stagingChatIdOverride]
    * @param {boolean} [options.allowAlreadyPublishedBatch=false]
+   * @param {boolean} [options.enableCleanup] Override cleanup setting for this run
    * @returns {Promise<object>} Publish summary
    */
   async publishBatch(batchId, options = {}) {
@@ -130,51 +174,78 @@ class VideoBatchPublisher {
       };
     }
 
-    if (batch.status !== 'BATCH_READY' && !(options.allowAlreadyPublishedBatch && batch.status === 'PUBLISHED')) {
+    const isCompleted = ['COMPLETED', 'PUBLISHED'].includes(batch.status);
+    const isRetryable = ['FAILED', 'COMPLETED_PARTIAL'].includes(batch.status);
+    const isEligible = batch.status === 'BATCH_READY' || isRetryable || (options.allowAlreadyPublishedBatch && isCompleted);
+    if (!isEligible) {
       return {
         status: 'REJECTED',
         batchId,
         batchStatus: batch.status,
-        reason: `Batch status is "${batch.status}", expected "BATCH_READY".`
+        reason: `Batch status is "${batch.status}", expected "BATCH_READY" or retryable status.`
       };
     }
 
+    const shouldCleanup = options.enableCleanup !== undefined ? Boolean(options.enableCleanup) : this.enableCleanup;
     const mediaList = Array.isArray(batch.media) ? batch.media : [];
+
+    // Update batch state to PUBLISHING
+    this.batchState.updateCycle(batchId, { status: 'PUBLISHING', publishingStartedAt: new Date().toISOString() });
+    this.batchState.setControllerState('PUBLISHING');
+
     console.log(`${LOG_PREFIX} Publishing batch ${batchId} (${mediaList.length} items) to staging destination ${targetChatId}`);
+
+    // Generate deterministic publish plan
+    const plan = this.createPublishPlan(batchId, mediaList, targetChatId);
 
     const results = [];
     let publishedCount = 0;
     let skippedCount = 0;
     let failedCount = 0;
+    let cleanedCount = 0;
 
-    for (let i = 0; i < mediaList.length; i++) {
+    for (let i = 0; i < plan.length; i++) {
+      const planItem = plan[i];
       const media = mediaList[i];
-      const itemResult = await this._publishMediaItem(batchId, media, targetChatId);
+      const itemResult = await this._publishMediaItem(batchId, media, targetChatId, planItem, shouldCleanup);
       results.push(itemResult);
 
       if (itemResult.status === 'PUBLISHED') {
         publishedCount++;
+        if (itemResult.cleaned) cleanedCount++;
       } else if (itemResult.status === 'SKIPPED_ALREADY_PUBLISHED') {
         skippedCount++;
+        if (itemResult.cleaned) cleanedCount++;
       } else {
         failedCount++;
       }
 
       // Conservative inter-item pacing delay
-      if (i < mediaList.length - 1 && this.rateLimitDelayMs > 0) {
+      if (i < plan.length - 1 && this.rateLimitDelayMs > 0) {
         await sleep(this.rateLimitDelayMs);
       }
     }
 
     // Determine overall batch outcome
-    let finalBatchStatus = 'PUBLISHED';
-    if (failedCount > 0 && publishedCount === 0) {
+    let finalBatchStatus = 'COMPLETED';
+    if (mediaList.length === 0) {
+      finalBatchStatus = 'COMPLETED_EMPTY';
+    } else if (failedCount > 0 && publishedCount === 0 && skippedCount === 0) {
       finalBatchStatus = 'FAILED';
     } else if (failedCount > 0) {
-      finalBatchStatus = 'PARTIAL';
-    } else if (mediaList.length === 0) {
-      finalBatchStatus = 'PUBLISHED_EMPTY';
+      finalBatchStatus = 'COMPLETED_PARTIAL';
     }
+
+    const completedAt = new Date().toISOString();
+    this.batchState.updateCycle(batchId, {
+      status: finalBatchStatus,
+      completedAt,
+      publishedCount,
+      skippedCount,
+      failedCount,
+      cleanedCount
+    });
+    this.batchState.setControllerState(finalBatchStatus === 'FAILED' ? 'FAILED' : 'IDLE');
 
     const summary = {
       batchId,
@@ -184,37 +255,53 @@ class VideoBatchPublisher {
       published: publishedCount,
       skipped: skippedCount,
       failed: failedCount,
-      completedAt: new Date().toISOString(),
+      cleaned: cleanedCount,
+      completedAt,
       items: results
     };
 
     console.log(`${LOG_PREFIX} Batch ${batchId} publishing complete -> ${finalBatchStatus} `
-      + `(total=${mediaList.length}, published=${publishedCount}, skipped=${skippedCount}, failed=${failedCount})`);
+      + `(total=${mediaList.length}, published=${publishedCount}, skipped=${skippedCount}, failed=${failedCount}, cleaned=${cleanedCount})`);
 
     return summary;
   }
 
   /**
-   * Publishes a single media item to the staging destination.
+   * Publishes a single media item to the staging destination with post-publish cleanup.
    * @private
    */
-  async _publishMediaItem(batchId, media, destinationId) {
+  async _publishMediaItem(batchId, media, destinationId, planItem, shouldCleanup) {
     if (!media || !media.mediaId) {
       return { status: 'FAILED', reason: 'Invalid media object: missing mediaId' };
     }
 
     const mediaId = media.mediaId;
+    const canonicalDestination = planItem ? planItem.canonicalDestination : 'DESTINATION_1';
 
     // 1. Idempotency Check BEFORE attempting any upload
     if (this.publishLedger.isPublished(mediaId, destinationId)) {
       const existing = this.publishLedger.findRecord(mediaId, destinationId);
       console.log(`${LOG_PREFIX} Media ${mediaId} already published to ${destinationId} (msgId=${existing.telegramMessageId}). Skipping.`);
+
+      let cleaned = false;
+      if (shouldCleanup && media.filePath && fs.existsSync(media.filePath)) {
+        const cleanRes = await this.mediaCleaner.cleanMedia({
+          mediaId,
+          destinationId,
+          filePath: media.filePath,
+          publishLedger: this.publishLedger
+        });
+        cleaned = cleanRes.status === 'CLEANED' || cleanRes.status === 'ALREADY_CLEANED';
+      }
+
       return {
         mediaId,
+        canonicalDestination,
         status: 'SKIPPED_ALREADY_PUBLISHED',
         publishId: existing.publishId,
         telegramMessageId: existing.telegramMessageId,
-        destinationId
+        destinationId,
+        cleaned
       };
     }
 
@@ -225,7 +312,7 @@ class VideoBatchPublisher {
       console.error(`${LOG_PREFIX} ${err}`);
       const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
       await this.publishLedger.recordFailure(attempt.publishId, err);
-      return { mediaId, status: 'FAILED', reason: err };
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
     let currentStat;
@@ -235,14 +322,14 @@ class VideoBatchPublisher {
       const err = `Failed to stat media file: ${e.message}`;
       const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
       await this.publishLedger.recordFailure(attempt.publishId, err);
-      return { mediaId, status: 'FAILED', reason: err };
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
     if (currentStat.size === 0) {
       const err = `Media file is empty (0 bytes): ${filePath}`;
       const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
       await this.publishLedger.recordFailure(attempt.publishId, err);
-      return { mediaId, status: 'FAILED', reason: err };
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
     // 3. Media Integrity Validation
@@ -253,13 +340,13 @@ class VideoBatchPublisher {
         console.error(`${LOG_PREFIX} ${err}`);
         const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
         await this.publishLedger.recordFailure(attempt.publishId, err);
-        return { mediaId, status: 'FAILED', reason: err };
+        return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
       }
     } catch (valErr) {
       const err = `Media validator threw an exception: ${valErr.message}`;
       const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
       await this.publishLedger.recordFailure(attempt.publishId, err);
-      return { mediaId, status: 'FAILED', reason: err };
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
     // 4. Record UPLOADING state in PublishLedger
@@ -279,7 +366,8 @@ class VideoBatchPublisher {
           destinationId,
           filePath,
           caption,
-          media
+          media,
+          canonicalDestination
         });
 
         const telegramMessageId = uploadResult.messageId || uploadResult.id || uploadResult.message_id;
@@ -293,14 +381,29 @@ class VideoBatchPublisher {
           publishedAt: new Date().toISOString()
         });
 
-        console.log(`${LOG_PREFIX} Successfully published media ${mediaId} -> msgId ${telegramMessageId}`);
+        console.log(`${LOG_PREFIX} Successfully published media ${mediaId} (${canonicalDestination}) -> msgId ${telegramMessageId}`);
+
+        // 7. Verified Post-Publish Cleanup (ONLY after confirmed publication in ledger)
+        let cleaned = false;
+        if (shouldCleanup) {
+          const cleanRes = await this.mediaCleaner.cleanMedia({
+            mediaId,
+            destinationId,
+            filePath,
+            publishLedger: this.publishLedger
+          });
+          cleaned = cleanRes.status === 'CLEANED' || cleanRes.status === 'ALREADY_CLEANED';
+        }
+
         return {
           mediaId,
           publishId,
+          canonicalDestination,
           status: 'PUBLISHED',
           destinationId,
           telegramMessageId: String(telegramMessageId),
-          publishedAt: successRecord.publishedAt
+          publishedAt: successRecord.publishedAt,
+          cleaned
         };
       } catch (uploadErr) {
         lastError = uploadErr;
@@ -310,41 +413,40 @@ class VideoBatchPublisher {
         const floodWaitSec = this._extractFloodWaitSeconds(uploadErr);
         if (floodWaitSec > 0 && attemptNum <= this.maxRetries) {
           console.warn(`${LOG_PREFIX} Telegram FloodWait detected: waiting ${floodWaitSec}s before retry...`);
-          await sleep(Math.min(floodWaitSec * 1000, 15000)); // Cap retry wait to 15s in test
+          await sleep(Math.min(floodWaitSec * 1000, 15000));
         } else if (attemptNum <= this.maxRetries) {
           await sleep(1000);
         }
       }
     }
 
-    // 7. Record Terminal Failure in PublishLedger
+    // 8. Record Terminal Failure in PublishLedger (Media file is preserved on disk)
     await this.publishLedger.recordFailure(publishId, lastError ? lastError.message : 'Unknown upload error');
     return {
       mediaId,
       publishId,
+      canonicalDestination,
       status: 'FAILED',
       destinationId,
-      error: lastError ? lastError.message : 'Unknown upload error'
+      error: lastError ? lastError.message : 'Unknown upload error',
+      cleaned: false
     };
   }
 
   /**
    * Internal wrapper to call injected Telegram client.
-   * Supports both bot API (sendVideo) and MTProto (sendFile) or mock functions.
    */
-  async _sendToTelegram({ destinationId, filePath, caption, media }) {
+  async _sendToTelegram({ destinationId, filePath, caption, media, canonicalDestination }) {
     const client = this.telegramClient;
     if (!client) {
       throw new Error('Telegram client is not configured.');
     }
 
     if (typeof client.sendVideo === 'function') {
-      // Telegram Bot API (node-telegram-bot-api / grammY / telegraf / mock)
       return client.sendVideo(destinationId, filePath, { caption });
     }
 
     if (typeof client.sendFile === 'function') {
-      // MTProto GramJS client
       return client.sendFile(destinationId, {
         file: filePath,
         caption
@@ -352,13 +454,11 @@ class VideoBatchPublisher {
     }
 
     if (typeof client.publish === 'function') {
-      // Custom publisher adapter
-      return client.publish({ destinationId, filePath, caption, media });
+      return client.publish({ destinationId, filePath, caption, media, canonicalDestination });
     }
 
     if (typeof client === 'function') {
-      // Direct callable function
-      return client({ destinationId, filePath, caption, media });
+      return client({ destinationId, filePath, caption, media, canonicalDestination });
     }
 
     throw new Error('Injected Telegram client does not implement sendVideo, sendFile, or publish method.');

@@ -111,7 +111,7 @@ async function runPublisherTests() {
 
   const result1 = await publisher1.publishBatch(batchId1);
 
-  check('Req 1: Publish returns status PUBLISHED', result1.status === 'PUBLISHED');
+  check('Req 1: Publish returns status PUBLISHED or COMPLETED', ['PUBLISHED', 'COMPLETED'].includes(result1.status));
   check('Req 2: Published count is 1', result1.published === 1);
   check('Req 3: Telegram message ID is 1234567', result1.items[0].telegramMessageId === '1234567');
   check('Req 4: PublishLedger has PUBLISHED record', publishLedger1.isPublished('media_v1', '-1009990001') === true);
@@ -125,7 +125,7 @@ async function runPublisherTests() {
   const initialCallCount = sentCalls.length;
   const result2 = await publisher1.publishBatch(batchId1, { allowAlreadyPublishedBatch: true });
 
-  check('Second run returns PUBLISHED', result2.status === 'PUBLISHED');
+  check('Second run returns PUBLISHED or COMPLETED', ['PUBLISHED', 'COMPLETED'].includes(result2.status));
   check('Second run published count is 0', result2.published === 0);
   check('Second run skipped count is 1', result2.skipped === 1);
   check('Second run item status is SKIPPED_ALREADY_PUBLISHED', result2.items[0].status === 'SKIPPED_ALREADY_PUBLISHED');
@@ -140,7 +140,7 @@ async function runPublisherTests() {
     allowAlreadyPublishedBatch: true
   });
 
-  check('Publication to new staging destination succeeds', resultDestB.status === 'PUBLISHED');
+  check('Publication to new staging destination succeeds', ['PUBLISHED', 'COMPLETED'].includes(resultDestB.status));
   check('Published count for new destination is 1', resultDestB.published === 1);
   check('Telegram API was called for the new destination', sentCalls.length === initialCallCount + 1);
   check('Ledger records destination B as PUBLISHED', publishLedger1.isPublished('media_v1', '-1009990002') === true);
@@ -292,7 +292,7 @@ async function runPublisherTests() {
   });
 
   const resultRetry = await publisher4.publishBatch(batchId4);
-  check('Retry succeeded after FloodWait backoff', resultRetry.status === 'PUBLISHED');
+  check('Retry succeeded after FloodWait backoff', ['PUBLISHED', 'COMPLETED'].includes(resultRetry.status));
   check('Attempt count was 2', attemptCount === 2);
   check('Telegram message ID recorded after retry', resultRetry.items[0].telegramMessageId === '889900');
 
@@ -374,7 +374,7 @@ async function runPublisherTests() {
   // Verify record was reset to PENDING and can now be cleanly published
   check('Interrupted record reset to PENDING', recoveredLedger.findRecord('media_crashed', '-1009990001').status === 'PENDING');
   const resultAfterCrash = await publisherRecovered.publishBatch('batch_crash_001');
-  check('Publishing succeeds cleanly after restart recovery', resultAfterCrash.status === 'PUBLISHED');
+  check('Publishing succeeds cleanly after restart recovery', ['PUBLISHED', 'COMPLETED'].includes(resultAfterCrash.status));
   check('Record status now reaches PUBLISHED', recoveredLedger.isPublished('media_crashed', '-1009990001') === true);
 
   // ============================================================
