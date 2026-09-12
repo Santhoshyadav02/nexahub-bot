@@ -16,6 +16,7 @@ const { URL } = require("url");
 const fs = require("fs");
 const { execSync } = require("child_process");
 const { detectChallenge, waitForChallengeCompletion, redactUrl } = require("./player_resolver");
+const { applyProxyToLaunchOptions } = require("./proxy_config");
 
 /**
  * Locate system Chromium executable if available
@@ -88,7 +89,7 @@ async function discoverBoardPosts(boardUrl, options = {}) {
       browser = options.browser;
     } else {
       const execPath = getSystemChromiumPath();
-      const launchOpts = {
+      const launchOpts = applyProxyToLaunchOptions({
         headless: options.headless !== false,
         args: [
           "--no-sandbox",
@@ -98,7 +99,7 @@ async function discoverBoardPosts(boardUrl, options = {}) {
           "--mute-audio",
           "--disable-blink-features=AutomationControlled"
         ]
-      };
+      });
       if (execPath) {
         launchOpts.executablePath = execPath;
       }

@@ -16,6 +16,7 @@ const { chromium } = require("playwright");
 const { URL } = require("url");
 const fs = require("fs");
 const { execSync } = require("child_process");
+const { applyProxyToLaunchOptions } = require("./proxy_config");
 
 const RESOLVER_STATES = Object.freeze({
   SUCCESS: "SUCCESS",
@@ -243,7 +244,7 @@ async function resolvePlayer(postUrl, options = {}) {
       browser = opts.browser;
     } else {
       const execPath = getSystemChromiumPath();
-      const launchOpts = {
+      const launchOpts = applyProxyToLaunchOptions({
         headless: opts.headless !== false,
         args: [
           "--no-sandbox",
@@ -253,7 +254,7 @@ async function resolvePlayer(postUrl, options = {}) {
           "--mute-audio",
           "--disable-blink-features=AutomationControlled"
         ]
-      };
+      });
       if (execPath) {
         launchOpts.executablePath = execPath;
       }

@@ -19,6 +19,7 @@ const { execSync } = require("child_process");
 const { URL } = require("url");
 const { chromium } = require("playwright");
 const { ExternalSourceAdapter, CANONICAL_12_TOPIC_RULES } = require("./external_source_adapter");
+const { applyProxyToLaunchOptions } = require("./browser_proxy_config");
 
 const AVSEE_ENABLED = process.env.AVSEE_ENABLED === "true";
 const AVSEE_DRY_RUN = process.env.AVSEE_DRY_RUN !== "false"; // default true
@@ -405,11 +406,11 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
     let lastError = null;
     for (const execPath of candidatePaths) {
       try {
-        const launchOpts = {
+        const launchOpts = applyProxyToLaunchOptions({
           headless: true,
           args: baseArgs,
           ...extraOptions
-        };
+        });
         if (execPath) {
           launchOpts.executablePath = execPath;
         } else {
