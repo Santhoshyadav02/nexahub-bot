@@ -1,0 +1,7 @@
+__pycache__/
+browser-profile/
+manual-chrome-profile/
+manual-edge-profile/
+output/
+downloads/
+.proxy.local.json

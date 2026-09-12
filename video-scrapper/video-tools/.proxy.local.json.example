@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy this file to .proxy.local.json (gitignored, never commit it) and fill in real values. Environment variables PROXY_SERVER / PROXY_USERNAME / PROXY_PASSWORD take priority over this file when both are present.",
+  "server": "host:port",
+  "username": "",
+  "password": ""
+}

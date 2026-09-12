@@ -8,9 +8,17 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Error, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
-POST_SELECTOR = '.main-box .post-image a[href]'
+from proxy_config import load_proxy_config, redacted
+
+POST_SELECTOR = '#fboardlist .list-row a[href*="wr_id"]'
 VIDEO_SELECTOR = '.jw-media video.jw-video'
 OVERLAY_SELECTOR = 'div[data-cl-overlay], div.p6driy29haev'
+# General-purpose guesses for a board post's content title, checked in order.
+# Not verified against a specific live target (none was inspected for this
+# change) - falls back to the page's own <title> tag, which is present on
+# virtually any well-formed page, so extraction never simply comes back empty
+# just because none of these class names happen to match.
+POST_TITLE_SELECTORS = ['h1', '.bo_v_tit', '.view_title', '.subject', '.post-title']
 
 
 def connect_browser(chromium, endpoint, timeout):
@@ -140,7 +148,7 @@ def extract_sources_from_frame(frame):
                      ...Array.from(v.querySelectorAll('source[src]'), s => s.getAttribute('src'))]
                     .filter(s => s && s.trim())
                     .map(s => {
-                        try { return new URL(s, v.baseURI).href; } catch (e) { return ''; }
+                        try { return new URL(s, v.baseURI || document.baseURI || window.location.href).href; } catch (e) { return ''; }
                     })
                     .filter(s => s && (s.startsWith('http://') || s.startsWith('https://'))))''')
                 sources.extend(found)
@@ -156,7 +164,7 @@ def extract_sources_from_frame(frame):
                 .map(s => s.getAttribute('src'))
                 .filter(s => s && s.trim())
                 .map(s => {
-                    try { return new URL(s, document.baseURI).href; } catch (e) { return ''; }
+                    try { return new URL(s, document.baseURI || window.location.href).href; } catch (e) { return ''; }
                 })
                 .filter(s => s && (s.startsWith('http://') || s.startsWith('https://')))''')
             sources.extend(standalone)
@@ -170,7 +178,7 @@ def extract_sources_from_frame(frame):
                 .map(f => f.getAttribute('src'))
                 .filter(s => s && s.trim())
                 .map(s => {
-                    try { return new URL(s, document.baseURI).href; } catch (e) { return ''; }
+                    try { return new URL(s, document.baseURI || window.location.href).href; } catch (e) { return ''; }
                 })
                 .filter(s => s && (s.startsWith('http://') || s.startsWith('https://')) &&
                     ['.mp4', '.m4v', '.webm', '.mov', '.m3u8'].some(ext => s.toLowerCase().split('?')[0].endsWith(ext)))''')
@@ -179,6 +187,29 @@ def extract_sources_from_frame(frame):
             pass
 
     return sources
+
+
+def extract_post_title(page):
+    """Best-effort extraction of the post's content title from the DOM.
+    Tries each of POST_TITLE_SELECTORS in order and returns the first
+    nonempty match; falls back to the page's own <title> tag if none of them
+    match anything. Never raises - a title is a nice-to-have annotation, not
+    something that should ever abort scraping a post."""
+    for sel in POST_TITLE_SELECTORS:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                text = loc.first.inner_text().strip()
+                if text:
+                    return text
+        except Error:
+            continue
+        except Exception:
+            continue
+    try:
+        return (page.title() or '').strip()
+    except Exception:
+        return ''
 
 
 def video_sources(page, timeout, play, verification_wait=180, headed=False):
@@ -271,6 +302,12 @@ def main():
     folder = Path(args.output)
     folder.mkdir(parents=True, exist_ok=True)
     results = []
+    proxy = load_proxy_config()
+    print(f'Proxy: {redacted(proxy)}', flush=True)
+    if proxy and args.cdp_url:
+        print('NOTE: --cdp-url attaches to an already-running browser; its proxy was fixed '
+              'at that browser\'s own launch time and cannot be changed from here. The '
+              'configured proxy above will be ignored for this run.', flush=True)
     with sync_playwright() as p:
         browser = None
         if args.cdp_url:
@@ -283,13 +320,13 @@ def main():
             context = browser.contexts[0]
         elif args.profile:
             context = p.chromium.launch_persistent_context(
-                str(Path(args.profile).resolve()), headless=not args.headed
+                str(Path(args.profile).resolve()), headless=not args.headed, proxy=proxy
             )
         elif args.headless:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, proxy=proxy)
             context = browser.new_context()
         else:
-            browser = p.chromium.launch(headless=not args.headed)
+            browser = p.chromium.launch(headless=not args.headed, proxy=proxy)
             context = browser.new_context()
         page = context.new_page() if args.cdp_url else (context.pages[0] if context.pages else context.new_page())
         page.set_default_timeout(args.timeout * 1000)
@@ -332,7 +369,7 @@ def main():
                     pass
             detail.on('popup', close_popup)
             for index, link in enumerate(links, 1):
-                result = dict(page_url=link, video_urls=[], status='not_found', error='')
+                result = dict(page_url=link, title='', video_urls=[], status='not_found', error='')
                 detail.set_default_timeout(args.timeout * 1000)
                 try:
                     print(f'[{index}/{len(links)}] Opening post...', flush=True)
@@ -344,6 +381,7 @@ def main():
                         detail.wait_for_load_state('domcontentloaded', timeout=min(10000, args.timeout * 1000))
                     except PlaywrightTimeoutError:
                         print('  Page still loading; checking available DOM...', flush=True)
+                    result['title'] = extract_post_title(detail)
                     result['video_urls'] = video_sources(
                         detail, args.timeout, args.play, args.verification_wait, args.headed
                     )

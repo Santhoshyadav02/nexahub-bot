@@ -19,3 +19,17 @@ video-scrapper/**/downloads/
 # Test workspace & runtime artifacts
 scratch/
 artifacts/
+
+# Video Pipeline runtime state
+video_pipeline/*_state.json
+video_pipeline/media_state.json
+video_pipeline/batch_state.json
+video_pipeline/publish_state.json
+
+# Execution logs
+*.log
+video-scrapper/**/*.log
+
+# Scratch notes & session generator
+sam.readme
+generate_session.js

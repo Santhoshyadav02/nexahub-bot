@@ -1,6 +1,42 @@
-# DOM video link scraper
+# Continuous Producer/Consumer Video Scraper & Pipeline
 
-## Recommended: one command, without extension
+## 🚀 Continuous Pipeline (Producer / Consumer)
+
+The `pipeline.py` module runs an automated, continuous producer/consumer architecture:
+- **Producer (Playwright Chromium)**: Discovers posts from listing pages, visits post pages, extracts direct video URLs, and enqueues download jobs in real time into an in-process bounded queue.
+- **Consumer Worker Pool (Parallel Downloaders)**: Up to 8 concurrent worker threads immediately begin downloading videos as soon as URLs appear in the queue, without waiting for the producer to finish scraping.
+- **Bounded Backpressure**: Producer automatically pauses if the queue reaches `--queue-cap` (default 150), resuming once workers consume items.
+- **Graceful Lifecycle**: Handles `SIGINT` / `Ctrl+C` cleanly without orphan browser processes or lingering `.part` temporary files.
+- **Deduplication**: Automatically skips previously discovered post links and already-downloaded MP4s across cycles.
+
+### Running from Windows Command Prompt (CMD.exe)
+
+```cmd
+cd /d "D:\Automation\hiruboy\video-scrapper\video-tools"
+
+:: Run continuously (polls for new posts every 30s)
+.venv\Scripts\python.exe pipeline.py "https://YOUR-WEBSITE.com" --workers 4 --interval 30
+
+:: Run a single batch cycle and drain queue (--once)
+.venv\Scripts\python.exe pipeline.py "https://YOUR-WEBSITE.com" --workers 4 --once
+
+:: Run with existing post_links.json
+.venv\Scripts\python.exe pipeline.py --input-links output\post_links.json --workers 4 --once
+```
+
+### Running from PowerShell
+
+```powershell
+# Continuous pipeline
+.\run_pipeline.ps1 "https://YOUR-WEBSITE.com" -Workers 4 -Interval 30
+
+# Single batch cycle
+.\run_pipeline.ps1 "https://YOUR-WEBSITE.com" -Workers 4 -Once
+```
+
+---
+
+## Dedicated Manual Scraper Window (Two-Stage / CDP)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run_scraper.ps1

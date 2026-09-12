@@ -126,6 +126,19 @@ async function handleProcessExit(signal) {
     getPipelineInstance().stopScheduler();
   } catch (err) {}
   try {
+    // Phase 1: orchestration only. The manager is never started automatically in
+    // production yet (see video_pipeline/video_pipeline_manager.js), so this is a
+    // safe no-op today - it exists so the shutdown path is already correct once
+    // a later phase does start it.
+    const { getManager } = require("./video_pipeline/video_pipeline_manager");
+    const videoPipelineManager = getManager();
+    videoPipelineManager.preventFurtherStarts();
+    if (videoPipelineManager.isRunning()) {
+      await videoPipelineManager.stop();
+      console.log(`✅ [PID:${APP_PID}] Video Pipeline Manager stopped cleanly for ${signal}.`);
+    }
+  } catch (err) {}
+  try {
     if (bot.isPolling()) {
       await bot.stopPolling();
       console.log(`✅ [PID:${APP_PID}] Bot polling stopped cleanly for ${signal}.`);

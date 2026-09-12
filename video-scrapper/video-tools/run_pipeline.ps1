@@ -7,19 +7,29 @@ param(
     [ValidateRange(1, 8)]
     [int]$Workers = 4,
     [ValidateRange(1, 600)]
-    [double]$Timeout = 60,
+    [double]$Interval = 15.0,
+    [ValidateRange(1, 1000)]
+    [int]$QueueCap = 150,
+    [ValidateRange(1, 600)]
+    [double]$Timeout = 60.0,
+    [switch]$Once,
     [switch]$NoPlay,
-    [switch]$SkipScrape
+    [ValidateSet('chrome', 'edge')]
+    [string]$Browser = 'chrome',
+    [ValidateRange(1024, 65535)]
+    [int]$Port = 9222,
+    [switch]$Standalone,
+    [switch]$Headed,
+    [ValidateRange(1, 100000)]
+    [int]$TargetLinks = 100,
+    [ValidateRange(1, 1000)]
+    [int]$MaxPages = 50
 )
 
 $ErrorActionPreference = 'Stop'
 Push-Location -LiteralPath $PSScriptRoot
 
 try {
-    Write-Host '============================================================'
-    Write-Host 'VIDEO AUTOMATION PIPELINE'
-    Write-Host '============================================================'
-
     # 1. Locate Python executable (prefer local .venv if present)
     $venvPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
@@ -30,136 +40,74 @@ try {
         throw 'Python not found. Please set up the virtual environment or install Python.'
     }
 
-    # 2. Determine scraper input & output directories
     $outputDir = if ([System.IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $PSScriptRoot $Output }
     $downloadsDir = if ([System.IO.Path]::IsPathRooted($Downloads)) { $Downloads } else { Join-Path $PSScriptRoot $Downloads }
-    $videosJsonPath = Join-Path $outputDir 'videos.json'
     $defaultLinksPath = Join-Path $outputDir 'post_links.json'
 
-    if (-not $SkipScrape) {
-        $scraperArgs = @('scrape_videos.py', '--headless', '--output', $outputDir, '--timeout', "$Timeout")
-        if (-not $NoPlay) {
-            $scraperArgs += '--play'
-        }
-
-        if ($InputLinks -and $InputLinks.Trim().Length -gt 0) {
-            if (-not (Test-Path -LiteralPath $InputLinks -PathType Leaf)) {
-                throw "Input links file not found: $InputLinks"
-            }
-            $scraperArgs += @('--input-links', $InputLinks)
-        } elseif ($Url -and $Url.Trim().Length -gt 0) {
-            $scraperArgs += $Url.Trim()
-        } elseif (Test-Path -LiteralPath $defaultLinksPath -PathType Leaf) {
-            $scraperArgs += @('--input-links', $defaultLinksPath)
-        } else {
-            throw "No URL or input links provided, and default '$defaultLinksPath' was not found."
-        }
-
-        # 3. [1/5] & [2/5] Run Playwright scraper in headless mode
-        Write-Host ''
-        Write-Host '[1/5] Starting Playwright Headless...'
-        Write-Host '[2/5] Discovering video links...'
-
-        & $pythonExe @scraperArgs
-        $scraperExitCode = $LASTEXITCODE
-        if ($scraperExitCode -ne 0) {
-            Write-Host "Scraper failed with exit code $scraperExitCode."
-            exit $scraperExitCode
-        }
-    }
-
-    # 4. [3/5] Validate videos.json completely before invoking downloader
-    if (-not (Test-Path -LiteralPath $videosJsonPath -PathType Leaf)) {
-        Write-Host 'videos.json validation failed: file does not exist.'
-        exit 1
-    }
-
-    try {
-        $jsonRaw = Get-Content -LiteralPath $videosJsonPath -Raw -Encoding UTF8
-        if ([string]::IsNullOrWhiteSpace($jsonRaw)) {
-            throw 'File is empty.'
-        }
-        $records = $jsonRaw | ConvertFrom-Json
-    } catch {
-        Write-Host 'videos.json validation failed.'
-        Write-Host "JSON parse error: $_"
-        exit 1
-    }
-
-    $recordsList = @()
-    if ($null -ne $records) {
-        if ($records -is [System.Array] -or $records -is [System.Collections.IList]) {
-            $recordsList = $records
-        } else {
-            $recordsList = @($records)
-        }
-    }
-
-    $uniqueVideoUrls = [System.Collections.Generic.HashSet[string]]::new()
-    foreach ($rec in $recordsList) {
-        if ($null -eq $rec) { continue }
-        $vUrls = $rec.video_urls
-        if ($null -ne $vUrls) {
-            if ($vUrls -is [string]) {
-                $vUrls = @($vUrls)
-            }
-            foreach ($u in $vUrls) {
-                if ($u -is [string] -and $u.Trim().Length -gt 0) {
-                    $trimmed = $u.Trim()
-                    if ($trimmed -match '^https?://.+') {
-                        [void]$uniqueVideoUrls.Add($trimmed)
-                    }
-                }
-            }
-        }
-    }
-
-    $totalRecords = $recordsList.Count
-    $totalVideoUrls = $uniqueVideoUrls.Count
-
-    Write-Host "[3/5] videos.json generated."
-    Write-Host "      Records: $totalRecords"
-    Write-Host "      Video URLs: $totalVideoUrls"
-
-    if ($totalVideoUrls -eq 0) {
-        Write-Host ''
-        Write-Host 'No downloadable video URLs discovered.'
-        Write-Host '============================================================'
-        Write-Host 'PIPELINE COMPLETE (NO DOWNLOADS REQUIRED)'
-        Write-Host '============================================================'
-        exit 0
-    }
-
-    # 5. [4/5] Launch bounded parallel downloader
-    Write-Host ''
-    Write-Host '[4/5] Starting parallel downloader...'
-    Write-Host "      Workers: $Workers"
-
-    $downloaderArgs = @(
-        'download_videos.py',
-        $videosJsonPath,
-        '--output', $downloadsDir,
+    $argsList = @(
+        'pipeline.py',
+        '--output', $outputDir,
+        '--downloads', $downloadsDir,
         '--workers', "$Workers",
-        '--timeout', "$Timeout"
+        '--interval', "$Interval",
+        '--queue-cap', "$QueueCap",
+        '--timeout', "$Timeout",
+        '--target-links', "$TargetLinks",
+        '--max-pages', "$MaxPages"
     )
 
-    & $pythonExe @downloaderArgs
-    $downloaderExitCode = $LASTEXITCODE
-
-    if ($downloaderExitCode -ne 0) {
-        Write-Host ''
-        Write-Host "Downloader failed with exit code $downloaderExitCode."
-        exit $downloaderExitCode
+    if ($Once) {
+        $argsList += '--once'
+    }
+    if (-not $NoPlay) {
+        $argsList += '--play'
     }
 
-    # 6. [5/5] Pipeline completion
-    Write-Host ''
-    Write-Host '[5/5] Downloader completed.'
-    Write-Host ''
-    Write-Host '============================================================'
-    Write-Host 'PIPELINE COMPLETE'
-    Write-Host '============================================================'
-    exit 0
+    if ($InputLinks -and $InputLinks.Trim().Length -gt 0) {
+        if (-not (Test-Path -LiteralPath $InputLinks -PathType Leaf)) {
+            throw "Input links file not found: $InputLinks"
+        }
+        $argsList += @('--input-links', $InputLinks)
+    } elseif ($Url -and $Url.Trim().Length -gt 0) {
+        $argsList += $Url.Trim()
+    } elseif (Test-Path -LiteralPath $defaultLinksPath -PathType Leaf) {
+        $argsList += @('--input-links', $defaultLinksPath)
+    }
+
+    if ($Standalone) {
+        # Old behavior: plain Playwright browser, no persistent verified session.
+        # Sites with bot-verification (Cloudflare, etc.) will block this in headless mode.
+        if ($Headed) {
+            $argsList += '--headed'
+        } else {
+            $argsList += '--headless'
+        }
+    } else {
+        # Default: reuse (or start) one dedicated, persistent browser session via CDP so a
+        # verification challenge only ever needs solving once per session, not once per run.
+        Write-Host '============================================================'
+        Write-Host 'Ensuring a verified browser session is available...'
+        Write-Host '============================================================'
+        # Invoke via a bypassed child process, not the '&' call operator: start_browser.ps1
+        # may carry Windows' internet "Mark of the Web", which the current execution policy
+        # can refuse to load in-process even though this script itself runs fine.
+        powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'start_browser.ps1') -Browser $Browser -Port $Port -QuietInstructions
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start/verify the dedicated browser session (start_browser.ps1 exited with code $LASTEXITCODE)."
+        }
+        $argsList += @('--cdp-url', "http://127.0.0.1:$Port")
+
+        Write-Host ''
+        Write-Host 'If the browser window shows a "verify you are human" / Cloudflare check,'
+        Write-Host 'solve it there now. The pipeline below retries automatically every'
+        Write-Host "$Interval`s and will start scraping/downloading on its own as soon as it clears -"
+        Write-Host 'no need to run anything else.'
+        Write-Host ''
+    }
+
+    & $pythonExe @argsList
+    $exitCode = $LASTEXITCODE
+    exit $exitCode
 
 } finally {
     Pop-Location
