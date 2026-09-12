@@ -243,7 +243,11 @@ async function runRuntimeTests() {
     intervalMs: 10800000,
     downloadsDir: env4.downloadsDir,
     outputDir: env4.outputDir,
-    stateDir: env4.stateDir
+    stateDir: env4.stateDir,
+    // autoPublish defaults to true, so a valid config now also requires a
+    // Telegram client (fail-closed fix) - this test is about config
+    // validity generally, not publishing specifics, so a trivial mock unblocks it.
+    telegramClient: { sendVideo: async () => ({ message_id: 1 }) }
   });
   const status4 = runtime4.getStatus();
   check('Valid config reports configValid=true', status4.configValid === true);

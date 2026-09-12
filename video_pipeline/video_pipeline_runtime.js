@@ -135,6 +135,19 @@ class VideoPipelineRuntime {
         this._lastConfigError = err;
         return { valid: false, reason: err };
       }
+
+      // Fail closed rather than starting a scheduler that would fail every
+      // single publish attempt: require either an injected Telegram client
+      // (production: the bot instance from index.js), a fully pre-configured
+      // publisher, or a fully custom batchCycleManager (whatever publishing
+      // setup it has, if any, is that caller's own responsibility - this
+      // runtime only guards the paths where IT would build the publisher).
+      if (!this.batchCycleManager && !this.videoBatchPublisher && !this.telegramClient) {
+        const err = 'A Telegram client is required when autoPublish is enabled (config.telegramClient, or a pre-configured config.videoBatchPublisher/batchCycleManager).';
+        this._configValid = false;
+        this._lastConfigError = err;
+        return { valid: false, reason: err };
+      }
     }
 
     this._configValid = true;

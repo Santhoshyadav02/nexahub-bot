@@ -3249,7 +3249,13 @@ if (isMainModule) {
   // 🎬 Automated Batched Video Pipeline Runtime (Phase 6)
   try {
     const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
-    const videoRuntime = getVideoPipelineRuntime();
+    // Reuse the existing, already-authenticated node-telegram-bot-api instance
+    // as the publisher's Telegram client - its sendVideo(chatId, video, options)
+    // signature already matches exactly what VideoBatchPublisher calls. This is
+    // the SAME bot the rest of NexaHub uses; no second Telegram client/session
+    // is created. Only used if the runtime is actually enabled (VIDEO_PIPELINE_ENABLED)
+    // and configured to auto-publish - otherwise it's constructed but never invoked.
+    const videoRuntime = getVideoPipelineRuntime({ telegramClient: bot });
     videoRuntime.start();
   } catch (videoErr) {
     console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);

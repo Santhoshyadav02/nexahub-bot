@@ -17,10 +17,16 @@
  *   3. FFmpeg full decode pass (if available) - catches corruption that a
  *      valid-looking header can still hide.
  *
- * FFprobe/FFmpeg are optional: if not found, validation still runs (with a
- * clearly reported degraded-evidence flag) rather than crashing - most of
- * this repo's own tooling already assumes a specific winget install path
- * with an environment-variable override, so the same convention is reused.
+ * FFprobe/FFmpeg are REQUIRED for a media file to be considered valid. There
+ * is no developer-machine hardcoded path here (removed - it only ever worked
+ * on one Windows dev box and silently meant nothing in production, where
+ * nixpacks.toml now installs a real `ffmpeg` package providing both binaries
+ * on PATH). Resolution order is exactly:
+ *   1. FFMPEG_PATH / FFPROBE_PATH env var, if set and it exists.
+ *   2. The bare `ffmpeg` / `ffprobe` command, resolved via the system PATH.
+ * If neither resolves to a working binary, validation FAILS CLOSED (valid:
+ * false) with toolingUnavailable:true and a clear error - it never silently
+ * downgrades to a weaker check and calls it "valid".
  */
 
 const fs = require('fs');
@@ -30,8 +36,6 @@ function getFFmpegPath() {
   if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
     return process.env.FFMPEG_PATH;
   }
-  const wingetPath = 'C:\\Users\\sam\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.1-full_build\\bin\\ffmpeg.exe';
-  if (fs.existsSync(wingetPath)) return wingetPath;
   return 'ffmpeg';
 }
 
@@ -39,8 +43,6 @@ function getFFprobePath() {
   if (process.env.FFPROBE_PATH && fs.existsSync(process.env.FFPROBE_PATH)) {
     return process.env.FFPROBE_PATH;
   }
-  const wingetPath = 'C:\\Users\\sam\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.1-full_build\\bin\\ffprobe.exe';
-  if (fs.existsSync(wingetPath)) return wingetPath;
   return 'ffprobe';
 }
 
@@ -161,7 +163,8 @@ function validateMediaFile(filePath) {
     height: null,
     codec: null,
     ffprobeUsed: false,
-    ffmpegDecodeUsed: false
+    ffmpegDecodeUsed: false,
+    toolingUnavailable: false
   };
 
   let stat;
@@ -190,11 +193,15 @@ function validateMediaFile(filePath) {
 
   const probeRes = probeMedia(filePath);
   if (probeRes.unavailable) {
-    // Degraded-evidence path: header check already passed; ffprobe/ffmpeg
-    // simply aren't installed in this environment. Documented, not hidden.
-    result.valid = true;
-    result.hasVideoTrack = true;
-    result.error = 'ffprobe/ffmpeg unavailable - validated via ISOBMFF header only (degraded evidence)';
+    // Fail closed: ffprobe is required evidence, not optional. A missing
+    // binary must never be silently treated as "validated" - that would let
+    // an unverified file reach READY/publish just because tooling was absent.
+    const message = 'ffprobe is required for media validation but was not found '
+      + '(checked FFPROBE_PATH and the system PATH). Refusing to mark this media as valid.';
+    console.error(`[MEDIA_VALIDATOR] ${message}`);
+    result.valid = false;
+    result.toolingUnavailable = true;
+    result.error = message;
     return result;
   }
   if (!probeRes.success) {
@@ -209,8 +216,12 @@ function validateMediaFile(filePath) {
 
   const decodeRes = decodeCheck(filePath);
   if (decodeRes.unavailable) {
-    result.valid = true;
-    result.hasVideoTrack = true;
+    const message = 'ffmpeg is required for media validation but was not found '
+      + '(checked FFMPEG_PATH and the system PATH). Refusing to mark this media as valid.';
+    console.error(`[MEDIA_VALIDATOR] ${message}`);
+    result.valid = false;
+    result.toolingUnavailable = true;
+    result.error = message;
     return result;
   }
   if (!decodeRes.passed) {

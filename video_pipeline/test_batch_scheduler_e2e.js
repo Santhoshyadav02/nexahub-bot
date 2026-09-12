@@ -652,12 +652,14 @@ async function runMasterE2E() {
     const { url: serverUrl11 } = await fixture11.listen();
 
     const batchState11 = new BatchState({ statePath: env11.batchStatePath });
+    const mediaLedger11 = new MediaLedger({ ledgerPath: env11.mediaLedgerPath });
     const vpm11 = new VideoPipelineManager();
     const bcm11 = new BatchCycleManager({
       acquisitionUrl: serverUrl11,
       outputDir: env11.outputDir,
       downloadsDir: env11.downloadsDir,
       batchState: batchState11,
+      mediaIngestor: new MediaIngestor({ downloadsDir: env11.downloadsDir, ledger: mediaLedger11 }),
       videoPipelineManager: vpm11,
       acquisitionOptions: { workers: 1, timeout: 30, targetLinks: 1, maxPages: 1, standalone: true }
     });

@@ -393,7 +393,11 @@ async function runMasterE2E() {
       downloadsDir: envFail1.downloadsDir,
       outputDir: envFail1.outputDir,
       stateDir: envFail1.stateDir,
-      acquisitionOptions: { workers: 1, timeout: 5, targetLinks: 1, maxPages: 1, standalone: true }
+      acquisitionOptions: { workers: 1, timeout: 5, targetLinks: 1, maxPages: 1, standalone: true },
+      // autoPublish defaults to true, so config validity now also requires a
+      // Telegram client (fail-closed fix) - this test is about acquisition
+      // 404 handling, not publishing, so a trivial mock unblocks it.
+      telegramClient: { sendVideo: async () => ({ message_id: 1 }) }
     });
     const resFail1 = await runtimeFail1.runOnce();
     check('Acquisition 404 results in COMPLETED_EMPTY or FAILED without crashing', resFail1.status === 'FAILED' || resFail1.status === 'COMPLETED_EMPTY', 'failureRecovery');
@@ -554,7 +558,11 @@ async function runMasterE2E() {
       downloadsDir: envShut.downloadsDir,
       outputDir: envShut.outputDir,
       stateDir: envShut.stateDir,
-      acquisitionOptions: { workers: 1, timeout: 15, targetLinks: 1, maxPages: 1, standalone: true }
+      acquisitionOptions: { workers: 1, timeout: 15, targetLinks: 1, maxPages: 1, standalone: true },
+      // autoPublish defaults to true, so config validity now also requires a
+      // Telegram client (fail-closed fix) - this test is about shutdown
+      // behavior, not publishing, so a trivial mock unblocks it.
+      telegramClient: { sendVideo: async () => ({ message_id: 1 }) }
     });
 
     runtimeShut.start();

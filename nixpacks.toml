@@ -2,6 +2,7 @@
 nixPkgs = [
   "...",
   "chromium",
+  "ffmpeg",
   "glib",
   "nspr",
   "nss",
