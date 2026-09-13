@@ -718,7 +718,7 @@ async function testDestinationSafetyAndRouting() {
 
   // 1. VideoDestinationRouter classifies media deterministically
   const router = new VideoDestinationRouter({
-    configPath: path.join(__dirname, 'destination_routing_config.json')
+    configPath: path.join(__dirname, '..', 'destination_routing_config.json')
   });
 
   const decision = router.routeMedia({ mediaId: 'test_123', title: 'Cosplay Romantic Date Scene' });
@@ -749,6 +749,20 @@ async function testDestinationSafetyAndRouting() {
   const fallbackCaption = nonProdPublisher.formatCaption(dummyMediaWithoutTitle);
   check('titlePreservation', 'Caption uses deterministic fallback "Video Update (${fallbackId})" when title is missing',
     fallbackCaption.startsWith('Video Update (deadbeef)'), `caption="${fallbackCaption}"`);
+}
+
+// video-tools' own optional proxy config (.proxy.local.json - a runtime
+// artifact, not part of its shipped code) would otherwise route this file's
+// local HTTP fixtures through a real external proxy that cannot reach
+// 127.0.0.1, causing 0 links to ever be discovered. Set aside for the
+// duration of this file only and restore unconditionally afterward -
+// matching the same pattern already used by every other local-fixture test.
+const PROXY_CONFIG_PATH = path.join(__dirname, '..', 'video-scrapper', 'video-tools', '.proxy.local.json');
+const PROXY_CONFIG_BACKUP_PATH = `${PROXY_CONFIG_PATH}.set-aside-by-phase8-streaming-test`;
+const hadProxyConfig = fs.existsSync(PROXY_CONFIG_PATH);
+if (hadProxyConfig) fs.renameSync(PROXY_CONFIG_PATH, PROXY_CONFIG_BACKUP_PATH);
+function restoreProxyConfig() {
+  if (hadProxyConfig && fs.existsSync(PROXY_CONFIG_BACKUP_PATH)) fs.renameSync(PROXY_CONFIG_BACKUP_PATH, PROXY_CONFIG_PATH);
 }
 
 // ============================================================
@@ -792,10 +806,13 @@ async function main() {
     fs.rmSync(TEST_WORKSPACE, { recursive: true, force: true });
   }
 
-  process.exit(failed > 0 ? 1 : 0);
+  return failed === 0;
 }
 
-main().catch(err => {
-  console.error('Master test suite failed with unhandled error:', err);
-  process.exit(1);
-});
+main()
+  .then(ok => { restoreProxyConfig(); process.exit(ok ? 0 : 1); })
+  .catch(err => {
+    console.error('Master test suite failed with unhandled error:', err);
+    restoreProxyConfig();
+    process.exit(1);
+  });
