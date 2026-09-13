@@ -114,7 +114,17 @@ async function testEndToEndStagingPublishViaWiredClient() {
   bcm.batchState.startCycle('cycle_wiring_test', { startedAt: new Date().toISOString() });
   bcm.batchState.updateCycle('cycle_wiring_test', {
     status: 'BATCH_READY',
-    media: [{ mediaId: 'media_wiring_test', title: 'Wiring Test Video', filePath: fixturePath, contentSha256: fixtureSha256, sourceKeyHash: 'y' }]
+    media: [{
+      mediaId: 'media_wiring_test',
+      title: 'Wiring Test Video',
+      filePath: fixturePath,
+      contentSha256: fixtureSha256,
+      sourceKeyHash: 'y',
+      sourceMode: 'authorized',
+      isFixtureMedia: false,
+      sourcePageUrl: 'https://authorized-test-source.internal/posts/test',
+      sourceVideoUrl: 'https://authorized-test-source.internal/video/test.mp4'
+    }]
   });
 
   const pubResult = await bcm.publishCycle('cycle_wiring_test');

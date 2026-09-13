@@ -201,6 +201,17 @@ class PublishLedger {
         title: media.title || existing.title || '',
         filePath: media.filePath || existing.filePath || '',
         contentSha256: media.contentSha256 || existing.contentSha256 || null,
+        // Phase 7 verification record fields: LOCAL_SIZE/LOCAL_DURATION/
+        // LOCAL_RESOLUTION captured alongside MEDIA_ID/TITLE/LOCAL_SHA256/
+        // TELEGRAM_MESSAGE_ID/DESTINATION/READBACK_STATUS so a full,
+        // persisted per-item verification record exists - not just a
+        // console log line that could be missed.
+        size: media.size != null ? media.size : (existing.size != null ? existing.size : null),
+        duration: media.duration != null ? media.duration : (existing.duration != null ? existing.duration : null),
+        width: media.width != null ? media.width : (existing.width != null ? existing.width : null),
+        height: media.height != null ? media.height : (existing.height != null ? existing.height : null),
+        codec: media.codec || existing.codec || null,
+        sourceMode: media.sourceMode || existing.sourceMode || null,
         attemptedAt: now,
         publishedAt: existing.publishedAt || null,
         attemptsCount: (existing.attemptsCount || 0) + 1,

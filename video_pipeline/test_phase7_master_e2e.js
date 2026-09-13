@@ -142,6 +142,19 @@ function copyFixture(destPath, id = 'pA') {
   return destPath;
 }
 
+function hashFile(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
+
+// SOURCE_PROVENANCE_VALIDATION requires these on every media record,
+// distinct from TECHNICAL_VALIDATION (playability), regardless of source_mode.
+const TEST_PROVENANCE = {
+  sourceMode: 'fixture',
+  isFixtureMedia: true,
+  sourcePageUrl: 'http://127.0.0.1:1/post/test-fixture',
+  sourceVideoUrl: 'http://127.0.0.1:1/video/test-fixture.mp4'
+};
+
 function createFixtureServer(postsData) {
   let currentPosts = [...postsData];
 
@@ -439,8 +452,8 @@ async function runMasterE2E() {
     batchState4.startCycle('c_partial_01', {
       status: 'BATCH_READY',
       media: [
-        { mediaId: 'm_good', title: 'Good Title', filePath: vGood, size: fs.statSync(vGood).size },
-        { mediaId: 'm_bad', title: 'Bad Title', filePath: vBad, size: fs.statSync(vBad).size }
+        { mediaId: 'm_good', title: 'Good Title', filePath: vGood, size: fs.statSync(vGood).size, contentSha256: hashFile(vGood), ...TEST_PROVENANCE },
+        { mediaId: 'm_bad', title: 'Bad Title', filePath: vBad, size: fs.statSync(vBad).size, contentSha256: hashFile(vBad), ...TEST_PROVENANCE }
       ]
     });
     batchState4.updateCycle('c_partial_01', { status: 'BATCH_READY' });

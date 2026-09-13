@@ -26,6 +26,7 @@ const { PublishLedger } = require('./publish_ledger');
 const { MediaCleaner } = require('./media_cleaner');
 const { VideoDestinationRouter } = require('./video_destination_router');
 const { validateMediaFile } = require('./media_validator');
+const { validateSourceProvenance } = require('./source_provenance_validator');
 
 const LOG_PREFIX = '[VIDEO_BATCH_PUBLISHER]';
 const DEFAULT_RATE_LIMIT_DELAY_MS = 1000;
@@ -454,30 +455,53 @@ class VideoBatchPublisher {
       return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
-    // 3. Media Integrity Validation
+    // 3. Media Integrity Validation (TECHNICAL_VALIDATION)
+    // Answers: "can this file be played? is it a real, undamaged video?"
+    // This says NOTHING about where the bytes came from - see step 3a below.
+    let freshValidation = null;
     try {
-      const validation = await this.mediaValidator(filePath);
-      if (!validation || !validation.valid) {
-        const err = `Media integrity validation failed: ${validation ? validation.reason : 'unknown validator error'}`;
-        console.error(`${LOG_PREFIX} ${err}`);
+      freshValidation = await this.mediaValidator(filePath);
+      if (!freshValidation || !freshValidation.valid) {
+        const err = `Media integrity validation failed: ${freshValidation ? freshValidation.reason : 'unknown validator error'}`;
+        console.error(`${LOG_PREFIX} TECHNICAL_VALIDATION: FAIL - ${err}`);
         const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
         await this.publishLedger.recordFailure(attempt.publishId, err);
         return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
       }
+      console.log(`${LOG_PREFIX} TECHNICAL_VALIDATION: PASS mediaId=${mediaId}`);
     } catch (valErr) {
       const err = `Media validator threw an exception: ${valErr.message}`;
+      console.error(`${LOG_PREFIX} TECHNICAL_VALIDATION: FAIL - ${err}`);
       const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
       await this.publishLedger.recordFailure(attempt.publishId, err);
       return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
-    // 3b. Exact file handoff proof: recompute SHA256 of the artifact on disk
-    // RIGHT NOW and compare it against the media record's recorded SHA256 -
-    // proves the bytes about to be uploaded are the exact same bytes that
-    // were technically validated earlier, not a different file that happens
-    // to share a path (e.g. a retry that silently re-downloaded, or a
-    // duplicate filename race). Only enforced when the media record actually
-    // carries a SHA256 to compare against.
+    // 3a. Source Provenance Validation (SOURCE_PROVENANCE_VALIDATION)
+    // Deliberately SEPARATE from the technical check above. Answers a
+    // completely different question: "does this media record actually
+    // belong to the source/post it claims to, and is its source_mode
+    // self-consistent?" A tiny fixture clip can pass TECHNICAL_VALIDATION
+    // perfectly while still failing this check, and vice versa. Both must
+    // PASS before publication - neither substitutes for the other.
+    const provenanceResult = validateSourceProvenance(media);
+    if (!provenanceResult.valid) {
+      const err = provenanceResult.error || 'Source provenance validation failed.';
+      console.error(`${LOG_PREFIX} SOURCE_PROVENANCE_VALIDATION: FAIL - ${err}`);
+      const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+      await this.publishLedger.recordFailure(attempt.publishId, err);
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+    }
+    console.log(`${LOG_PREFIX} SOURCE_PROVENANCE_VALIDATION: PASS mediaId=${mediaId} sourceMode=${media.sourceMode}`);
+
+    // 3b. Exact file handoff proof: recompute SHA256, duration, width,
+    // height and codec of the artifact on disk RIGHT NOW and compare each
+    // against the media record's values captured during ingestion - proves
+    // the bytes about to be uploaded are the exact same artifact that was
+    // technically validated earlier, not a different file that happens to
+    // share a path (e.g. a retry that silently re-downloaded, a duplicate
+    // filename race, or a transcode that altered the media in place). Any
+    // mismatch on ANY field blocks publish.
     if (media.contentSha256) {
       let actualSha256;
       try {
@@ -501,6 +525,29 @@ class VideoBatchPublisher {
         await this.publishLedger.recordFailure(attempt.publishId, err);
         return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
       }
+
+      const handoffChecks = [
+        ['duration', media.duration, freshValidation.duration, 0.5],
+        ['width', media.width, freshValidation.width, 0],
+        ['height', media.height, freshValidation.height, 0],
+        ['codec', media.codec, freshValidation.codec, null]
+      ];
+      for (const [field, recorded, actual, tolerance] of handoffChecks) {
+        if (recorded === undefined || recorded === null || recorded === '') continue; // nothing recorded to compare against
+        let mismatch;
+        if (tolerance === null) {
+          mismatch = String(recorded) !== String(actual);
+        } else {
+          mismatch = Math.abs(Number(recorded) - Number(actual)) > tolerance;
+        }
+        if (mismatch) {
+          const err = `Exact file handoff mismatch on "${field}" immediately before publish: record=${recorded} actual=${actual}. Publish blocked - the artifact on disk no longer matches the validated media record.`;
+          console.error(`${LOG_PREFIX} ${err}`);
+          const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+          await this.publishLedger.recordFailure(attempt.publishId, err);
+          return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+        }
+      }
     }
 
     // 4. Record UPLOADING state in PublishLedger
@@ -519,10 +566,12 @@ class VideoBatchPublisher {
         // Provenance log BEFORE sending - proves exactly what is about to be
         // uploaded and from which source_mode/page, with URLs redacted.
         console.log(`${LOG_PREFIX} Publishing: MEDIA_ID=${mediaId} SOURCE_MODE=${media.sourceMode || 'unknown'} `
-          + `SOURCE_PAGE=${redactUrl(media.sourcePageUrl)} LOCAL_FILE=${path.basename(filePath)} `
+          + `SOURCE_PAGE=${redactUrl(media.sourcePageUrl)} TITLE=${media.title || 'unknown'} `
+          + `LOCAL_FILE=${path.basename(filePath)} `
           + `SHA256=${media.contentSha256 || 'unknown'} SIZE=${currentStat.size} `
           + `DURATION=${media.duration != null ? media.duration : 'unknown'} `
-          + `RESOLUTION=${media.width || '?'}x${media.height || '?'}`);
+          + `RESOLUTION=${media.width || '?'}x${media.height || '?'} `
+          + `CODEC=${media.codec || 'unknown'}`);
 
         const uploadResult = await this._sendToTelegram({
           destinationId,

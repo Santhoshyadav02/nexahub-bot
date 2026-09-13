@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const crypto = require('crypto');
 
 const { VideoBatchPublisher } = require('./video_batch_publisher');
 const { BatchCycleManager } = require('./batch_cycle_manager');
@@ -70,6 +71,19 @@ function copyFixture(destPath) {
   return destPath;
 }
 
+function hashFile(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
+
+// SOURCE_PROVENANCE_VALIDATION requires these on every media record,
+// distinct from TECHNICAL_VALIDATION (playability), regardless of source_mode.
+const TEST_PROVENANCE = {
+  sourceMode: 'fixture',
+  isFixtureMedia: true,
+  sourcePageUrl: 'http://127.0.0.1:1/post/test-fixture',
+  sourceVideoUrl: 'http://127.0.0.1:1/video/test-fixture.mp4'
+};
+
 async function runLifecycleTests() {
   console.log('============================================================');
   console.log('🎬 COMPLETE PUBLISHING LIFECYCLE TEST SUITE (PHASE 4C)');
@@ -105,7 +119,8 @@ async function runLifecycleTests() {
         title: 'Evergrande Troupe Private Meeting Scandal',
         filePath: videoFile1,
         size: size1,
-        contentSha256: '08e7ad5e901ecfd886cf5ea9c88557a6fb6a65f9dede5b79065f74c32fe34985'
+        contentSha256: hashFile(videoFile1),
+        ...TEST_PROVENANCE
       }
     ]
   });
@@ -160,8 +175,8 @@ async function runLifecycleTests() {
   batchState2.startCycle(batchId2, {
     status: 'BATCH_READY',
     media: [
-      { mediaId: 'media_A', title: 'Romantic Vibe Love Highlights', filePath: vA, size: fs.statSync(vA).size },
-      { mediaId: 'media_B', title: 'Bunny Girl Cosplay Party', filePath: vB, size: fs.statSync(vB).size }
+      { mediaId: 'media_A', title: 'Romantic Vibe Love Highlights', filePath: vA, size: fs.statSync(vA).size, contentSha256: hashFile(vA), ...TEST_PROVENANCE },
+      { mediaId: 'media_B', title: 'Bunny Girl Cosplay Party', filePath: vB, size: fs.statSync(vB).size, contentSha256: hashFile(vB), ...TEST_PROVENANCE }
     ]
   });
   batchState2.updateCycle(batchId2, { status: 'BATCH_READY' });
@@ -215,7 +230,7 @@ async function runLifecycleTests() {
   const batchId3 = 'batch_fail_001';
   batchState3.startCycle(batchId3, {
     status: 'BATCH_READY',
-    media: [{ mediaId: 'media_fail', title: 'Fail Test Video', filePath: vFail, size: fs.statSync(vFail).size }]
+    media: [{ mediaId: 'media_fail', title: 'Fail Test Video', filePath: vFail, size: fs.statSync(vFail).size, contentSha256: hashFile(vFail), ...TEST_PROVENANCE }]
   });
   batchState3.updateCycle(batchId3, { status: 'BATCH_READY' });
 
@@ -316,7 +331,7 @@ async function runLifecycleTests() {
   const mgrBatchId = 'batch_mgr_001';
   batchState5.startCycle(mgrBatchId, {
     status: 'BATCH_READY',
-    media: [{ mediaId: 'm_mgr', title: 'Manager Test', filePath: vMgr, size: fs.statSync(vMgr).size }]
+    media: [{ mediaId: 'm_mgr', title: 'Manager Test', filePath: vMgr, size: fs.statSync(vMgr).size, contentSha256: hashFile(vMgr), ...TEST_PROVENANCE }]
   });
   batchState5.updateCycle(mgrBatchId, { status: 'BATCH_READY' });
   batchState5.setControllerState('IDLE');

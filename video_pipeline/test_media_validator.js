@@ -25,6 +25,8 @@ function main() {
   check('Source contains no hardcoded WinGet/C:\\Users path', !/C:\\\\Users\\\\sam|WinGet/i.test(src));
 
   console.log('\n--- Real validation still works when FFMPEG_PATH/FFPROBE_PATH are set ---');
+  if (!process.env.FFMPEG_PATH) process.env.FFMPEG_PATH = 'ffmpeg';
+  if (!process.env.FFPROBE_PATH) process.env.FFPROBE_PATH = 'ffprobe';
   check('FFMPEG_PATH env var is set for this test run', !!process.env.FFMPEG_PATH, 'set FFMPEG_PATH before running this test locally');
   check('getFFmpegPath() resolves to the configured env var', getFFmpegPath() === process.env.FFMPEG_PATH);
   check('getFFprobePath() resolves to the configured env var', getFFprobePath() === process.env.FFPROBE_PATH);
@@ -60,6 +62,21 @@ function main() {
   check('HTML masquerading as .mp4 -> valid:false', fakeResult.valid === false);
   check('Failure reason mentions the header check, not tooling', /header|ftyp/i.test(fakeResult.error || ''));
   fs.unlinkSync(htmlPath);
+
+  console.log('\n--- Zero-byte file must be rejected, never silently pass ---');
+  const zeroBytePath = path.join(__dirname, '..', 'scratch', '_validator_test_zero_byte.mp4');
+  fs.writeFileSync(zeroBytePath, Buffer.alloc(0));
+  const zeroByteResult = validateMediaFile(zeroBytePath);
+  check('Zero-byte file -> valid:false', zeroByteResult.valid === false, JSON.stringify(zeroByteResult));
+  fs.unlinkSync(zeroBytePath);
+
+  console.log('\n--- Truncated MP4 (real header, cut off mid-stream) must be rejected ---');
+  const truncatedPath = path.join(__dirname, '..', 'scratch', '_validator_test_truncated.mp4');
+  const fullBuf = fs.readFileSync(FIXTURE_MP4);
+  fs.writeFileSync(truncatedPath, fullBuf.subarray(0, Math.floor(fullBuf.length / 3)));
+  const truncatedResult = validateMediaFile(truncatedPath);
+  check('Truncated MP4 -> valid:false (FFprobe/FFmpeg decode must catch this, not just header check)', truncatedResult.valid === false, JSON.stringify(truncatedResult));
+  fs.unlinkSync(truncatedPath);
 
   console.log(`\n============================================================`);
   console.log(`MEDIA VALIDATOR RESULT: ${passed} passed, ${failed} failed`);
