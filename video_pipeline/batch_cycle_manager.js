@@ -136,6 +136,21 @@ class BatchCycleManager {
   _recoverOnStartup() {
     const state = this.batchState.getControllerState();
     const cycleId = this.batchState.getCurrentCycleId();
+
+    if (state === 'STOPPING' || state === 'STOPPED' || (!cycleId && state !== 'IDLE')) {
+      console.warn(`${LOG_PREFIX} Recovery: controller was in state ${state} on startup. Resetting controller state to IDLE.`);
+      if (cycleId) {
+        this.batchState.updateCycle(cycleId, {
+          status: 'FAILED',
+          completedAt: new Date().toISOString(),
+          lastError: `Recovered at startup: process stopped in state ${state}.`
+        });
+        this.batchState.data.currentCycleId = null;
+      }
+      this.batchState.setControllerState('IDLE');
+      return;
+    }
+
     if (!cycleId) return;
 
     if (state === 'ACQUIRING' || state === 'PROCESSING' || state === 'STREAMING') {
