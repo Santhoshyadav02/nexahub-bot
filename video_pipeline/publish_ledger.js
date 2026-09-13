@@ -219,8 +219,14 @@ class PublishLedger {
    * @param {object} params
    * @param {string|number} params.telegramMessageId
    * @param {string} [params.publishedAt]
+   * @param {boolean} [params.readBackVerified] Whether Telegram's own response
+   *   metadata (video/document stream present, duration/resolution/size
+   *   consistent with the local file) was inspected and matched - not just
+   *   that sendVideo returned without throwing.
+   * @param {object} [params.readBackDetails] Non-secret diagnostic detail
+   *   (reason string, compared field values) for an unverified read-back.
    */
-  async recordSuccess(publishId, { telegramMessageId, publishedAt = new Date().toISOString() }) {
+  async recordSuccess(publishId, { telegramMessageId, publishedAt = new Date().toISOString(), readBackVerified = null, readBackDetails = null }) {
     return this._withLock(() => {
       const record = this.data.records[publishId];
       if (!record) {
@@ -230,6 +236,8 @@ class PublishLedger {
       record.telegramMessageId = String(telegramMessageId);
       record.publishedAt = publishedAt;
       record.lastError = null;
+      if (readBackVerified !== null) record.readBackVerified = readBackVerified;
+      if (readBackDetails !== null) record.readBackDetails = readBackDetails;
       this._save();
       return { ...record };
     });

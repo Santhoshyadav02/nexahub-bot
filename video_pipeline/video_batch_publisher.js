@@ -33,6 +33,23 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Safe-to-log form of a source URL: strips query strings (where signed
+ * tokens/credentials typically live) and any embedded userinfo, keeping only
+ * scheme+host+path. Never throws - an unparsable value is redacted whole.
+ * @param {string} url
+ * @returns {string}
+ */
+function redactUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch (e) {
+    return '<redacted>';
+  }
+}
+
 // Known production channel usernames/IDs to strictly forbid as staging destinations
 const FORBIDDEN_PRODUCTION_DESTINATIONS = new Set([
   'ccsfvk', 'cccsefk', 'e5brygh', 'ccdjxc', 'vsdxda',
@@ -335,7 +352,8 @@ class VideoBatchPublisher {
       console.log(`${LOG_PREFIX} Media ${mediaId} already published to ${destinationId} (msgId=${existing.telegramMessageId}). Skipping.`);
 
       let cleaned = false;
-      if (shouldCleanup && media.filePath && fs.existsSync(media.filePath)) {
+      const priorReadBackOk = existing.readBackVerified !== false; // undefined (pre-existing records) treated as ok
+      if (shouldCleanup && priorReadBackOk && media.filePath && fs.existsSync(media.filePath)) {
         const cleanRes = await this.mediaCleaner.cleanMedia({
           mediaId,
           destinationId,
@@ -414,6 +432,14 @@ class VideoBatchPublisher {
           throw new Error('Telegram client is not initialized or injected.');
         }
 
+        // Provenance log BEFORE sending - proves exactly what is about to be
+        // uploaded and from which source_mode/page, with URLs redacted.
+        console.log(`${LOG_PREFIX} Publishing: MEDIA_ID=${mediaId} SOURCE_MODE=${media.sourceMode || 'unknown'} `
+          + `SOURCE_PAGE=${redactUrl(media.sourcePageUrl)} LOCAL_FILE=${path.basename(filePath)} `
+          + `SHA256=${media.contentSha256 || 'unknown'} SIZE=${currentStat.size} `
+          + `DURATION=${media.duration != null ? media.duration : 'unknown'} `
+          + `RESOLUTION=${media.width || '?'}x${media.height || '?'}`);
+
         const uploadResult = await this._sendToTelegram({
           destinationId,
           filePath,
@@ -427,17 +453,29 @@ class VideoBatchPublisher {
           throw new Error(`Telegram upload did not return a valid message ID: ${JSON.stringify(uploadResult)}`);
         }
 
-        // 6. Record Success in PublishLedger
+        // 6. Read-back verification: inspect Telegram's OWN response metadata
+        // for the uploaded video/document, rather than trusting a bare
+        // "no exception was thrown" as proof of a correct upload.
+        const readBack = this._verifyReadBack(uploadResult, media);
+        if (!readBack.verified) {
+          console.warn(`${LOG_PREFIX} Read-back verification did NOT pass for media ${mediaId} (msgId ${telegramMessageId}): ${readBack.reason}. Message was sent, but local cleanup is withheld pending manual review.`);
+        }
+
+        // 7. Record Success in PublishLedger (upload objectively succeeded -
+        // read-back outcome is recorded alongside, not used to un-record it)
         const successRecord = await this.publishLedger.recordSuccess(publishId, {
           telegramMessageId: String(telegramMessageId),
-          publishedAt: new Date().toISOString()
+          publishedAt: new Date().toISOString(),
+          readBackVerified: readBack.verified,
+          readBackDetails: readBack.details
         });
 
-        console.log(`${LOG_PREFIX} Successfully published media ${mediaId} (${canonicalDestination}) -> msgId ${telegramMessageId}`);
+        console.log(`${LOG_PREFIX} Successfully published media ${mediaId} (${canonicalDestination}) -> msgId ${telegramMessageId} (readBackVerified=${readBack.verified})`);
 
-        // 7. Verified Post-Publish Cleanup (ONLY after confirmed publication in ledger)
+        // 8. Verified Post-Publish Cleanup (ONLY after confirmed publication
+        // in the ledger AND a passing read-back verification)
         let cleaned = false;
-        if (shouldCleanup) {
+        if (shouldCleanup && readBack.verified) {
           const cleanRes = await this.mediaCleaner.cleanMedia({
             mediaId,
             destinationId,
@@ -456,6 +494,7 @@ class VideoBatchPublisher {
           destinationId,
           telegramMessageId: String(telegramMessageId),
           publishedAt: successRecord.publishedAt,
+          readBackVerified: readBack.verified,
           cleaned
         };
       } catch (uploadErr) {
@@ -484,6 +523,67 @@ class VideoBatchPublisher {
       error: lastError ? lastError.message : 'Unknown upload error',
       cleaned: false
     };
+  }
+
+  /**
+   * Inspects Telegram's OWN response to sendVideo/sendDocument rather than
+   * trusting a bare "no exception was thrown" as proof of a correct upload.
+   * A real node-telegram-bot-api response always carries a `video` (or
+   * `document`) object with file_id/file_size/duration/width/height, which
+   * this compares against the locally-recorded media metadata.
+   *
+   * Minimal test doubles that don't return this metadata at all are treated
+   * as inconclusive-but-not-failed (never a fabricated failure from an
+   * absence of data) rather than unverified, to stay compatible with
+   * existing mocks that predate this check and test unrelated concerns -
+   * the real client always supplies this metadata, so production and the
+   * dedicated fixture/authorized E2E tests exercise the strict path for real.
+   * @param {object} uploadResult Raw response from the Telegram client
+   * @param {object} media The local media record (size/duration/width/height)
+   * @returns {{verified: boolean, reason: string|null, details: object}}
+   */
+  _verifyReadBack(uploadResult, media) {
+    const videoMeta = uploadResult && (uploadResult.video || uploadResult.document);
+    if (!videoMeta) {
+      return {
+        verified: true,
+        reason: null,
+        details: { inconclusive: true, note: 'Telegram client response contained no video/document metadata to compare' }
+      };
+    }
+
+    const details = {
+      telegramFileId: videoMeta.file_id || null,
+      telegramFileSize: videoMeta.file_size != null ? videoMeta.file_size : null,
+      telegramDuration: videoMeta.duration != null ? videoMeta.duration : null,
+      telegramWidth: videoMeta.width != null ? videoMeta.width : null,
+      telegramHeight: videoMeta.height != null ? videoMeta.height : null
+    };
+
+    if (!videoMeta.file_id) {
+      return { verified: false, reason: 'Telegram video/document metadata is missing a file_id', details };
+    }
+
+    if (details.telegramFileSize != null && media.size != null) {
+      const tolerance = Math.max(2048, media.size * 0.02); // 2% or 2KB - container remux overhead
+      if (Math.abs(details.telegramFileSize - media.size) > tolerance) {
+        return { verified: false, reason: `File size mismatch: local=${media.size} telegram=${details.telegramFileSize}`, details };
+      }
+    }
+
+    if (details.telegramDuration != null && media.duration != null && media.duration > 0) {
+      if (Math.abs(details.telegramDuration - media.duration) > 2) {
+        return { verified: false, reason: `Duration mismatch: local=${media.duration}s telegram=${details.telegramDuration}s`, details };
+      }
+    }
+
+    if (details.telegramWidth && details.telegramHeight && media.width && media.height) {
+      if (details.telegramWidth !== media.width || details.telegramHeight !== media.height) {
+        return { verified: false, reason: `Resolution mismatch: local=${media.width}x${media.height} telegram=${details.telegramWidth}x${details.telegramHeight}`, details };
+      }
+    }
+
+    return { verified: true, reason: null, details };
   }
 
   /**

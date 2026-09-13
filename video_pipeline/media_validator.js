@@ -106,15 +106,38 @@ function probeMedia(filePath) {
     if (!videoStream) {
       return { success: false, error: 'No video stream found in media container' };
     }
+    const audioStream = (json.streams || []).find(s => s.codec_type === 'audio');
+
+    const containerFormat = json.format ? json.format.format_name : 'unknown';
+    // ffprobe's format_name is often a comma-separated alias list (e.g.
+    // "mov,mp4,m4a,3gp,3g2,mj2") - the container is genuinely ambiguous
+    // among those without also inspecting the file extension/ftyp brand, so
+    // report the first (most specific/primary) alias rather than guessing.
+    const container = containerFormat && containerFormat !== 'unknown' ? containerFormat.split(',')[0] : 'unknown';
+    const mimeType = container === 'mp4' || container === 'mov' || container === 'm4v'
+      ? 'video/mp4'
+      : (container && container !== 'unknown' ? `video/${container}` : 'application/octet-stream');
+
+    let frameRate = null;
+    const rate = videoStream.avg_frame_rate || videoStream.r_frame_rate;
+    if (rate && rate !== '0/0') {
+      const [num, den] = rate.split('/').map(Number);
+      if (den) frameRate = Math.round((num / den) * 100) / 100;
+    }
 
     return {
       success: true,
       data: {
-        format: json.format ? json.format.format_name : 'unknown',
+        format: containerFormat,
+        container,
+        mimeType,
         duration: json.format && json.format.duration ? parseFloat(json.format.duration) : 0,
         codec: videoStream.codec_name || 'unknown',
         width: videoStream.width || 0,
-        height: videoStream.height || 0
+        height: videoStream.height || 0,
+        frameRate,
+        hasAudio: Boolean(audioStream),
+        audioCodec: audioStream ? (audioStream.codec_name || 'unknown') : null
       }
     };
   } catch (err) {
@@ -162,6 +185,11 @@ function validateMediaFile(filePath) {
     width: null,
     height: null,
     codec: null,
+    container: null,
+    mimeType: null,
+    frameRate: null,
+    hasAudio: null,
+    audioCodec: null,
     ffprobeUsed: false,
     ffmpegDecodeUsed: false,
     toolingUnavailable: false
@@ -213,6 +241,20 @@ function validateMediaFile(filePath) {
   result.width = probeRes.data.width;
   result.height = probeRes.data.height;
   result.codec = probeRes.data.codec;
+  result.container = probeRes.data.container;
+  result.mimeType = probeRes.data.mimeType;
+  result.frameRate = probeRes.data.frameRate;
+  result.hasAudio = probeRes.data.hasAudio;
+  result.audioCodec = probeRes.data.audioCodec;
+
+  if (!(result.duration > 0)) {
+    result.error = `Invalid duration reported by ffprobe: ${result.duration}`;
+    return result;
+  }
+  if (!(result.width > 0) || !(result.height > 0)) {
+    result.error = `Invalid resolution reported by ffprobe: ${result.width}x${result.height}`;
+    return result;
+  }
 
   const decodeRes = decodeCheck(filePath);
   if (decodeRes.unavailable) {

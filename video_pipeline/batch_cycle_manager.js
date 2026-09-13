@@ -78,6 +78,7 @@ class BatchCycleManager {
     }
 
     this.acquisitionUrl = config.acquisitionUrl || null;
+    this.sourceMode = config.sourceMode || 'fixture';
     this.outputDir = config.outputDir;
     this.downloadsDir = config.downloadsDir;
     this.acquisitionOptions = config.acquisitionOptions || {};
@@ -289,8 +290,9 @@ class BatchCycleManager {
 
         processedFiles.add(absPath);
 
-        const fileTitleMap = this._buildFileTitleMap();
-        let title = fileTitleMap.get(absPath) || '';
+        const fileProvenanceMap = this._buildFileProvenanceMap();
+        const prov = fileProvenanceMap.get(absPath) || {};
+        let title = prov.title || '';
         if (!title && videoUrlHint) {
           title = this._lookupTitleByUrl(videoUrlHint) || '';
         }
@@ -302,6 +304,7 @@ class BatchCycleManager {
           }
           const record = this.mediaIngestor.ledger.getRecord(scanResult.id);
           const resolvedTitle = (record && record.title) || title || scanResult.title || '';
+          const validation = record ? record.validation : null;
           const mediaRecord = {
             mediaId: scanResult.id,
             title: resolvedTitle,
@@ -310,7 +313,18 @@ class BatchCycleManager {
             contentSha256: record ? record.contentSha256 : scanResult.contentSha256,
             sourceKeyHash: record ? record.sourceKeyHash : scanResult.sourceKeyHash,
             discoveredAt: record ? record.discoveredAt : new Date().toISOString(),
-            validatedAt: record ? record.validatedAt : new Date().toISOString()
+            validatedAt: record ? record.validatedAt : new Date().toISOString(),
+            sourceMode: this.sourceMode,
+            sourcePageUrl: prov.pageUrl || '',
+            sourceVideoUrl: prov.videoUrl || videoUrlHint || '',
+            mimeType: validation ? validation.mimeType : null,
+            container: validation ? validation.container : null,
+            codec: validation ? validation.codec : null,
+            duration: validation ? validation.duration : null,
+            width: validation ? validation.width : null,
+            height: validation ? validation.height : null,
+            frameRate: validation ? validation.frameRate : null,
+            hasAudio: validation ? validation.hasAudio : null
           };
           readyMediaList.push(mediaRecord);
 
@@ -547,29 +561,45 @@ class BatchCycleManager {
    */
   _buildFileTitleMap() {
     const map = new Map();
+    for (const [abs, prov] of this._buildFileProvenanceMap()) {
+      map.set(abs, prov.title);
+    }
+    return map;
+  }
+
+  /**
+   * Same correlation as the title map above, but also carries the source
+   * page_url/video_url through for each downloaded file - required so every
+   * media record can prove exactly which source_mode/page/URL it came from,
+   * all the way through to the Telegram caption and publish ledger.
+   */
+  _buildFileProvenanceMap() {
+    const map = new Map();
     const videosJsonPath = path.join(this.outputDir, 'videos.json');
     const reportPath = path.join(this.downloadsDir, 'download_report.json');
     if (!fs.existsSync(videosJsonPath)) return map;
 
-    const titleByUrl = new Map();
-    const titleByFilename = new Map();
+    const provByUrl = new Map();
+    const provByFilename = new Map();
 
     try {
       const records = JSON.parse(fs.readFileSync(videosJsonPath, 'utf8'));
       for (const rec of records || []) {
         const title = (rec.title || '').trim();
-        if (rec.page_url) titleByUrl.set(rec.page_url, title);
+        const pageUrl = rec.page_url || '';
+        if (rec.page_url) provByUrl.set(rec.page_url, { title, pageUrl, videoUrl: '' });
         if (Array.isArray(rec.video_urls)) {
           for (const url of rec.video_urls) {
             if (url) {
-              titleByUrl.set(url, title);
+              const prov = { title, pageUrl, videoUrl: url };
+              provByUrl.set(url, prov);
               try {
                 const parsed = new URL(url, 'http://127.0.0.1');
-                titleByUrl.set(parsed.pathname, title);
+                provByUrl.set(parsed.pathname, prov);
               } catch (_) {}
               try {
                 const h = crypto.createHash('sha256').update(url).digest('hex').substring(0, 20);
-                titleByFilename.set(`video_${h}.mp4`, title);
+                provByFilename.set(`video_${h}.mp4`, prov);
               } catch (_) {}
             }
           }
@@ -585,15 +615,17 @@ class BatchCycleManager {
         const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
         for (const entry of report || []) {
           if (entry.file && entry.video_url) {
-            let title = titleByUrl.get(entry.video_url);
-            if (!title) {
+            let prov = provByUrl.get(entry.video_url);
+            if (!prov) {
               try {
                 const parsed = new URL(entry.video_url, 'http://127.0.0.1');
-                title = titleByUrl.get(parsed.pathname);
+                prov = provByUrl.get(parsed.pathname);
               } catch (_) {}
             }
-            if (title) {
-              map.set(path.resolve(entry.file), title);
+            if (prov) {
+              map.set(path.resolve(entry.file), { title: prov.title, pageUrl: prov.pageUrl, videoUrl: prov.videoUrl || entry.video_url });
+            } else {
+              map.set(path.resolve(entry.file), { title: '', pageUrl: '', videoUrl: entry.video_url });
             }
           }
         }
@@ -608,8 +640,8 @@ class BatchCycleManager {
         const files = fs.readdirSync(this.downloadsDir);
         for (const f of files) {
           const abs = path.resolve(path.join(this.downloadsDir, f));
-          if (!map.has(abs) && titleByFilename.has(f)) {
-            map.set(abs, titleByFilename.get(f));
+          if (!map.has(abs) && provByFilename.has(f)) {
+            map.set(abs, provByFilename.get(f));
           }
         }
       } catch (e) {}
@@ -624,20 +656,33 @@ class BatchCycleManager {
    * before a future publisher consumes the batch.
    */
   _freezeReadyMedia(scanSummary) {
-    const fileTitleMap = this._buildFileTitleMap();
+    const fileProvenanceMap = this._buildFileProvenanceMap();
     const readyOutcomes = (scanSummary.results || []).filter(r => r.status === 'READY' && !r.alreadyProcessed);
     return readyOutcomes.map(outcome => {
       const record = this.mediaIngestor.ledger.getRecord(outcome.id);
       const filePath = record ? record.filePath : outcome.filePath;
+      const prov = fileProvenanceMap.get(path.resolve(filePath)) || {};
+      const validation = record ? record.validation : null;
       return {
         mediaId: outcome.id,
-        title: fileTitleMap.get(path.resolve(filePath)) || '',
+        title: prov.title || '',
         filePath,
         size: record ? record.size : null,
         contentSha256: record ? record.contentSha256 : null,
         sourceKeyHash: record ? record.sourceKeyHash : null,
         discoveredAt: record ? record.discoveredAt : null,
-        validatedAt: record ? record.validatedAt : null
+        validatedAt: record ? record.validatedAt : null,
+        sourceMode: this.sourceMode,
+        sourcePageUrl: prov.pageUrl || '',
+        sourceVideoUrl: prov.videoUrl || '',
+        mimeType: validation ? validation.mimeType : null,
+        container: validation ? validation.container : null,
+        codec: validation ? validation.codec : null,
+        duration: validation ? validation.duration : null,
+        width: validation ? validation.width : null,
+        height: validation ? validation.height : null,
+        frameRate: validation ? validation.frameRate : null,
+        hasAudio: validation ? validation.hasAudio : null
       };
     });
   }

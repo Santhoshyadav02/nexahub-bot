@@ -46,6 +46,10 @@ const FORBIDDEN_PRODUCTION_DESTINATIONS = new Set([
   'sichuan mother & son', 'hu siyuan', 'kept lover'
 ]);
 
+const SOURCE_MODE_FIXTURE = 'fixture';
+const SOURCE_MODE_AUTHORIZED = 'authorized';
+const VALID_SOURCE_MODES = new Set([SOURCE_MODE_FIXTURE, SOURCE_MODE_AUTHORIZED]);
+
 class VideoPipelineRuntime {
   /**
    * @param {object} [config] Optional configuration override (for DI and tests)
@@ -55,6 +59,20 @@ class VideoPipelineRuntime {
       ? Boolean(config.enabled)
       : (process.env.VIDEO_PIPELINE_ENABLED === 'true');
 
+    // Explicit source mode - no automatic fallback between modes exists
+    // anywhere in this runtime. "fixture" (the safe default) uses ONLY the
+    // internal fixture server built below; "authorized" uses ONLY the
+    // explicitly configured VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL and fails
+    // closed (CONFIG_ERROR) if that URL isn't set - it never substitutes the
+    // fixture or any other source.
+    this.sourceMode = (config.sourceMode || process.env.VIDEO_PIPELINE_SOURCE_MODE || SOURCE_MODE_FIXTURE).trim().toLowerCase();
+    this.authorizedSourceUrl = config.authorizedSourceUrl || process.env.VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL || null;
+    // Documented-inert by design: fallback between source modes is a hard
+    // "never" requirement, so this flag is read only for status/logging
+    // purposes and never used to trigger any actual fallback behavior.
+    this.fixtureFallbackToLive = config.fixtureFallbackToLive !== undefined
+      ? Boolean(config.fixtureFallbackToLive)
+      : (process.env.VIDEO_PIPELINE_FIXTURE_FALLBACK_TO_LIVE === 'true');
     this.acquisitionUrl = config.acquisitionUrl || process.env.VIDEO_PIPELINE_ACQUISITION_URL || null;
     this.inputLinks = config.inputLinks || process.env.VIDEO_PIPELINE_INPUT_LINKS || null;
     this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
@@ -156,13 +174,23 @@ class VideoPipelineRuntime {
       return { valid: true, enabled: false };
     }
 
-    const isFixtureMode = this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal' || process.env.VIDEO_PIPELINE_FIXTURE_ENABLED === 'true';
-    if (!this.acquisitionUrl && !this.inputLinks && !isFixtureMode) {
-      const err = 'VIDEO_PIPELINE_ACQUISITION_URL (or inputLinks) is required when video pipeline is enabled.';
+    if (!VALID_SOURCE_MODES.has(this.sourceMode)) {
+      const err = `VIDEO_PIPELINE_SOURCE_MODE must be exactly "fixture" or "authorized" (got: "${this.sourceMode}"). Refusing to guess a source.`;
       this._configValid = false;
       this._lastConfigError = err;
       return { valid: false, reason: err };
     }
+
+    if (this.sourceMode === SOURCE_MODE_AUTHORIZED && !this.authorizedSourceUrl) {
+      const err = 'VIDEO_PIPELINE_SOURCE_MODE=authorized requires VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL to be explicitly configured. Refusing to substitute the fixture or any other source.';
+      this._configValid = false;
+      this._lastConfigError = err;
+      return { valid: false, reason: err };
+    }
+    // Fixture mode needs no acquisitionUrl check here: the internal fixture
+    // server supplies one in _ensureManagerInitialized(); acquisitionUrl/
+    // inputLinks remain supported as explicit overrides for tests that want
+    // fixture mode to point at their own local HTTP server instead.
 
     if (this.autoPublish) {
       if (!this.stagingChatId || typeof this.stagingChatId !== 'string' || !this.stagingChatId.trim()) {
@@ -304,9 +332,15 @@ class VideoPipelineRuntime {
       console.warn(`${LOG_PREFIX} Directory ensure warning: ${e.message}`);
     }
 
-    const isFixtureMode = this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal' || process.env.VIDEO_PIPELINE_FIXTURE_ENABLED === 'true';
-    if (isFixtureMode && (!this.acquisitionUrl || this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal')) {
+    // Explicit, non-negotiable source resolution - exactly one of these two
+    // branches ever runs, chosen solely by this.sourceMode. Neither branch
+    // falls back to the other under any condition.
+    if (this.sourceMode === SOURCE_MODE_AUTHORIZED) {
+      this.acquisitionUrl = this.authorizedSourceUrl;
+      console.log(`${LOG_PREFIX} Source mode: AUTHORIZED (explicitly configured source).`);
+    } else if (!this.acquisitionUrl || this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal') {
       this.acquisitionUrl = this._startInternalFixtureServer();
+      console.log(`${LOG_PREFIX} Source mode: FIXTURE (internal test server, not a live/authorized source).`);
     }
 
     const batchStatePath = path.join(this.stateDir, 'batch_state.json');
@@ -336,6 +370,7 @@ class VideoPipelineRuntime {
 
     this.batchCycleManager = new BatchCycleManager({
       acquisitionUrl: this.acquisitionUrl,
+      sourceMode: this.sourceMode,
       outputDir: this.outputDir,
       downloadsDir: this.downloadsDir,
       batchState,
@@ -497,7 +532,9 @@ class VideoPipelineRuntime {
       schedulerActive,
       configValid: this._configValid,
       lastConfigError: this._lastConfigError,
-      lastCycleSummary: lastSummary
+      lastCycleSummary: lastSummary,
+      sourceMode: this.sourceMode,
+      authorizedSourceConfigured: Boolean(this.authorizedSourceUrl)
     };
   }
 }
