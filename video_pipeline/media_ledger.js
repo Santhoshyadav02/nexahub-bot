@@ -7,11 +7,13 @@
  * boundary for this phase. Nothing else reads or writes this file.
  *
  * Crash-safety model:
- *   - Every write serializes the WHOLE ledger to a nanosecond-unique temp
- *     file, then rename()s it over the real file. Rename on the same
- *     filesystem is atomic, so a crash mid-write can only ever leave behind
- *     an orphaned temp file (swept on next startup) - never a corrupt or
- *     half-written media_state.json.
+ *   - Every write serializes the WHOLE ledger through runtime_paths'
+ *     writeJsonAtomicSync (unique temp file -> fsync -> rename). A crash
+ *     mid-write can only ever leave behind an orphaned temp file (swept on
+ *     next startup) - never a corrupt or half-written media_state.json.
+ *   - A ledger that is nonetheless unparsable is quarantined (renamed aside
+ *     as *.corrupt-<timestamp>) rather than silently overwritten.
+ *   - Default location: <NEXAHUB_DATA_DIR>/video_pipeline/state/media_state.json.
  *   - All mutating operations run through a single in-process promise-chain
  *     lock, so concurrent scanOnce()/claim() calls from the same process can
  *     never interleave a read-modify-write cycle against each other.
@@ -25,15 +27,17 @@
 const fs = require('fs');
 const path = require('path');
 
+const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require('../runtime_paths');
+
 const LEDGER_VERSION = '1.0.0';
 
 class MediaLedger {
   /**
    * @param {object} [config]
-   * @param {string} [config.ledgerPath] Defaults to video_pipeline/media_state.json
+   * @param {string} [config.ledgerPath] Defaults to <data dir>/video_pipeline/state/media_state.json
    */
   constructor(config = {}) {
-    this.ledgerPath = config.ledgerPath || path.join(__dirname, 'media_state.json');
+    this.ledgerPath = config.ledgerPath || dataPath('video_pipeline', 'state', 'media_state.json');
     fs.mkdirSync(path.dirname(this.ledgerPath), { recursive: true });
     this.data = { version: LEDGER_VERSION, updatedAt: null, records: {}, contentIndex: {}, sourceIndex: {} };
     this._lockChain = Promise.resolve();
@@ -46,6 +50,14 @@ class MediaLedger {
   _cleanupStaleTempFiles() {
     const dir = path.dirname(this.ledgerPath);
     const base = path.basename(this.ledgerPath);
+    // Matches both the legacy "<file>.tmp.<ns>" temp names and runtime_paths'
+    // "<file>.<pid>.<ts>.<rand>.tmp" names. Writes are synchronous, so no temp
+    // file can belong to an in-flight write while this runs at construction.
+    const isStaleTemp = (entry) => {
+      if (!entry.startsWith(`${base}.`)) return false;
+      const rest = entry.slice(base.length + 1);
+      return rest.startsWith('tmp.') || /^\d+\.\d+\.[a-z0-9]+\.tmp$/.test(rest);
+    };
     let entries = [];
     try {
       entries = fs.readdirSync(dir);
@@ -53,7 +65,7 @@ class MediaLedger {
       return;
     }
     for (const entry of entries) {
-      if (entry.startsWith(`${base}.tmp.`)) {
+      if (isStaleTemp(entry)) {
         try {
           fs.unlinkSync(path.join(dir, entry));
         } catch (e) {
@@ -79,8 +91,12 @@ class MediaLedger {
       parsed = JSON.parse(raw);
     } catch (e) {
       // The atomic rename pattern should make this unreachable in practice,
-      // but never trust a file blindly - start clean rather than crash.
-      this._recovery.notes.push(`Existing ledger was not valid JSON (${e.message}); starting a fresh ledger.`);
+      // but never trust a file blindly - preserve it for manual recovery and
+      // start clean rather than crash or overwrite it.
+      const quarantined = quarantineCorruptFile(this.ledgerPath);
+      this._recovery.notes.push(`Existing ledger was not valid JSON (${e.message}); `
+        + `${quarantined ? `preserved as ${quarantined}; ` : ''}starting a fresh ledger.`);
+      console.error(`[MEDIA_LEDGER] ${this.ledgerPath} was not valid JSON; starting a fresh ledger.`);
       return;
     }
 
@@ -119,35 +135,7 @@ class MediaLedger {
 
   _save() {
     this.data.updatedAt = new Date().toISOString();
-    const tmpPath = `${this.ledgerPath}.tmp.${process.hrtime.bigint()}`;
-    const json = JSON.stringify(this.data, null, 2);
-    const fd = fs.openSync(tmpPath, 'w');
-    try {
-      fs.writeSync(fd, json);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    for (let i = 0; i < 10; i++) {
-      try {
-        fs.renameSync(tmpPath, this.ledgerPath);
-        return;
-      } catch (err) {
-        if ((err.code === 'EPERM' || err.code === 'EBUSY') && i < 9) {
-          const waitMs = (i + 1) * 10;
-          const start = Date.now();
-          while (Date.now() - start < waitMs) {}
-        } else {
-          try {
-            fs.copyFileSync(tmpPath, this.ledgerPath);
-            try { fs.unlinkSync(tmpPath); } catch (_) {}
-            return;
-          } catch (_) {
-            throw err;
-          }
-        }
-      }
-    }
+    writeJsonAtomicSync(this.ledgerPath, this.data);
   }
 
   /**

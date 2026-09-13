@@ -6,17 +6,29 @@
  * separate from external_source_state.json, the old AVSEE ledger, and
  * media_state.json. Nothing else reads or writes this file.
  *
- * Same crash-safety model as media_ledger.js: every write serializes the
- * whole state to a nanosecond-unique temp file, fsyncs it, then rename()s it
- * over the real file - atomic on the same filesystem, so a crash mid-write
- * can only ever leave an orphaned temp file (swept on next startup), never a
- * corrupt or half-written batch_state.json.
+ * Same crash-safety model as media_ledger.js: every write goes through
+ * runtime_paths' writeJsonAtomicSync (temp file -> fsync -> rename), so a
+ * crash mid-write can only ever leave an orphaned temp file (swept on next
+ * startup), never a corrupt or half-written batch_state.json. An unparsable
+ * file is quarantined (*.corrupt-<timestamp>) rather than overwritten.
+ *
+ * Bounded growth: only the most recent MAX_CYCLE_HISTORY cycles are kept, and
+ * only the most recent FULL_MEDIA_CYCLES keep their full frozen media arrays
+ * (cycles still awaiting publication are never pruned or trimmed).
+ *
+ * Default location: <NEXAHUB_DATA_DIR>/video_pipeline/state/batch_state.json.
  */
 
 const fs = require('fs');
 const path = require('path');
 
+const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require('../runtime_paths');
+
 const BATCH_STATE_VERSION = '1.0.0';
+const MAX_CYCLE_HISTORY = 50;
+const FULL_MEDIA_CYCLES = 10;
+// Cycles in these states may still be published from their frozen media list.
+const UNPRUNABLE_CYCLE_STATUSES = new Set(['BATCH_READY', 'PUBLISHING']);
 
 const BATCH_LIFECYCLE_STATES = [
   'IDLE',
@@ -39,16 +51,22 @@ const BATCH_LIFECYCLE_STATES = [
 class BatchState {
   /**
    * @param {object} [config]
-   * @param {string} [config.statePath] Defaults to video_pipeline/batch_state.json
+   * @param {string} [config.statePath] Defaults to <data dir>/video_pipeline/state/batch_state.json
+   * @param {number} [config.maxCycleHistory]
+   * @param {number} [config.fullMediaCycles]
    */
   constructor(config = {}) {
-    this.statePath = config.statePath || path.join(__dirname, 'batch_state.json');
+    this.statePath = config.statePath || dataPath('video_pipeline', 'state', 'batch_state.json');
+    this.maxCycleHistory = config.maxCycleHistory || MAX_CYCLE_HISTORY;
+    this.fullMediaCycles = config.fullMediaCycles || FULL_MEDIA_CYCLES;
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
     this.data = {
       version: BATCH_STATE_VERSION,
       updatedAt: null,
       state: 'IDLE',
       currentCycleId: null,
+      lastCycleStartedAt: null,
+      lastCycleFinishedAt: null,
       skippedTicks: [],
       cycles: {}
     };
@@ -61,6 +79,14 @@ class BatchState {
   _cleanupStaleTempFiles() {
     const dir = path.dirname(this.statePath);
     const base = path.basename(this.statePath);
+    // Matches both the legacy "<file>.tmp.<ns>" temp names and runtime_paths'
+    // "<file>.<pid>.<ts>.<rand>.tmp" names. Writes are synchronous, so no temp
+    // file can belong to an in-flight write while this runs at construction.
+    const isStaleTemp = (entry) => {
+      if (!entry.startsWith(`${base}.`)) return false;
+      const rest = entry.slice(base.length + 1);
+      return rest.startsWith('tmp.') || /^\d+\.\d+\.[a-z0-9]+\.tmp$/.test(rest);
+    };
     let entries = [];
     try {
       entries = fs.readdirSync(dir);
@@ -68,7 +94,7 @@ class BatchState {
       return;
     }
     for (const entry of entries) {
-      if (entry.startsWith(`${base}.tmp.`)) {
+      if (isStaleTemp(entry)) {
         try {
           fs.unlinkSync(path.join(dir, entry));
         } catch (e) {
@@ -91,7 +117,10 @@ class BatchState {
     try {
       parsed = JSON.parse(raw);
     } catch (e) {
-      this._recovery.notes.push(`Existing batch state was not valid JSON (${e.message}); starting fresh.`);
+      const quarantined = quarantineCorruptFile(this.statePath);
+      this._recovery.notes.push(`Existing batch state was not valid JSON (${e.message}); `
+        + `${quarantined ? `preserved as ${quarantined}; ` : ''}starting fresh.`);
+      console.error(`[BATCH_STATE] ${this.statePath} was not valid JSON; starting fresh.`);
       return;
     }
     this.data = {
@@ -99,6 +128,8 @@ class BatchState {
       updatedAt: parsed.updatedAt || null,
       state: parsed.state || 'IDLE',
       currentCycleId: parsed.currentCycleId || null,
+      lastCycleStartedAt: parsed.lastCycleStartedAt || null,
+      lastCycleFinishedAt: parsed.lastCycleFinishedAt || null,
       skippedTicks: Array.isArray(parsed.skippedTicks) ? parsed.skippedTicks : [],
       cycles: parsed.cycles && typeof parsed.cycles === 'object' ? parsed.cycles : {}
     };
@@ -110,36 +141,7 @@ class BatchState {
 
   save() {
     this.data.updatedAt = new Date().toISOString();
-    fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
-    const tmpPath = `${this.statePath}.tmp.${process.hrtime.bigint()}`;
-    const json = JSON.stringify(this.data, null, 2);
-    const fd = fs.openSync(tmpPath, 'w');
-    try {
-      fs.writeSync(fd, json);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    for (let i = 0; i < 10; i++) {
-      try {
-        fs.renameSync(tmpPath, this.statePath);
-        return;
-      } catch (err) {
-        if ((err.code === 'EPERM' || err.code === 'EBUSY') && i < 9) {
-          const waitMs = (i + 1) * 10;
-          const start = Date.now();
-          while (Date.now() - start < waitMs) {}
-        } else {
-          try {
-            fs.copyFileSync(tmpPath, this.statePath);
-            try { fs.unlinkSync(tmpPath); } catch (_) {}
-            return;
-          } catch (_) {
-            throw err;
-          }
-        }
-      }
-    }
+    writeJsonAtomicSync(this.statePath, this.data);
   }
 
   getControllerState() {
@@ -176,6 +178,7 @@ class BatchState {
   startCycle(cycleId, initial = {}) {
     this.data.currentCycleId = cycleId;
     this.data.state = 'ACQUIRING';
+    this.data.lastCycleStartedAt = initial.startedAt || new Date().toISOString();
     this.data.cycles[cycleId] = {
       cycleId,
       status: 'ACQUIRING',
@@ -191,7 +194,58 @@ class BatchState {
       lastError: null,
       ...initial
     };
+    this._pruneHistory();
     this.save();
+  }
+
+  /**
+   * Records when the most recent cycle finished (any terminal outcome). Used
+   * with lastCycleStartedAt to keep the schedule's cadence across restarts.
+   * @param {string} [at] ISO timestamp, defaults to now
+   */
+  recordCycleFinished(at = new Date().toISOString()) {
+    this.data.lastCycleFinishedAt = at;
+    this.save();
+  }
+
+  /**
+   * @returns {{lastCycleStartedAt: string|null, lastCycleFinishedAt: string|null}}
+   */
+  getLastCycleTimes() {
+    let startedAt = this.data.lastCycleStartedAt;
+    if (!startedAt) {
+      // Older state files predate this field - derive it from the history.
+      for (const cycle of Object.values(this.data.cycles)) {
+        if (cycle && cycle.startedAt && (!startedAt || cycle.startedAt > startedAt)) startedAt = cycle.startedAt;
+      }
+    }
+    return { lastCycleStartedAt: startedAt || null, lastCycleFinishedAt: this.data.lastCycleFinishedAt || null };
+  }
+
+  /**
+   * Bounds batch_state.json growth: drops cycles beyond maxCycleHistory and
+   * replaces the frozen media arrays of all but the newest fullMediaCycles
+   * with a count. The current cycle and cycles still awaiting publication
+   * (BATCH_READY/PUBLISHING) are always kept intact.
+   */
+  _pruneHistory() {
+    const isProtected = (c) => c.cycleId === this.data.currentCycleId || UNPRUNABLE_CYCLE_STATUSES.has(c.status);
+    const ordered = Object.values(this.data.cycles)
+      .filter(Boolean)
+      .sort((a, b) => (String(a.startedAt || '') < String(b.startedAt || '') ? 1 : -1));
+
+    ordered.forEach((cycle, index) => {
+      if (isProtected(cycle)) return;
+      if (index >= this.maxCycleHistory) {
+        delete this.data.cycles[cycle.cycleId];
+        return;
+      }
+      if (index >= this.fullMediaCycles && Array.isArray(cycle.media) && cycle.media.length > 0) {
+        cycle.mediaCount = cycle.media.length;
+        cycle.media = [];
+        cycle.mediaTrimmed = true;
+      }
+    });
   }
 
   updateCycle(cycleId, patch) {
@@ -211,4 +265,4 @@ class BatchState {
   }
 }
 
-module.exports = { BatchState, BATCH_STATE_VERSION, BATCH_LIFECYCLE_STATES };
+module.exports = { BatchState, BATCH_STATE_VERSION, BATCH_LIFECYCLE_STATES, MAX_CYCLE_HISTORY, FULL_MEDIA_CYCLES };

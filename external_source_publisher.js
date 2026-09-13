@@ -16,8 +16,32 @@
 
 const fs = require("fs");
 const path = require("path");
-const { EXTERNAL_PUBLISH_ENABLED, getDestinationForTopic } = require("./external_source_destinations");
+const { EXTERNAL_PUBLISH_ENABLED, getDestinationForTopic, isDestinationEnabled } = require("./external_source_destinations");
 const { ExternalSourceState, MAX_GLOBAL_RETENTION } = require("./external_source_state");
+
+const LIVE_PUBLISH_NOT_IMPLEMENTED = "LIVE_PUBLISH_NOT_IMPLEMENTED";
+
+let liveNotImplementedWarned = false;
+
+/**
+ * Live external publishing has not been built (product decision pending).
+ * Warn loudly, once per process, instead of pretending items were delivered.
+ */
+function warnLivePublishingNotImplementedOnce() {
+  if (liveNotImplementedWarned) return;
+  liveNotImplementedWarned = true;
+  console.warn("⚠️ [EXTERNAL_PUBLISHER] EXTERNAL_PUBLISH_ENABLED=true, but live external publishing is NOT implemented. Items are retained in the pool but are NOT sent to Telegram and are NOT recorded as delivered.");
+}
+
+/**
+ * Whether a publishAuthorizedItem() result may be counted as a delivery by callers.
+ * Dry-run simulations count (existing dry-run semantics); unimplemented live publishing does not.
+ * @param {object} result
+ * @returns {boolean}
+ */
+function isCountedAsDelivery(result) {
+  return Boolean(result && (result.simulated === true || result.published === true));
+}
 
 class ExternalSourcePublisher {
   /**
@@ -38,6 +62,10 @@ class ExternalSourcePublisher {
       maxTotalItems: this.maxTotalItems,
       stateFilePath: config.retentionStorePath || config.stateFilePath
     });
+
+    if (this.publishEnabled) {
+      warnLivePublishingNotImplementedOnce();
+    }
   }
 
   /**
@@ -74,7 +102,7 @@ class ExternalSourcePublisher {
 
     // Record into permanent dedupe ledger
     this.stateStore.recordPermanentItem(item, {
-      status: this.publishEnabled ? "LIVE_PUBLISHED" : "DRY_RUN_PUBLISHED",
+      status: this.publishEnabled ? LIVE_PUBLISH_NOT_IMPLEMENTED : "DRY_RUN_PUBLISHED",
       destinationChannel: dest ? dest.destinationChannelId : null
     });
 
@@ -92,6 +120,7 @@ class ExternalSourcePublisher {
       return {
         status: "SIMULATED_PUBLISH_SUCCESS",
         published: false,
+        simulated: true,
         topicKey: topicKey,
         destination: dest,
         retention: retentionInfo,
@@ -99,11 +128,17 @@ class ExternalSourcePublisher {
       };
     }
 
-    // Live publishing placeholder (disabled by default)
-    console.log(`📡 [EXTERNAL_PUBLISHER] Live dispatching item "${item.title}" to ${dest ? dest.destinationChannelId : "N/A"}`);
+    // Live publishing is intentionally NOT implemented (product decision pending).
+    // Report a non-delivery so callers never record this item as delivered.
+    warnLivePublishingNotImplementedOnce();
     return {
-      status: "LIVE_PUBLISH_SUCCESS",
-      published: true,
+      status: LIVE_PUBLISH_NOT_IMPLEMENTED,
+      published: false,
+      simulated: false,
+      delivered: false,
+      reason: isDestinationEnabled(dest)
+        ? "Live external publishing is not implemented"
+        : `Live external publishing is not implemented (destination for "${topicKey}" is also disabled)`,
       topicKey: topicKey,
       destination: dest,
       retention: retentionInfo,
@@ -130,5 +165,7 @@ class ExternalSourcePublisher {
 }
 
 module.exports = {
-  ExternalSourcePublisher
+  ExternalSourcePublisher,
+  isCountedAsDelivery,
+  LIVE_PUBLISH_NOT_IMPLEMENTED
 };

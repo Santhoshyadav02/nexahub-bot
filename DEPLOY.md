@@ -1,0 +1,93 @@
+# Deploying NexaHub bot (Ubuntu 22.04 VPS)
+
+Target: 2 vCPU / 4 GB RAM / 300 GB SSD, Ubuntu 22.04, PM2, one instance.
+
+## 1. One-time server setup
+
+```bash
+# Swap (protects against OOM kills while Chromium/ffmpeg run)
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Node 22, ffmpeg, git, Python
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs ffmpeg git python3-pip python3-venv
+sudo npm i -g pm2
+pm2 install pm2-logrotate
+
+# Runtime state directory (outside the git checkout)
+sudo mkdir -p /var/lib/nexahub && sudo chown "$USER" /var/lib/nexahub
+```
+
+## 2. Code and dependencies
+
+```bash
+git clone https://github.com/Santhoshyadav02/nexahub-bot.git
+cd nexahub-bot
+npm ci                                   # exact versions from package-lock.json
+npx playwright install --with-deps chromium
+```
+
+Only if `VIDEO_PIPELINE_ENABLED=true`:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r video-scrapper/video-tools/requirements.txt
+.venv/bin/python -m playwright install --with-deps chromium
+# then in .env: PYTHON_PATH=/full/path/to/nexahub-bot/.venv/bin/python
+```
+
+Install Playwright browsers as the same user that runs PM2 (browsers are stored in that user's `~/.cache/ms-playwright`). Do not install the Ubuntu `chromium-browser` snap.
+
+## 3. Configuration
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+- Fill `BOT_TOKEN`, `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_STRING`.
+- Keep `NEXAHUB_DATA_DIR=/var/lib/nexahub`.
+- Do not set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` / `CHROME_BIN` (old Nixpacks paths).
+- If you enable the video pipeline, `VIDEO_PIPELINE_SOURCE_MODE` must be set explicitly.
+
+On first start the committed `source_registry.json`, `published_ledger.json`, `ranking.json`, etc. are copied into `/var/lib/nexahub` once; after that only the data-dir copies are used, so `git pull` never touches live state.
+
+## 4. Before the first start: stop every other copy
+
+The bot token was previously deployed elsewhere (Railway). During testing on 2026-09-13 another process was still polling this `BOT_TOKEN` (`409 Conflict`). Before starting the server copy:
+
+- Stop/delete the old Railway service (or any other machine running `node index.js`).
+- Check: `curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates?timeout=0&limit=1"` repeated a few times must never return `409`.
+- If that deployment also used `TELEGRAM_SESSION_STRING`, regenerate the session after stopping it.
+
+## 5. Run
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup        # run the command it prints
+pm2 logs nexahub-bot
+```
+
+Never run a second copy of the bot (or the standalone MTProto scripts) with the same `TELEGRAM_SESSION_STRING` — not on this server and not on a laptop. Telegram revokes a session used by two clients at once (`AUTH_KEY_DUPLICATED`). The bot holds a lock file in the data dir and refuses to start twice on the same machine.
+
+## 5. Updating
+
+```bash
+cd nexahub-bot
+git pull
+npm ci
+pm2 restart nexahub-bot
+```
+
+## 6. Troubleshooting
+
+| Log message | Meaning / action |
+|---|---|
+| `Another NexaHub bot process ... is already running` | A second copy was started. `pm2 list`, stop the duplicate. |
+| `AUTH_KEY_DUPLICATED` | Session revoked. Generate a new session string, update `.env`, restart. |
+| `FloodWait: Telegram requires a Ns pause` | MTProto work pauses automatically; nothing to do. |
+| `Corrupt state file preserved as ...corrupt-...` | A state file was unreadable; the bad copy is kept for inspection. |
+| `409 Conflict` polling | The same `BOT_TOKEN` is polling somewhere else. |

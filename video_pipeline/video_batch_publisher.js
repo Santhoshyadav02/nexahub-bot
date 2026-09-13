@@ -24,10 +24,19 @@ const { BatchState } = require('./batch_state');
 const { PublishLedger } = require('./publish_ledger');
 const { MediaCleaner } = require('./media_cleaner');
 const { VideoDestinationRouter } = require('./video_destination_router');
-const { validateMediaFile } = require('./media_validator');
+const { validateMediaFile, readHeaderPrefix, hasValidMp4Header } = require('./media_validator');
 
 const LOG_PREFIX = '[VIDEO_BATCH_PUBLISHER]';
 const DEFAULT_RATE_LIMIT_DELAY_MS = 1000;
+// Telegram Bot API (api.telegram.org) rejects bot uploads above 50 MB.
+const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const STATUS_SKIPPED_TOO_LARGE = 'SKIPPED_TOO_LARGE';
+
+function resolveMaxUploadBytes(configured) {
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  const fromEnv = Number(process.env.VIDEO_PIPELINE_MAX_UPLOAD_BYTES);
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_MAX_UPLOAD_BYTES;
+}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -74,6 +83,7 @@ class VideoBatchPublisher {
    * @param {number} [config.rateLimitDelayMs] Delay between sequential uploads (ms)
    * @param {number} [config.maxRetries=1]
    * @param {boolean} [config.enableCleanup=false] Whether to clean media files after confirmed publication
+   * @param {number} [config.maxUploadBytes] Upload size ceiling (default VIDEO_PIPELINE_MAX_UPLOAD_BYTES or 50 MB)
    */
   constructor(config = {}) {
     this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
@@ -86,6 +96,7 @@ class VideoBatchPublisher {
     this.rateLimitDelayMs = config.rateLimitDelayMs !== undefined ? config.rateLimitDelayMs : DEFAULT_RATE_LIMIT_DELAY_MS;
     this.maxRetries = config.maxRetries !== undefined ? config.maxRetries : 1;
     this.enableCleanup = Boolean(config.enableCleanup);
+    this.maxUploadBytes = resolveMaxUploadBytes(config.maxUploadBytes);
 
     this._validateStagingDestination(this.stagingChatId);
   }
@@ -269,6 +280,7 @@ class VideoBatchPublisher {
     const results = [];
     let publishedCount = 0;
     let skippedCount = 0;
+    let skippedTooLargeCount = 0;
     let failedCount = 0;
     let cleanedCount = 0;
 
@@ -284,6 +296,10 @@ class VideoBatchPublisher {
       } else if (itemResult.status === 'SKIPPED_ALREADY_PUBLISHED') {
         skippedCount++;
         if (itemResult.cleaned) cleanedCount++;
+      } else if (itemResult.status === STATUS_SKIPPED_TOO_LARGE) {
+        // Terminal and never retried - not a failure of this batch.
+        skippedCount++;
+        skippedTooLargeCount++;
       } else {
         failedCount++;
       }
@@ -322,6 +338,7 @@ class VideoBatchPublisher {
       totalItems: mediaList.length,
       published: publishedCount,
       skipped: skippedCount,
+      skippedTooLarge: skippedTooLargeCount,
       failed: failedCount,
       cleaned: cleanedCount,
       completedAt,
@@ -375,6 +392,21 @@ class VideoBatchPublisher {
       };
     }
 
+    // 1b. An item already skipped as too large is terminal: never retried.
+    const priorRecord = this.publishLedger.findRecord(mediaId, destinationId);
+    if (priorRecord && priorRecord.status === STATUS_SKIPPED_TOO_LARGE) {
+      const cleaned = await this._discardOversized(media, shouldCleanup, priorRecord.lastError || 'exceeds upload limit');
+      return {
+        mediaId,
+        canonicalDestination,
+        status: STATUS_SKIPPED_TOO_LARGE,
+        publishId: priorRecord.publishId,
+        destinationId,
+        reason: priorRecord.lastError,
+        cleaned
+      };
+    }
+
     // 2. File Existence & Stability Check
     const filePath = media.filePath;
     if (!filePath || !fs.existsSync(filePath)) {
@@ -402,11 +434,52 @@ class VideoBatchPublisher {
       return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
     }
 
+    // 2b. Telegram Bot API upload ceiling - checked before any expensive
+    // validation. Oversized media can never be uploaded, so it is recorded as
+    // a terminal skip (not a retryable failure) and its local file discarded.
+    if (currentStat.size > this.maxUploadBytes) {
+      const reason = `Media file is ${currentStat.size} bytes, above the Telegram upload limit of ${this.maxUploadBytes} bytes`;
+      console.warn(`${LOG_PREFIX} ${STATUS_SKIPPED_TOO_LARGE}: ${mediaId} - ${reason}`);
+      const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+      await this.publishLedger.recordSkipped(attempt.publishId, reason, STATUS_SKIPPED_TOO_LARGE);
+      const cleaned = await this._discardOversized(media, shouldCleanup, reason);
+      return {
+        mediaId,
+        canonicalDestination,
+        status: STATUS_SKIPPED_TOO_LARGE,
+        publishId: attempt.publishId,
+        destinationId,
+        reason,
+        size: currentStat.size,
+        cleaned
+      };
+    }
+
     // 3. Media Integrity Validation
     try {
-      const validation = await this.mediaValidator(filePath);
+      // Media frozen by the ingestor (validatedAt set) has already passed the
+      // full ffprobe + ffmpeg decode. Re-running a multi-minute decode here
+      // would only repeat that work, so if the file is byte-for-byte the same
+      // size as when it was validated, a cheap header check is sufficient.
+      const alreadyValidated = Boolean(media.validatedAt)
+        && media.size != null
+        && Number(media.size) === currentStat.size;
+      let validation;
+      if (alreadyValidated) {
+        let headerOk = false;
+        try {
+          headerOk = hasValidMp4Header(readHeaderPrefix(filePath, 32));
+        } catch (e) {
+          headerOk = false;
+        }
+        validation = headerOk
+          ? { valid: true, reusedIngestValidation: true }
+          : { valid: false, error: 'MP4 header check failed on previously-validated media (file changed on disk?)' };
+      } else {
+        validation = await this.mediaValidator(filePath);
+      }
       if (!validation || !validation.valid) {
-        const err = `Media integrity validation failed: ${validation ? validation.reason : 'unknown validator error'}`;
+        const err = `Media integrity validation failed: ${validation ? (validation.error || validation.reason) : 'unknown validator error'}`;
         console.error(`${LOG_PREFIX} ${err}`);
         const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
         await this.publishLedger.recordFailure(attempt.publishId, err);
@@ -526,6 +599,25 @@ class VideoBatchPublisher {
   }
 
   /**
+   * Deletes the local file of an item that can never be uploaded. Only runs
+   * when cleanup is enabled, and only through MediaCleaner's boundary-checked
+   * discard (which refuses without an allowedDirectory).
+   * @private
+   * @returns {Promise<boolean>} whether the file is now gone
+   */
+  async _discardOversized(media, shouldCleanup, reason) {
+    if (!shouldCleanup || !media.filePath || !fs.existsSync(media.filePath)) return false;
+    if (!this.mediaCleaner || typeof this.mediaCleaner.discardUnpublishableMedia !== 'function') return false;
+    const res = await this.mediaCleaner.discardUnpublishableMedia({
+      mediaId: media.mediaId,
+      filePath: media.filePath,
+      reason,
+      status: STATUS_SKIPPED_TOO_LARGE
+    });
+    return res.status === 'DISCARDED' || res.status === 'ALREADY_REMOVED';
+  }
+
+  /**
    * Inspects Telegram's OWN response to sendVideo/sendDocument rather than
    * trusting a bare "no exception was thrown" as proof of a correct upload.
    * A real node-telegram-bot-api response always carries a `video` (or
@@ -629,5 +721,7 @@ class VideoBatchPublisher {
 
 module.exports = {
   VideoBatchPublisher,
-  FORBIDDEN_PRODUCTION_DESTINATIONS
+  FORBIDDEN_PRODUCTION_DESTINATIONS,
+  DEFAULT_MAX_UPLOAD_BYTES,
+  STATUS_SKIPPED_TOO_LARGE
 };

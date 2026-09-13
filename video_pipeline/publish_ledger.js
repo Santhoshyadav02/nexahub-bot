@@ -6,7 +6,9 @@
  * results per media item and per destination.
  *
  * Crash-safety model:
- *   - Atomic write via nanosecond-unique temp file + fsync + renameSync.
+ *   - Atomic write via runtime_paths' writeJsonAtomicSync (temp + fsync + rename).
+ *   - Unparsable ledger files are quarantined (*.corrupt-<timestamp>), never overwritten.
+ *   - Default location: <NEXAHUB_DATA_DIR>/video_pipeline/state/publish_state.json.
  *   - In-process mutex promise-chain lock for serialized mutations.
  *   - Startup crash recovery: resets interrupted UPLOADING records to PENDING.
  *   - Full idempotency index: (mediaId + ":" + destinationId) -> publishId.
@@ -16,15 +18,17 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require('../runtime_paths');
+
 const PUBLISH_LEDGER_VERSION = '1.0.0';
 
 class PublishLedger {
   /**
    * @param {object} [config]
-   * @param {string} [config.ledgerPath] Defaults to video_pipeline/publish_state.json
+   * @param {string} [config.ledgerPath] Defaults to <data dir>/video_pipeline/state/publish_state.json
    */
   constructor(config = {}) {
-    this.ledgerPath = config.ledgerPath || path.join(__dirname, 'publish_state.json');
+    this.ledgerPath = config.ledgerPath || dataPath('video_pipeline', 'state', 'publish_state.json');
     fs.mkdirSync(path.dirname(this.ledgerPath), { recursive: true });
     this.data = {
       version: PUBLISH_LEDGER_VERSION,
@@ -42,6 +46,14 @@ class PublishLedger {
   _cleanupStaleTempFiles() {
     const dir = path.dirname(this.ledgerPath);
     const base = path.basename(this.ledgerPath);
+    // Matches both the legacy "<file>.tmp.<ns>" temp names and runtime_paths'
+    // "<file>.<pid>.<ts>.<rand>.tmp" names. Writes are synchronous, so no temp
+    // file can belong to an in-flight write while this runs at construction.
+    const isStaleTemp = (entry) => {
+      if (!entry.startsWith(`${base}.`)) return false;
+      const rest = entry.slice(base.length + 1);
+      return rest.startsWith('tmp.') || /^\d+\.\d+\.[a-z0-9]+\.tmp$/.test(rest);
+    };
     let entries = [];
     try {
       entries = fs.readdirSync(dir);
@@ -49,11 +61,11 @@ class PublishLedger {
       return;
     }
     for (const entry of entries) {
-      if (entry.startsWith(`${base}.tmp.`)) {
+      if (isStaleTemp(entry)) {
         try {
           fs.unlinkSync(path.join(dir, entry));
         } catch (e) {
-          // best-effort
+          // best-effort only
         }
       }
     }
@@ -74,7 +86,10 @@ class PublishLedger {
     try {
       parsed = JSON.parse(raw);
     } catch (e) {
-      this._recovery.notes.push(`Existing publish ledger was invalid JSON (${e.message}); starting fresh.`);
+      const quarantined = quarantineCorruptFile(this.ledgerPath);
+      this._recovery.notes.push(`Existing publish ledger was invalid JSON (${e.message}); `
+        + `${quarantined ? `preserved as ${quarantined}; ` : ''}starting fresh.`);
+      console.error(`[PUBLISH_LEDGER] ${this.ledgerPath} was not valid JSON; starting fresh.`);
       return;
     }
 
@@ -111,35 +126,7 @@ class PublishLedger {
 
   _save() {
     this.data.updatedAt = new Date().toISOString();
-    const tmpPath = `${this.ledgerPath}.tmp.${process.hrtime.bigint()}`;
-    const json = JSON.stringify(this.data, null, 2);
-    const fd = fs.openSync(tmpPath, 'w');
-    try {
-      fs.writeSync(fd, json);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    for (let i = 0; i < 10; i++) {
-      try {
-        fs.renameSync(tmpPath, this.ledgerPath);
-        return;
-      } catch (err) {
-        if ((err.code === 'EPERM' || err.code === 'EBUSY') && i < 9) {
-          const waitMs = (i + 1) * 10;
-          const start = Date.now();
-          while (Date.now() - start < waitMs) {}
-        } else {
-          try {
-            fs.copyFileSync(tmpPath, this.ledgerPath);
-            try { fs.unlinkSync(tmpPath); } catch (_) {}
-            return;
-          } catch (_) {
-            throw err;
-          }
-        }
-      }
-    }
+    writeJsonAtomicSync(this.ledgerPath, this.data);
   }
 
   async _withLock(fn) {
@@ -161,6 +148,21 @@ class PublishLedger {
   isPublished(mediaId, destinationId) {
     const record = this.findRecord(mediaId, destinationId);
     return Boolean(record && record.status === 'PUBLISHED');
+  }
+
+  /**
+   * Compact view of how far publishing of one media item to one destination
+   * has progressed - used to bound cross-cycle publish retries.
+   * @returns {{exists: boolean, status: string|null, attempts: number, published: boolean}}
+   */
+  getAttemptState(mediaId, destinationId) {
+    const record = this.findRecord(mediaId, destinationId);
+    return {
+      exists: Boolean(record),
+      status: record ? record.status : null,
+      attempts: record ? (record.attemptsCount || 0) : 0,
+      published: Boolean(record && record.status === 'PUBLISHED')
+    };
   }
 
   listByBatch(batchId) {
@@ -256,6 +258,27 @@ class PublishLedger {
       }
       record.status = 'FAILED';
       record.lastError = error instanceof Error ? error.message : String(error);
+      this._save();
+      return { ...record };
+    });
+  }
+
+  /**
+   * Records a terminal, non-retryable skip (e.g. SKIPPED_TOO_LARGE). Unlike
+   * FAILED, a skipped record is never retried by later cycles.
+   * @param {string} publishId
+   * @param {string} reason
+   * @param {string} [status='SKIPPED_TOO_LARGE']
+   */
+  async recordSkipped(publishId, reason, status = 'SKIPPED_TOO_LARGE') {
+    return this._withLock(() => {
+      const record = this.data.records[publishId];
+      if (!record) {
+        throw new Error(`Record ${publishId} not found in PublishLedger`);
+      }
+      record.status = status;
+      record.lastError = reason;
+      record.skippedAt = new Date().toISOString();
       this._save();
       return { ...record };
     });

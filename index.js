@@ -6,9 +6,12 @@ try {
 
 const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
+const path = require("path");
 const https = require("https");
-const { startScraperScheduler } = require("./scraper");
-const { startPipelineScheduler, stopPipelineScheduler } = require("./telegram_pipeline_publisher");
+const { getDataDir, dataPath, writeJsonAtomicSync } = require("./runtime_paths");
+const { acquireBotLock } = require("./process_lock");
+const { startScraperScheduler, stopScraperScheduler } = require("./scraper");
+const { startPipelineScheduler, stopPipelineScheduler, waitForActiveCycle } = require("./telegram_pipeline_publisher");
 const rankingScraper = require("./ranking_scraper");
 const sourceRegistry = require("./source_registry");
 const contentHubScraper = require("./content_hub_scraper");
@@ -47,6 +50,17 @@ if (isMainModule && !global.__botPollingInitialized) {
   global.__botPollingInitialized = true;
 }
 
+if (isMainModule) {
+  // Refuse to start a second bot process on this machine: it would fight for
+  // the polling slot (409) and reuse the MTProto session (AUTH_KEY_DUPLICATED).
+  const lockResult = acquireBotLock();
+  if (!lockResult.acquired) {
+    console.error(`❌ [PID:${APP_PID}] Another NexaHub bot process (PID ${lockResult.holder.pid}, started ${lockResult.holder.startedAt}) is already running on this machine. Exiting.`);
+    process.exit(1);
+  }
+  console.log(`📁 [PID:${APP_PID}] Runtime data dir: ${getDataDir()}`);
+}
+
 console.log(`🤖 [PID:${APP_PID}] [Host:${APP_HOST}] Main module initialized. isMainModule=${isMainModule}, enablePolling=${enablePolling}`);
 
 const bot = new TelegramBot(TOKEN, {
@@ -83,9 +97,12 @@ bot.on("polling_error", async (error) => {
       pollingConflictAttempts++;
 
       console.log(`[TELEGRAM] Polling: CONFLICT (attempt ${pollingConflictAttempts}/${POLLING_CONFLICT_MAX_RETRIES}) - another instance (e.g. the production deployment) already holds this BOT_TOKEN's polling slot. Pausing local polling; outgoing sends (e.g. video publishing) are NOT affected by this.`);
+      // Plain stopPolling(): with { cancel: true } node-telegram-bot-api never
+      // sets its abort flag, so the polling loop immediately schedules the
+      // next getUpdates and the conflict repeats forever.
       try {
         if (bot.isPolling && bot.isPolling()) {
-          await bot.stopPolling({ cancel: true });
+          await bot.stopPolling();
         }
       } catch (e) {}
 
@@ -117,25 +134,47 @@ bot.on("polling_error", async (error) => {
     return;
   }
 
+  // An invalid/revoked BOT_TOKEN can never recover by retrying; without this the
+  // library re-polls immediately and floods the logs with 401s.
+  if (errMsg.includes("401 Unauthorized") || errMsg.includes("404 Not Found")) {
+    if (!botTokenRejected) {
+      botTokenRejected = true;
+      console.error(`❌ [PID:${APP_PID}] Telegram rejected BOT_TOKEN (${errMsg}). Polling stopped - the token is invalid or was revoked. Put the current token from @BotFather into .env and restart the bot.`);
+      try {
+        if (bot.isPolling && bot.isPolling()) {
+          await bot.stopPolling();
+        }
+      } catch (e) {}
+    }
+    return;
+  }
+
   console.error(`⚠️ [PID:${APP_PID}] Telegram Bot Polling Error: ${errCode} - ${errMsg}`);
 });
 
+let botTokenRejected = false;
+
 let isShuttingDown = false;
 
-// Process signal listeners for Railway container rolling updates
-async function handleProcessExit(signal) {
+// Must stay below the process manager's kill timeout (ecosystem.config.js
+// kill_timeout: 20000) so cleanup is never cut off by SIGKILL.
+const SHUTDOWN_BUDGET_MS = 15000;
+
+// Graceful shutdown for SIGTERM/SIGINT (PM2 restart/stop, deploys) and fatal errors
+async function handleProcessExit(signal, exitCode = 0) {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
   console.log(`🛑 [PID:${APP_PID}] Received ${signal}. Starting graceful bounded shutdown...`);
 
-  // Bounded fallback: hard 5000ms timeout guard to ensure container exit even if a resource hangs
+  // Bounded fallback: hard timeout guard to ensure exit even if a resource hangs
   const forceExitTimer = setTimeout(() => {
-    console.warn(`⚠️ [PID:${APP_PID}] Graceful shutdown timed out for ${signal} after 5000ms. Forcing exit.`);
-    process.exit(0);
-  }, 5000);
+    console.warn(`⚠️ [PID:${APP_PID}] Graceful shutdown timed out for ${signal} after ${SHUTDOWN_BUDGET_MS}ms. Forcing exit.`);
+    process.exit(exitCode);
+  }, SHUTDOWN_BUDGET_MS);
   forceExitTimer.unref();
 
+  // 1. No new scheduled work.
   try {
     stopPipelineScheduler();
   } catch (err) {}
@@ -143,26 +182,58 @@ async function handleProcessExit(signal) {
     contentHubScraper.stopContentHubScheduler();
   } catch (err) {}
   try {
-    getPipelineInstance().stopScheduler();
+    stopScraperScheduler();
   } catch (err) {}
   try {
-    const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
-    const videoRuntime = getVideoPipelineRuntime();
-    if (videoRuntime.isStarted()) {
-      await videoRuntime.stop();
-      console.log(`✅ [PID:${APP_PID}] Video Pipeline Runtime stopped cleanly for ${signal}.`);
+    if (typeof rankingScraper.stopRankingScheduler === "function") {
+      rankingScraper.stopRankingScheduler();
     }
-  } catch (err) {
-    console.error(`⚠️ [PID:${APP_PID}] Error stopping Video Pipeline Runtime on ${signal}:`, err.message);
-  }
+  } catch (err) {}
+  // 2. No new user interactions.
   try {
     if (bot.isPolling()) {
-      await bot.stopPolling();
+      // Bounded: a plain stop waits for the in-flight long-poll request.
+      await Promise.race([bot.stopPolling(), new Promise(resolve => setTimeout(resolve, 3000))]);
       console.log(`✅ [PID:${APP_PID}] Bot polling stopped cleanly for ${signal}.`);
     }
   } catch (err) {
     console.error(`⚠️ [PID:${APP_PID}] Error stopping polling on ${signal}:`, err.message);
   }
+
+  // 3. Let in-flight work finish (bounded), in parallel: the video pipeline
+  //    child process, a publish cycle's current send + ledger write, and the
+  //    external source pipeline (aborts downloads, closes browsers).
+  await Promise.all([
+    (async () => {
+      try {
+        await getPipelineInstance().stopScheduler();
+      } catch (err) {
+        console.error(`⚠️ [PID:${APP_PID}] Error stopping external source pipeline on ${signal}:`, err.message);
+      }
+    })(),
+    (async () => {
+      try {
+        const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
+        const videoRuntime = getVideoPipelineRuntime();
+        if (videoRuntime.isStarted()) {
+          await videoRuntime.stop();
+          console.log(`✅ [PID:${APP_PID}] Video Pipeline Runtime stopped cleanly for ${signal}.`);
+        }
+      } catch (err) {
+        console.error(`⚠️ [PID:${APP_PID}] Error stopping Video Pipeline Runtime on ${signal}:`, err.message);
+      }
+    })(),
+    (async () => {
+      try {
+        const finished = await waitForActiveCycle(10000);
+        if (!finished) {
+          console.warn(`⚠️ [PID:${APP_PID}] Telegram publish cycle still running at shutdown; exiting after the current item.`);
+        }
+      } catch (err) {}
+    })()
+  ]);
+
+  // 4. Release the MTProto session last.
   try {
     const MTProtoChannelReader = require("./mtproto_reader");
     if (MTProtoChannelReader.instance) {
@@ -173,11 +244,27 @@ async function handleProcessExit(signal) {
 
   clearTimeout(forceExitTimer);
   console.log(`✅ [PID:${APP_PID}] Graceful shutdown completed cleanly for ${signal}.`);
-  process.exit(0);
+  process.exit(exitCode);
 }
 
-process.on("SIGTERM", () => handleProcessExit("SIGTERM"));
-process.on("SIGINT", () => handleProcessExit("SIGINT"));
+if (isMainModule) {
+  process.on("SIGTERM", () => handleProcessExit("SIGTERM"));
+  process.on("SIGINT", () => handleProcessExit("SIGINT"));
+
+  // A stray rejected promise must not take the whole bot down (Node 22 exits
+  // on unhandled rejections by default): log it with its stack and keep going.
+  process.on("unhandledRejection", (reason) => {
+    const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+    console.error(`❌ [PID:${APP_PID}] Unhandled promise rejection (process kept alive):`, detail);
+  });
+
+  // After an uncaught exception the process state is unknown: shut down
+  // cleanly and let PM2 start a fresh instance.
+  process.on("uncaughtException", (err) => {
+    console.error(`❌ [PID:${APP_PID}] Uncaught exception - shutting down so the process manager restarts a clean instance:`, err && (err.stack || err.message));
+    handleProcessExit("uncaughtException", 1);
+  });
+}
 
 // ============================
 // 📡 REAL-TIME TELEGRAM SOURCE CHANNEL POST LISTENERS
@@ -209,6 +296,17 @@ const WELCOME_IMAGE = "https://raw.githubusercontent.com/hiruboyz/news-bot/main/
 // 🌐 DYNAMIC TRANSLATION HELPER
 // ============================
 const translationCache = new Map();
+const MAX_TRANSLATION_CACHE_ENTRIES = 5000;
+// Hard cap per translation request; the https `timeout` option only fires on
+// an idle socket, not on a slowly trickling response.
+const TRANSLATION_DEADLINE_MS = 5000;
+
+function setTranslationCache(key, value) {
+  if (!translationCache.has(key) && translationCache.size >= MAX_TRANSLATION_CACHE_ENTRIES) {
+    translationCache.delete(translationCache.keys().next().value);
+  }
+  translationCache.set(key, value);
+}
 
 async function translateText(text, targetLang = "ko") {
   if (!text || typeof text !== "string") {
@@ -249,10 +347,15 @@ async function translateText(text, targetLang = "ko") {
         req.destroy();
         resolve(null);
       });
+      const deadline = setTimeout(() => {
+        req.destroy();
+        resolve(null);
+      }, TRANSLATION_DEADLINE_MS);
+      req.on("close", () => clearTimeout(deadline));
     });
 
     if (translated && translated !== text) {
-      translationCache.set(cacheKey, translated);
+      setTranslationCache(cacheKey, translated);
       return translated;
     }
   } catch (err) {
@@ -287,10 +390,15 @@ async function translateText(text, targetLang = "ko") {
         req.destroy();
         resolve(null);
       });
+      const deadline = setTimeout(() => {
+        req.destroy();
+        resolve(null);
+      }, TRANSLATION_DEADLINE_MS);
+      req.on("close", () => clearTimeout(deadline));
     });
 
     if (fallbackTranslated && fallbackTranslated !== text && !fallbackTranslated.includes("MYMEMORY WARNING") && !fallbackTranslated.includes("INVALID") && !fallbackTranslated.includes("QUOTA")) {
-      translationCache.set(cacheKey, fallbackTranslated);
+      setTranslationCache(cacheKey, fallbackTranslated);
       return fallbackTranslated;
     }
   } catch (err) {
@@ -298,7 +406,7 @@ async function translateText(text, targetLang = "ko") {
   }
 
   // Tier 3: Return original text safely
-  translationCache.set(cacheKey, text);
+  setTranslationCache(cacheKey, text);
   return text;
 }
 
@@ -1139,7 +1247,7 @@ const CHANNELS = {
 // ============================
 // 📹 VIDEO FILE_ID CACHE & HISTORY TRACKING
 // ============================
-const VIDEO_CACHE_FILE = "video_cache.json";
+const VIDEO_CACHE_FILE = dataPath("video_cache.json");
 let videoFileIdCache = {};
 const userMessageHistory = new Map();
 
@@ -1157,7 +1265,7 @@ function loadVideoCache() {
 function saveVideoCache(resId, fileId) {
   try {
     videoFileIdCache[String(resId)] = fileId;
-    fs.writeFileSync(VIDEO_CACHE_FILE, JSON.stringify(videoFileIdCache, null, 2), "utf8");
+    writeJsonAtomicSync(VIDEO_CACHE_FILE, videoFileIdCache);
   } catch (err) {
     console.error("Error writing video_cache.json:", err.message);
   }
@@ -1418,8 +1526,9 @@ async function editMessageTextSafe(chatId, messageId, text, options = {}) {
 // ============================
 let FEATURED_DATASET = {};
 try {
-  if (fs.existsSync("featured_dataset.json")) {
-    FEATURED_DATASET = JSON.parse(fs.readFileSync("featured_dataset.json", "utf8"));
+  const featuredDatasetFile = path.join(__dirname, "featured_dataset.json");
+  if (fs.existsSync(featuredDatasetFile)) {
+    FEATURED_DATASET = JSON.parse(fs.readFileSync(featuredDatasetFile, "utf8"));
   }
 } catch (err) {
   console.error("Error reading featured_dataset.json:", err.message);
@@ -1955,20 +2064,9 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     cachedFileId = null;
   }
 
-  // If file_id is missing, attempt MTProto media resolution
-  if (!cachedFileId && process.env.TELEGRAM_SESSION_STRING && (item.chat_id || item.username) && item.message_id) {
-    try {
-      const MTProtoChannelReader = require("./mtproto_reader");
-      const reader = new MTProtoChannelReader();
-      const resolved = await reader.resolveMediaForPost(item);
-      if (resolved && resolved.file_id) {
-        cachedFileId = resolved.file_id;
-        saveVideoCache(item.id || item.unique_hash, cachedFileId);
-      }
-    } catch (err) {
-      console.warn("⚠️ MTProto media resolution fallback warning:", err.message);
-    }
-  }
+  // No MTProto lookup here: resolveMediaForPost() never yields a Bot API
+  // file_id, so calling it on every view only spent Telegram API quota
+  // (getDialogs + getEntity) and invited FloodWaits.
 
   let fromChatId = item.chat_id || (item.username ? (item.username.startsWith("@") ? item.username : `@${item.username}`) : null);
   if (!fromChatId && (item.keyword || item.channel_name)) {
@@ -2291,8 +2389,9 @@ function makeSearchCallbackData(keyword) {
 
 function getTrendingKeywords() {
   try {
-    if (fs.existsSync("trending.json")) {
-      const data = JSON.parse(fs.readFileSync("trending.json", "utf8"));
+    const trendingFile = dataPath("trending.json");
+    if (fs.existsSync(trendingFile)) {
+      const data = JSON.parse(fs.readFileSync(trendingFile, "utf8"));
       return data.keywords || [];
     }
   } catch (err) {
@@ -2303,8 +2402,9 @@ function getTrendingKeywords() {
 
 function getBreakingNews() {
   try {
-    if (fs.existsSync("breaking.json")) {
-      const data = JSON.parse(fs.readFileSync("breaking.json", "utf8"));
+    const breakingFile = dataPath("breaking.json");
+    if (fs.existsSync(breakingFile)) {
+      const data = JSON.parse(fs.readFileSync(breakingFile, "utf8"));
       return data.news || [];
     }
   } catch (err) {

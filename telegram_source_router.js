@@ -499,6 +499,7 @@ async function runLiveDryRunDiscovery() {
 }
 
 if (require.main === module) {
+  require("./process_lock").assertBotNotRunning("telegram_source_router.js");
   runLiveDryRunDiscovery().then(summary => {
     console.log("\n==================================================");
     console.log("📊 STAGE 2 SOURCE ROUTING DRY RUN SUMMARY");

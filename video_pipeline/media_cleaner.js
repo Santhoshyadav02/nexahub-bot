@@ -18,6 +18,22 @@ const path = require('path');
 
 const LOG_PREFIX = '[MEDIA_CLEANER]';
 
+/**
+ * True only if candidatePath resolves to something strictly INSIDE parentDir.
+ * Uses path.relative rather than a bare startsWith() so a sibling directory
+ * sharing a name prefix (e.g. "downloads_old" vs "downloads") is never
+ * mistaken for being inside the boundary, and ".." escapes are rejected.
+ * @param {string} parentDir
+ * @param {string} candidatePath
+ * @returns {boolean}
+ */
+function isPathInside(parentDir, candidatePath) {
+  if (!parentDir || !candidatePath) return false;
+  const rel = path.relative(path.resolve(parentDir), path.resolve(candidatePath));
+  if (!rel || path.isAbsolute(rel)) return false;
+  return rel !== '..' && !rel.startsWith(`..${path.sep}`);
+}
+
 class MediaCleaner {
   /**
    * @param {object} [config]
@@ -69,7 +85,7 @@ class MediaCleaner {
 
     // 2. Path Safety Validation
     const resolvedPath = path.resolve(filePath);
-    if (this.allowedDirectory && !resolvedPath.startsWith(this.allowedDirectory)) {
+    if (this.allowedDirectory && !isPathInside(this.allowedDirectory, resolvedPath)) {
       const reason = `Path safety violation: file path "${resolvedPath}" is outside allowed directory "${this.allowedDirectory}".`;
       console.error(`${LOG_PREFIX} ${reason}`);
       return { status: 'FAILED', mediaId, destinationId, reason };
@@ -109,6 +125,62 @@ class MediaCleaner {
       filePath: resolvedPath,
       cleanedAt: new Date().toISOString()
     };
+  }
+
+  /**
+   * Deletes a local media file that will NEVER be published (e.g. larger than
+   * Telegram's upload limit). Unlike cleanMedia() this does not require a
+   * confirmed publication, so it is deliberately stricter about WHERE it may
+   * delete: an allowedDirectory boundary is mandatory, and the file must be
+   * strictly inside it.
+   * @param {object} params
+   * @param {string} params.mediaId
+   * @param {string} params.filePath
+   * @param {string} params.reason Human-readable reason, recorded in MediaLedger
+   * @param {string} [params.status] MediaLedger status to set (omit to keep the current status)
+   * @param {object} [params.mediaLedger] Override ledger instance
+   * @returns {Promise<object>} { status: 'DISCARDED' | 'ALREADY_REMOVED' | 'REFUSED_NO_BOUNDARY' | 'FAILED', ... }
+   */
+  async discardUnpublishableMedia({ mediaId, filePath, reason, status = null, mediaLedger = null }) {
+    if (!filePath) {
+      return { status: 'FAILED', mediaId: mediaId || 'unknown', reason: 'filePath is required for discard.' };
+    }
+    if (!this.allowedDirectory) {
+      const msg = `Refusing to discard ${filePath}: no allowedDirectory boundary is configured on this MediaCleaner.`;
+      console.warn(`${LOG_PREFIX} ${msg}`);
+      return { status: 'REFUSED_NO_BOUNDARY', mediaId, reason: msg };
+    }
+    const resolvedPath = path.resolve(filePath);
+    if (!isPathInside(this.allowedDirectory, resolvedPath)) {
+      const msg = `Path safety violation: file path "${resolvedPath}" is outside allowed directory "${this.allowedDirectory}".`;
+      console.error(`${LOG_PREFIX} ${msg}`);
+      return { status: 'FAILED', mediaId, reason: msg };
+    }
+
+    const fileExists = fs.existsSync(resolvedPath);
+    if (fileExists) {
+      try {
+        fs.unlinkSync(resolvedPath);
+        console.log(`${LOG_PREFIX} Discarded unpublishable media file (${reason}): ${resolvedPath}`);
+      } catch (err) {
+        const msg = `Failed to discard media file "${resolvedPath}": ${err.message}`;
+        console.error(`${LOG_PREFIX} ${msg}`);
+        return { status: 'FAILED', mediaId, reason: msg, retryable: true };
+      }
+    }
+
+    const mLedger = mediaLedger || this.mediaLedger;
+    if (mediaId && mLedger && typeof mLedger.upsert === 'function' && typeof mLedger.getRecord === 'function' && mLedger.getRecord(mediaId)) {
+      try {
+        const patch = { fileDeletedAt: new Date().toISOString(), fileDeletedReason: reason || null };
+        if (status) patch.status = status;
+        await mLedger.upsert(mediaId, patch);
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Failed to update MediaLedger for ${mediaId}: ${err.message}`);
+      }
+    }
+
+    return { status: fileExists ? 'DISCARDED' : 'ALREADY_REMOVED', mediaId, filePath: resolvedPath };
   }
 
   /**
@@ -154,5 +226,6 @@ class MediaCleaner {
 }
 
 module.exports = {
-  MediaCleaner
+  MediaCleaner,
+  isPathInside
 };

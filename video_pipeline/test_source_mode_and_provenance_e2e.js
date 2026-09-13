@@ -115,7 +115,7 @@ function makeRealisticMockBot(overrides = {}) {
     async sendVideo(chatId, filePath, options) {
       calls.push({ chatId, filePath, options });
       const stat = fs.statSync(filePath);
-      const probe = probeMedia(filePath);
+      const probe = await probeMedia(filePath);
       const real = probe.success ? probe.data : { duration: 0, width: 0, height: 0 };
       const messageId = overrides.messageId || (1000 + calls.length);
       return {

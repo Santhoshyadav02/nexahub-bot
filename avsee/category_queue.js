@@ -23,6 +23,7 @@ const { URL } = require('url');
 const { discoverBoardPosts } = require('./board_discovery');
 const { redactUrl } = require('./player_resolver');
 const { DEFAULT_CATEGORY_CONFIG, CATEGORY_STATUS, MAX_DISCOVERY_BATCH_LIMIT } = require('./category_discovery');
+const { dataPath, writeJsonAtomicSync } = require('../runtime_paths');
 
 /**
  * Queue item lifecycle states
@@ -60,7 +61,7 @@ class CategoryQueue {
    * @param {Array<object>} [config.categoryConfig] Category slot configuration
    */
   constructor(config = {}) {
-    this.stateFilePath = config.stateFilePath || path.join(__dirname, '..', 'scratch', 'category_queue_state.json');
+    this.stateFilePath = config.stateFilePath || dataPath('avsee_runtime', 'category_queue_state.json');
     this.maxCapacity = config.maxCapacity || MAX_QUEUE_CAPACITY;
     this.maxRetries = config.maxRetries !== undefined ? config.maxRetries : DEFAULT_MAX_RETRIES;
     this.retryBackoffMs = config.retryBackoffMs || DEFAULT_RETRY_BACKOFF_MS;
@@ -112,7 +113,7 @@ class CategoryQueue {
           categoryCode: cat.categoryCode || cat.categoryId,
           categoryName: cat.categoryName || cat.categoryId,
           channelIndex: cat.channelIndex || 1,
-          destinationChannelId: cat.destinationChannelId || '-1002000000001',
+          destinationChannelId: cat.destinationChannelId || null,
           status: CATEGORY_STATUS.ACTIVE,
           lastCheckedAt: null,
           lastDiscoveredCount: 0,
@@ -527,7 +528,7 @@ class CategoryQueue {
         categoryCode: details.categoryCode || categoryId,
         categoryName: details.categoryName || categoryId,
         channelIndex: details.channelIndex || 1,
-        destinationChannelId: details.destinationChannelId || '-1002000000001',
+        destinationChannelId: details.destinationChannelId || null,
         status: status,
         lastCheckedAt: new Date().toISOString(),
         lastDiscoveredCount: details.lastDiscoveredCount || 0,
@@ -681,9 +682,8 @@ class CategoryQueue {
         queues: queuesObj
       };
 
-      const tmpPath = `${this.stateFilePath}.tmp.${Date.now()}`;
-      fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
-      fs.renameSync(tmpPath, this.stateFilePath);
+      // tmp file + fsync + rename (crash-safe)
+      writeJsonAtomicSync(this.stateFilePath, payload);
     } catch (err) {
       console.error(`❌ [CATEGORY_QUEUE] Failed to save queue state: ${err.message}`);
     }

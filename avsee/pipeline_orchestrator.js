@@ -28,7 +28,8 @@ const { resolvePlayer, redactUrl, RESOLVER_STATES } = require("./player_resolver
 const { validateMp4 } = require("./mp4_validator");
 const { AvseeSourceAdapter } = require("../avsee_source_adapter");
 const { ExternalSourceState } = require("../external_source_state");
-const { ExternalSourcePublisher } = require("../external_source_publisher");
+const { ExternalSourcePublisher, isCountedAsDelivery } = require("../external_source_publisher");
+const { dataPath } = require("../runtime_paths");
 const { getDestinationForTopic } = require("../external_source_destinations");
 
 const PIPELINE_STATES = Object.freeze({
@@ -49,7 +50,7 @@ class AvseePipelineOrchestrator {
    */
   constructor(config = {}) {
     this.dryRun = config.dryRun !== undefined ? Boolean(config.dryRun) : true;
-    this.tempDir = config.tempDir || path.join(__dirname, "..", "scratch", "orchestrator_temp");
+    this.tempDir = config.tempDir || dataPath("avsee_runtime", "orchestrator_temp");
     this.durationToleranceSec = config.durationToleranceSec || 2.0;
 
     this.adapter = config.adapter || new AvseeSourceAdapter({
@@ -254,8 +255,17 @@ class AvseePipelineOrchestrator {
       }
 
       // 10. Dry-Run Publisher Decision
-      await this.publisher.publishAuthorizedItem(normalized, localPath, destination);
+      const publishResult = await this.publisher.publishAuthorizedItem(normalized, localPath, destination);
       this.stateStore.recordPermanentItem(normalized, { isDelivered: false, status: "RETAINED_IN_POOL" });
+
+      if (!isCountedAsDelivery(publishResult)) {
+        // e.g. EXTERNAL_PUBLISH_ENABLED=true while live publishing is not implemented
+        result.pipelineState = publishResult && publishResult.status ? publishResult.status : "PUBLISH_NOT_DELIVERED";
+        result.ledgerDecision = "NOT_DELIVERED";
+        result.telegramPublish = "NOT_IMPLEMENTED";
+        result.error = publishResult && publishResult.reason ? publishResult.reason : "Publisher did not deliver the item";
+        return result;
+      }
 
       result.pipelineState = PIPELINE_STATES.DRY_RUN_DELIVERED;
       result.ledgerDecision = "DRY_RUN";

@@ -14,6 +14,7 @@ const path = require('path');
 const { MediaLedger } = require('./media_ledger');
 const { BatchState } = require('./batch_state');
 const { PublishLedger } = require('./publish_ledger');
+const { dataPath } = require('../runtime_paths');
 
 let passed = 0, failed = 0;
 function check(label, cond, detail = '') {
@@ -21,9 +22,11 @@ function check(label, cond, detail = '') {
   else { console.error(`❌ ${label}${detail ? ' - ' + detail : ''}`); failed++; }
 }
 
-const SHARED_MEDIA_STATE = path.join(__dirname, 'media_state.json');
-const SHARED_BATCH_STATE = path.join(__dirname, 'batch_state.json');
-const SHARED_PUBLISH_STATE = path.join(__dirname, 'publish_state.json');
+// Default (no override) state now lives under the data dir
+// (NEXAHUB_DATA_DIR, defaulting to the repo) rather than beside the code.
+const SHARED_MEDIA_STATE = dataPath('video_pipeline', 'state', 'media_state.json');
+const SHARED_BATCH_STATE = dataPath('video_pipeline', 'state', 'batch_state.json');
+const SHARED_PUBLISH_STATE = dataPath('video_pipeline', 'state', 'publish_state.json');
 
 const WORKSPACE = path.join(__dirname, '..', 'scratch', 'state_isolation_test_workspace');
 
@@ -66,7 +69,7 @@ async function main() {
   check('Shared batch_state.json was NOT created by isolated BatchState use', !afterIsolated.batch);
   check('Shared publish_state.json was NOT created by isolated PublishLedger use', !afterIsolated.publish);
 
-  console.log('\n--- Default (no override) construction resolves to video_pipeline/*_state.json, as documented ---');
+  console.log('\n--- Default (no override) construction resolves to <data dir>/video_pipeline/state/*_state.json, as documented ---');
   // Prove the OTHER half of the contract: the default path is exactly what
   // the whole codebase (and .gitignore's video_pipeline/*_state.json rule)
   // expects, so callers who WANT the real persistent path get it correctly.

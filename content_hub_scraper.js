@@ -3,12 +3,18 @@ const path = require("path");
 const https = require("https");
 const http = require("http");
 const crypto = require("crypto");
+const { seededDataPath, writeJsonAtomicSync } = require("./runtime_paths");
 
-const CACHE_FILE = path.join(__dirname, "content_hub_cache.json");
-const TMP_CACHE_FILE = path.join(__dirname, "content_hub_cache.tmp.json");
+// Runtime cache lives in NEXAHUB_DATA_DIR (seeded once from the committed copy).
+const CACHE_FILE = seededDataPath("content_hub_cache.json");
+// Legacy temp path, kept for export compatibility; atomic writes now use a
+// unique temp file next to CACHE_FILE and never leave this file behind.
+const TMP_CACHE_FILE = path.join(path.dirname(CACHE_FILE), "content_hub_cache.tmp.json");
+// Read-only bundled seed dataset (never written at runtime), stays in the repo.
 const DATASET_FILE = path.join(__dirname, "content_hub_dataset.json");
 const SYNC_INTERVAL_MS = 600000; // 10 minutes (600,000 ms)
 const DEFAULT_URL = "https://majorlink3.com/";
+const MAX_REDIRECTS = 5;
 
 const CATEGORY_CONFIG = [
   {
@@ -222,15 +228,15 @@ function validateDataset(dataset) {
 function saveCacheAtomic(dataset) {
   try {
     const payload = JSON.stringify(dataset, null, 2);
-    fs.writeFileSync(TMP_CACHE_FILE, payload, "utf8");
 
-    // Validate written tmp file
-    const verified = JSON.parse(fs.readFileSync(TMP_CACHE_FILE, "utf8"));
+    // Validate the exact serialized payload before it can replace the cache
+    const verified = JSON.parse(payload);
     if (!validateDataset(verified)) {
       throw new Error("Temporary cache validation failed");
     }
 
-    fs.renameSync(TMP_CACHE_FILE, CACHE_FILE);
+    // tmp file + fsync + rename
+    writeJsonAtomicSync(CACHE_FILE, verified);
     return true;
   } catch (err) {
     console.error("[ContentHub] Atomic cache write failed:", err.message);
@@ -386,7 +392,7 @@ function parseHtml(html, fallbackData = null) {
   };
 }
 
-function fetchUrl(targetUrl = DEFAULT_URL, timeoutMs = 10000) {
+function fetchUrl(targetUrl = DEFAULT_URL, timeoutMs = 10000, redirectsLeft = MAX_REDIRECTS) {
   return new Promise((resolve, reject) => {
     try {
       const parsedUrl = new URL(targetUrl);
@@ -401,10 +407,21 @@ function fetchUrl(targetUrl = DEFAULT_URL, timeoutMs = 10000) {
         timeout: timeoutMs
       }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          return resolve(fetchUrl(res.headers.location, timeoutMs));
+          res.resume(); // discard redirect body so the socket is released
+          if (redirectsLeft <= 0) {
+            return reject(new Error(`Too many redirects (max ${MAX_REDIRECTS})`));
+          }
+          let nextUrl;
+          try {
+            nextUrl = new URL(res.headers.location, targetUrl).toString();
+          } catch (e) {
+            return reject(new Error(`Invalid redirect location: ${res.headers.location}`));
+          }
+          return resolve(fetchUrl(nextUrl, timeoutMs, redirectsLeft - 1));
         }
 
         if (res.statusCode !== 200) {
+          res.resume();
           return reject(new Error(`HTTP ${res.statusCode}`));
         }
 
@@ -551,6 +568,8 @@ module.exports = {
   calculateHash,
   saveCacheAtomic,
   isValidUrl,
+  fetchUrl,
+  MAX_REDIRECTS,
   SYNC_INTERVAL_MS,
   CACHE_FILE,
   TMP_CACHE_FILE,

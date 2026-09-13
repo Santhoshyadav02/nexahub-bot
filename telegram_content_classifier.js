@@ -478,6 +478,7 @@ async function runLiveStage3Classification() {
 }
 
 if (require.main === module) {
+  require("./process_lock").assertBotNotRunning("telegram_content_classifier.js");
   runLiveStage3Classification().then(({ summary, totalVideos }) => {
     console.log("==================================================");
     console.log("📊 STAGE 3 CLASSIFICATION & ROUTING DRY RUN REPORT");

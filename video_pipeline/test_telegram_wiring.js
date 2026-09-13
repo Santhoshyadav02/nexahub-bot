@@ -39,6 +39,7 @@ async function testMissingClientFailsClosed() {
   fs.mkdirSync(dir, { recursive: true });
   const rt = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:1/unused',
     stagingChatId: '@my_private_staging_test_channel',
     autoPublish: true,
@@ -63,6 +64,7 @@ async function testInjectedClientAllowsStart() {
   // This mirrors index.js's SINGLE-PROCESS INIT call exactly.
   const rt = getVideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:1/unused',
     stagingChatId: '@my_private_staging_test_channel',
     autoPublish: false, // just verifying config validity here, not running acquisition
@@ -85,6 +87,7 @@ async function testEndToEndStagingPublishViaWiredClient() {
 
   const rt = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:1/unused',
     stagingChatId: '@my_private_staging_test_channel',
     autoPublish: true,
@@ -129,6 +132,7 @@ async function testForbiddenDestinationStillBlocked() {
 
   const rt = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:1/unused',
     stagingChatId: '@ccsfvk', // a real production channel username
     autoPublish: true,

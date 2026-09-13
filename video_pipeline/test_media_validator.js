@@ -19,7 +19,7 @@ function check(label, cond, detail = '') {
 
 const FIXTURE_MP4 = path.join(__dirname, '..', 'scratch', 'real_video_test.mp4');
 
-function main() {
+async function main() {
   console.log('--- No hardcoded developer-machine path remains ---');
   const src = fs.readFileSync(path.join(__dirname, 'media_validator.js'), 'utf8');
   check('Source contains no hardcoded WinGet/C:\\Users path', !/C:\\\\Users\\\\sam|WinGet/i.test(src));
@@ -29,7 +29,7 @@ function main() {
   check('getFFmpegPath() resolves to the configured env var', getFFmpegPath() === process.env.FFMPEG_PATH);
   check('getFFprobePath() resolves to the configured env var', getFFprobePath() === process.env.FFPROBE_PATH);
 
-  const goodResult = validateMediaFile(FIXTURE_MP4);
+  const goodResult = await validateMediaFile(FIXTURE_MP4);
   check('Valid MP4 with real tooling available -> valid:true', goodResult.valid === true, JSON.stringify(goodResult));
   check('ffprobeUsed/ffmpegDecodeUsed both true (real deep validation ran, not degraded)', goodResult.ffprobeUsed && goodResult.ffmpegDecodeUsed);
   check('toolingUnavailable is false on a genuine pass', goodResult.toolingUnavailable === false);
@@ -43,7 +43,7 @@ function main() {
   const savedPath = process.env.PATH;
   process.env.PATH = '';
   try {
-    const badResult = validateMediaFile(FIXTURE_MP4);
+    const badResult = await validateMediaFile(FIXTURE_MP4);
     check('Missing tooling -> valid:false (NOT silently true)', badResult.valid === false, JSON.stringify(badResult));
     check('toolingUnavailable is explicitly reported as true', badResult.toolingUnavailable === true);
     check('A clear, non-empty error message is reported', typeof badResult.error === 'string' && badResult.error.length > 0);
@@ -56,7 +56,7 @@ function main() {
   console.log('\n--- Still correctly rejects genuinely invalid media (unrelated to tooling) ---');
   const htmlPath = path.join(__dirname, '..', 'scratch', '_validator_test_fake.mp4');
   fs.writeFileSync(htmlPath, '<html>not a video</html>');
-  const fakeResult = validateMediaFile(htmlPath);
+  const fakeResult = await validateMediaFile(htmlPath);
   check('HTML masquerading as .mp4 -> valid:false', fakeResult.valid === false);
   check('Failure reason mentions the header check, not tooling', /header|ftyp/i.test(fakeResult.error || ''));
   fs.unlinkSync(htmlPath);
@@ -67,4 +67,4 @@ function main() {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-main();
+main().catch(err => { console.error('CRASHED:', err); process.exit(1); });

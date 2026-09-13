@@ -13,38 +13,9 @@
 
 const { chromium } = require("playwright");
 const { URL } = require("url");
-const fs = require("fs");
-const { execSync } = require("child_process");
 const { detectChallenge, waitForChallengeCompletion, redactUrl } = require("./player_resolver");
 const { applyProxyToLaunchOptions } = require("./proxy_config");
-
-/**
- * Locate system Chromium executable if available
- */
-function getSystemChromiumPath() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-  if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
-    return process.env.CHROME_BIN;
-  }
-  if (process.env.CHROMIUM_PATH && fs.existsSync(process.env.CHROMIUM_PATH)) {
-    return process.env.CHROMIUM_PATH;
-  }
-
-  try {
-    const stdout = execSync("which chromium || which chromium-browser || which google-chrome-stable || which google-chrome", {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "ignore"],
-      timeout: 2000
-    }).trim();
-    if (stdout && fs.existsSync(stdout)) {
-      return stdout;
-    }
-  } catch (e) {}
-
-  return null;
-}
+const { launchChromium } = require("./chromium_executable");
 
 /**
  * Discovers and extracts post listings from an authorized board page.
@@ -83,12 +54,12 @@ async function discoverBoardPosts(boardUrl, options = {}) {
 
   let browser = null;
   let ownsBrowser = false;
+  let ownedContext = null;
 
   try {
     if (options.browser) {
       browser = options.browser;
     } else {
-      const execPath = getSystemChromiumPath();
       const launchOpts = applyProxyToLaunchOptions({
         headless: options.headless !== false,
         args: [
@@ -100,17 +71,19 @@ async function discoverBoardPosts(boardUrl, options = {}) {
           "--disable-blink-features=AutomationControlled"
         ]
       });
-      if (execPath) {
-        launchOpts.executablePath = execPath;
-      }
-      browser = await chromium.launch(launchOpts);
+      const launched = await launchChromium(chromium, launchOpts, { logPrefix: "[BoardDiscovery]" });
+      browser = launched.browser;
       ownsBrowser = true;
     }
 
-    const context = options.context || await browser.newContext({
-      userAgent: options.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      viewport: { width: 1280, height: 800 }
-    });
+    let context = options.context;
+    if (!context) {
+      context = await browser.newContext({
+        userAgent: options.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        viewport: { width: 1280, height: 800 }
+      });
+      ownedContext = context;
+    }
 
     const page = options.page || await context.newPage();
 
@@ -239,6 +212,9 @@ async function discoverBoardPosts(boardUrl, options = {}) {
       error: `Discovery error: ${err.message}`
     };
   } finally {
+    if (ownedContext && !ownsBrowser) {
+      await ownedContext.close().catch(() => {});
+    }
     if (ownsBrowser && browser) {
       await browser.close().catch(() => {});
     }

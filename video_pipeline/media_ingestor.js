@@ -18,8 +18,8 @@
  *                             -> DUPLICATE (validation passed, content/source already seen)
  *                             -> FAILED    (validation failed, or file vanished)
  *   READY -> CLAIMED   (future publisher reserves it - see claim())
- *   PUBLISHED / CLEANED are reserved fields for a later phase; this module
- *   never sets them.
+ *   PUBLISHED / CLEANED / ABANDONED / SKIPPED_TOO_LARGE are set by later
+ *   phases (publisher, cleaner, batch cycle manager); this module never sets them.
  */
 
 const fs = require('fs');
@@ -30,7 +30,7 @@ const { MediaLedger } = require('./media_ledger');
 const { validateMediaFile } = require('./media_validator');
 
 const IGNORED_SUBSTRINGS = ['.part', '.tmp', '.crdownload', '.partial', '.set-aside-'];
-const TERMINAL_STATUSES = ['READY', 'CLAIMED', 'FAILED', 'DUPLICATE'];
+const TERMINAL_STATUSES = ['READY', 'CLAIMED', 'FAILED', 'DUPLICATE', 'ABANDONED', 'SKIPPED_TOO_LARGE'];
 const DEFAULT_STABILITY_CHECK_MS = 400;
 const DEFAULT_SCAN_INTERVAL_MS = 30000;
 
@@ -43,7 +43,7 @@ class MediaIngestor {
    * @param {object} config
    * @param {string} config.downloadsDir Directory to scan for completed *.mp4 files
    * @param {string} [config.downloadReportPath] Defaults to <downloadsDir>/download_report.json
-   * @param {string} [config.ledgerPath] Defaults to video_pipeline/media_state.json
+   * @param {string} [config.ledgerPath] Defaults to <data dir>/video_pipeline/state/media_state.json
    * @param {MediaLedger} [config.ledger] Inject an existing ledger instance (tests)
    * @param {number} [config.stabilityCheckMs] Delay used to confirm a file has stopped changing
    */
@@ -56,6 +56,7 @@ class MediaIngestor {
     this.stabilityCheckMs = config.stabilityCheckMs || DEFAULT_STABILITY_CHECK_MS;
     this.ledger = config.ledger || new MediaLedger({ ledgerPath: config.ledgerPath });
 
+    this._sourceMapCache = null;
     this._scanLock = Promise.resolve();
     this._timerId = null;
     this._lastScanSummary = null;
@@ -86,7 +87,19 @@ class MediaIngestor {
 
   _loadSourceMap() {
     const map = new Map();
-    if (!fs.existsSync(this.downloadReportPath)) return map;
+    let stat;
+    try {
+      stat = fs.statSync(this.downloadReportPath);
+    } catch (e) {
+      return map;
+    }
+    // download_report.json is rewritten by video-tools after every job, but
+    // the ingestor may process many files between rewrites - only re-parse
+    // when the file actually changed.
+    const cacheKey = `${stat.size}:${stat.mtimeMs}`;
+    if (this._sourceMapCache && this._sourceMapCache.key === cacheKey) {
+      return this._sourceMapCache.map;
+    }
     try {
       const report = JSON.parse(fs.readFileSync(this.downloadReportPath, 'utf8'));
       if (Array.isArray(report)) {
@@ -96,8 +109,10 @@ class MediaIngestor {
           }
         }
       }
+      this._sourceMapCache = { key: cacheKey, map };
     } catch (e) {
-      // Best-effort correlation only; a missing/malformed report never blocks ingestion.
+      // Best-effort correlation only; a missing/malformed report never blocks
+      // ingestion (and a report caught mid-rewrite is simply re-read next time).
     }
     return map;
   }
@@ -250,7 +265,8 @@ class MediaIngestor {
       return { filePath, id, status: 'FAILED', reason: `Failed to hash file: ${e.message}` };
     }
 
-    const validation = validateMediaFile(filePath);
+    // Async (non-blocking) validation - a full ffmpeg decode can take minutes.
+    const validation = await validateMediaFile(filePath);
     if (!validation.valid) {
       await this.ledger.upsert(id, { status: 'FAILED', contentSha256, lastError: validation.error, validation });
       return { filePath, id, status: 'FAILED', reason: validation.error };

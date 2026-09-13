@@ -1,10 +1,17 @@
 const fs = require('fs');
 const https = require('https');
-const path = require('path');
+const http = require('http');
+const { seededDataPath, writeJsonAtomicSync } = require('./runtime_paths');
 
-const RANKING_FILE = path.join(__dirname, 'ranking.json');
+// Runtime copy lives in NEXAHUB_DATA_DIR (seeded once from the committed ranking.json)
+const RANKING_FILE = seededDataPath('ranking.json');
 const RANKING_REFRESH_INTERVAL_MS = parseInt(process.env.RANKING_REFRESH_INTERVAL_MS, 10) || (5 * 60 * 1000); // 5 minutes default
 const SIGNAL_API_URL = "https://api.signal.bz/news/realtime";
+const FETCH_IDLE_TIMEOUT_MS = 8000;
+const FETCH_DEADLINE_MS = 15000; // hard cap per request, even if the server trickles bytes
+
+let rankingTimer = null;
+let rankingRefreshInFlight = null;
 
 /**
  * Reads local ranking.json file safely.
@@ -43,56 +50,102 @@ function validateRankings(rankings) {
 }
 
 /**
- * Fetches JSON data over HTTPS with timeout.
+ * GETs a URL and resolves with the response body as text.
+ * Rejects on network error, socket idle timeout (timeoutMs) or when the overall
+ * deadline (deadlineMs) passes; the request is destroyed in every failure case.
+ *
+ * @param {string} url
+ * @param {object} [options]
+ * @param {object} [options.headers]
+ * @param {number} [options.timeoutMs=8000] Socket idle timeout
+ * @param {number} [options.deadlineMs=15000] Overall deadline for the whole request
+ * @returns {Promise<{ statusCode: number, body: string }>}
  */
-function fetchJSON(url, timeoutMs = 8000) {
+function httpGetText(url, options = {}) {
+  const timeoutMs = options.timeoutMs || FETCH_IDLE_TIMEOUT_MS;
+  const deadlineMs = options.deadlineMs || FETCH_DEADLINE_MS;
+
   return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*"
-      },
-      timeout: timeoutMs
-    }, (res) => {
-      if (res.statusCode !== 200) {
-        return reject(new Error(`HTTP Status ${res.statusCode}`));
-      }
-      let raw = '';
-      res.on('data', chunk => raw += chunk);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(raw);
-          resolve(parsed);
-        } catch (e) {
-          reject(new Error("Malformed JSON response"));
+    let settled = false;
+    let req = null;
+    let deadlineTimer = null;
+
+    const finish = (err, value) => {
+      if (settled) return;
+      settled = true;
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      if (err) {
+        if (req) {
+          try { req.destroy(); } catch (e) {}
         }
-      });
+        reject(err);
+      } else {
+        resolve(value);
+      }
+    };
+
+    let client;
+    try {
+      client = new URL(url).protocol === 'http:' ? http : https;
+    } catch (e) {
+      return finish(new Error(`Invalid URL: ${url}`));
+    }
+
+    deadlineTimer = setTimeout(() => {
+      finish(new Error(`Request deadline exceeded (${deadlineMs}ms)`));
+    }, deadlineMs);
+
+    req = client.get(url, { headers: options.headers || {}, timeout: timeoutMs }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => finish(null, { statusCode: res.statusCode, body: data }));
+      res.on('error', (err) => finish(err));
+      res.on('aborted', () => finish(new Error('Response aborted')));
     });
 
-    req.on('error', (err) => reject(err));
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error("Request timeout"));
-    });
+    req.on('error', (err) => finish(err));
+    req.on('timeout', () => finish(new Error(`Request timeout (idle ${timeoutMs}ms)`)));
   });
 }
 
-function fetchText(url, extraHeaders = {}) {
-  return new Promise(resolve => {
-    https.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        ...extraHeaders
-      },
-      timeout: 8000
-    }, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve(data));
-    }).on('error', () => resolve(''));
+/**
+ * Fetches JSON data over HTTPS with timeout.
+ */
+async function fetchJSON(url, timeoutMs = FETCH_IDLE_TIMEOUT_MS) {
+  const { statusCode, body } = await httpGetText(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*"
+    },
+    timeoutMs
   });
+  if (statusCode !== 200) {
+    throw new Error(`HTTP Status ${statusCode}`);
+  }
+  try {
+    return JSON.parse(body);
+  } catch (e) {
+    throw new Error("Malformed JSON response");
+  }
+}
+
+/**
+ * Fetches an HTML/XML page as text. Rejects on error, idle timeout or deadline
+ * (all callers wrap it in try/catch and fall through to the next method).
+ */
+async function fetchText(url, extraHeaders = {}, options = {}) {
+  const { body } = await httpGetText(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+      ...extraHeaders
+    },
+    timeoutMs: options.timeoutMs || FETCH_IDLE_TIMEOUT_MS,
+    deadlineMs: options.deadlineMs || FETCH_DEADLINE_MS
+  });
+  return body;
 }
 
 /**
@@ -182,9 +235,9 @@ async function getDirectArticleUrl(keyword) {
  */
 async function scrapeRealtimeRankings() {
   console.log("🔥 [Ranking] Fetching latest Korean real-time Top 10 rankings...");
-  
+
   try {
-    const data = await fetchJSON(SIGNAL_API_URL, 8000);
+    const data = await fetchJSON(SIGNAL_API_URL, FETCH_IDLE_TIMEOUT_MS);
     if (!data || !Array.isArray(data.top10) || data.top10.length < 10) {
       throw new Error("Invalid or incomplete Top 10 data from API");
     }
@@ -215,10 +268,8 @@ async function scrapeRealtimeRankings() {
       rankings: cleanRankings
     };
 
-    // Atomic write
-    const tempFile = `${RANKING_FILE}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(payload, null, 2), 'utf8');
-    fs.renameSync(tempFile, RANKING_FILE);
+    // Atomic write (tmp file + fsync + rename)
+    writeJsonAtomicSync(RANKING_FILE, payload);
 
     console.log(`✅ [Ranking] Successfully fetched and updated 10 rankings in ranking.json`);
     return payload;
@@ -235,20 +286,83 @@ async function scrapeRealtimeRankings() {
 }
 
 /**
- * Starts continuous background polling for rankings.
+ * Runs one refresh unless a previous one is still in flight (ticks never pile up).
+ * @param {Function} [scrapeFn=scrapeRealtimeRankings]
+ * @param {string} [label="Scheduled"]
+ * @returns {Promise<any>} The in-flight refresh promise (never rejects)
  */
-function startRankingScheduler() {
-  console.log(`⏱️ [Ranking] Starting scheduler (refresh interval: ${RANKING_REFRESH_INTERVAL_MS / 1000}s)...`);
-  scrapeRealtimeRankings().catch(err => console.error("Initial ranking scrape error:", err.message));
-  setInterval(() => {
-    scrapeRealtimeRankings().catch(err => console.error("Scheduled ranking scrape error:", err.message));
-  }, RANKING_REFRESH_INTERVAL_MS);
+function runRankingRefresh(scrapeFn = scrapeRealtimeRankings, label = "Scheduled") {
+  if (rankingRefreshInFlight) {
+    console.log("⏭️ [Ranking] Previous refresh still running; skipping this tick.");
+    return rankingRefreshInFlight;
+  }
+  rankingRefreshInFlight = Promise.resolve()
+    .then(() => scrapeFn())
+    .catch(err => {
+      console.error(`${label} ranking scrape error:`, err.message);
+      return null;
+    })
+    .finally(() => {
+      rankingRefreshInFlight = null;
+    });
+  return rankingRefreshInFlight;
+}
+
+/**
+ * Starts continuous background polling for rankings.
+ * @param {object} [options]
+ * @param {number} [options.intervalMs=RANKING_REFRESH_INTERVAL_MS]
+ * @param {Function} [options.scrapeFn] Injectable for tests
+ * @returns {Function} stopRankingScheduler
+ */
+function startRankingScheduler(options = {}) {
+  if (rankingTimer) {
+    console.warn("⚠️ [Ranking] Scheduler already running; duplicate start ignored.");
+    return stopRankingScheduler;
+  }
+  const intervalMs = options.intervalMs || RANKING_REFRESH_INTERVAL_MS;
+  const scrapeFn = options.scrapeFn || scrapeRealtimeRankings;
+
+  console.log(`⏱️ [Ranking] Starting scheduler (refresh interval: ${intervalMs / 1000}s)...`);
+  runRankingRefresh(scrapeFn, "Initial");
+  rankingTimer = setInterval(() => {
+    runRankingRefresh(scrapeFn, "Scheduled");
+  }, intervalMs);
+  return stopRankingScheduler;
+}
+
+/**
+ * Stops the background ranking scheduler (safe to call when not running).
+ * An in-flight refresh is left to finish on its own (bounded by FETCH_DEADLINE_MS per request).
+ */
+function stopRankingScheduler() {
+  if (rankingTimer) {
+    clearInterval(rankingTimer);
+    rankingTimer = null;
+    console.log("🛑 [Ranking] Scheduler stopped");
+  }
+}
+
+function isRankingSchedulerRunning() {
+  return Boolean(rankingTimer);
+}
+
+function isRankingRefreshInFlight() {
+  return Boolean(rankingRefreshInFlight);
 }
 
 module.exports = {
   scrapeRealtimeRankings,
   getLocalRankings,
   startRankingScheduler,
+  stopRankingScheduler,
+  runRankingRefresh,
+  isRankingSchedulerRunning,
+  isRankingRefreshInFlight,
+  fetchText,
+  fetchJSON,
   validateRankings,
-  RANKING_REFRESH_INTERVAL_MS
+  RANKING_FILE,
+  RANKING_REFRESH_INTERVAL_MS,
+  FETCH_DEADLINE_MS
 };

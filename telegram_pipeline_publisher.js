@@ -21,10 +21,23 @@ const { GlobalRoundRobinRouter } = require("./global_round_robin_router");
 const { loadRoutingConfig } = require("./telegram_content_classifier");
 const { generateKoreanCaptionAsync } = require("./korean_caption_generator");
 const MTProtoChannelReader = require("./mtproto_reader");
+const { dataPath, writeJsonAtomicSync } = require("./runtime_paths");
 
-const DEFAULT_LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+// Committed baseline ledger (seed) vs. the live ledger in the data dir.
+const REPO_LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+const DEFAULT_LEDGER_PATH = dataPath("published_ledger.json");
 const LEDGER_PATH = process.env.LEDGER_PATH || process.env.PUBLISHED_LEDGER_PATH || DEFAULT_LEDGER_PATH;
 const CONFIG_PATH = path.join(__dirname, "pipeline_config.json");
+// SUCCESS records are kept forever (they are the dedupe source of truth);
+// only the most recent FAILED records are retained.
+const MAX_FAILED_RECORDS = 500;
+const MTPROTO_CALL_TIMEOUT_MS = 60 * 1000;
+const SEND_FILE_TIMEOUT_MS = 5 * 60 * 1000;
+
+// Resolved entities per GramJS client, shared across publisher instances (a
+// new publisher is built every cycle). Keyed by client so a recreated client
+// or a test mock never sees another client's entities.
+const clientEntityCache = new WeakMap();
 
 function loadPipelineConfig() {
   if (fs.existsSync(CONFIG_PATH)) {
@@ -62,7 +75,7 @@ class PublishedLedger {
 
   load() {
     try {
-      const defaultBaselinePath = DEFAULT_LEDGER_PATH;
+      const defaultBaselinePath = REPO_LEDGER_PATH;
 
       // If configured to a persistent path that does not exist yet, initialize from baseline
       if (this.filePath !== defaultBaselinePath && !fs.existsSync(this.filePath)) {
@@ -75,7 +88,7 @@ class PublishedLedger {
             const baselineContent = fs.readFileSync(defaultBaselinePath, "utf8");
             const parsedBaseline = JSON.parse(baselineContent);
             if (parsedBaseline && Array.isArray(parsedBaseline.records)) {
-              fs.writeFileSync(this.filePath, baselineContent, "utf8");
+              writeJsonAtomicSync(this.filePath, parsedBaseline);
               console.log(`📦 Initialized persistent ledger at [${this.filePath}] from baseline (${parsedBaseline.records.length} records)`);
             }
           } catch (initErr) {
@@ -140,8 +153,25 @@ class PublishedLedger {
     }
   }
 
+  pruneFailedRecords() {
+    let failedCount = 0;
+    for (const r of this.records) {
+      if (r.status === "FAILED") failedCount++;
+    }
+    if (failedCount <= MAX_FAILED_RECORDS) return;
+    let toDrop = failedCount - MAX_FAILED_RECORDS;
+    this.records = this.records.filter(r => {
+      if (toDrop > 0 && r.status === "FAILED") {
+        toDrop--;
+        return false;
+      }
+      return true;
+    });
+  }
+
   save() {
     try {
+      this.pruneFailedRecords();
       const payload = {
         version: "1.1.0",
         updatedAt: new Date().toISOString(),
@@ -150,7 +180,9 @@ class PublishedLedger {
         pendingAssignments: Object.fromEntries(this.assignedDestinations),
         records: this.records
       };
-      fs.writeFileSync(this.filePath, JSON.stringify(payload, null, 2), "utf8");
+      // Atomic (tmp + fsync + rename): a crash mid-write can never leave a
+      // torn ledger that would fail to load on the next start.
+      writeJsonAtomicSync(this.filePath, payload);
     } catch (err) {
       console.error("❌ Error writing published ledger:", err.message);
     }
@@ -245,6 +277,44 @@ class TelegramPipelinePublisher {
     this.config = config || loadPipelineConfig();
     this.routingConfig = loadRoutingConfig();
     this.resolvedDestinations = new Map(); // username -> entity
+    this.cycleAborted = false;
+  }
+
+  getClientEntityCache() {
+    if (!this.client || typeof this.client !== "object") return null;
+    let cache = clientEntityCache.get(this.client);
+    if (!cache) {
+      cache = new Map();
+      clientEntityCache.set(this.client, cache);
+    }
+    return cache;
+  }
+
+  async getEntityCached(identifier) {
+    const cache = this.getClientEntityCache();
+    const key = String(identifier).toLowerCase();
+    if (cache && cache.has(key)) {
+      return cache.get(key);
+    }
+    const entity = await MTProtoChannelReader.withTimeout(this.client.getEntity(identifier), MTPROTO_CALL_TIMEOUT_MS, `getEntity(${identifier})`);
+    if (cache) cache.set(key, entity);
+    return entity;
+  }
+
+  /**
+   * On a Telegram FloodWait, stop the whole cycle instead of immediately
+   * hammering the next channel/item. Returns true if err was a FloodWait.
+   */
+  handleFloodWait(err) {
+    const seconds = MTProtoChannelReader.getFloodWaitSeconds(err);
+    if (!seconds) return false;
+    if (this.reader && typeof this.reader.noteFloodWait === "function") {
+      this.reader.noteFloodWait(err);
+    } else {
+      console.warn(`⚠️ [TELEGRAM_PIPELINE] FloodWait of ${seconds}s received.`);
+    }
+    this.cycleAborted = true;
+    return true;
   }
 
   /**
@@ -274,7 +344,7 @@ class TelegramPipelinePublisher {
       return { entity: { id: destInfo.username, username: destInfo.username }, info: destInfo };
     }
 
-    const entity = await this.client.getEntity(destInfo.username);
+    const entity = await this.getEntityCached(destInfo.username);
     this.resolvedDestinations.set(destInfo.username, entity);
     return { entity, info: destInfo };
   }
@@ -338,10 +408,10 @@ class TelegramPipelinePublisher {
         throw new Error(`Item ${sourceIdentity} lacks Telegram media object.`);
       }
 
-      const sentMessage = await this.client.sendFile(entity, {
+      const sentMessage = await MTProtoChannelReader.withTimeout(this.client.sendFile(entity, {
         file: mediaToSend,
         caption: decision.generatedKoreanCaption
-      });
+      }), SEND_FILE_TIMEOUT_MS, `sendFile(${sourceIdentity})`);
 
       const destMessageId = sentMessage ? String(sentMessage.id) : "unknown";
 
@@ -393,6 +463,7 @@ class TelegramPipelinePublisher {
         destinationChannelId: decision.destinationChannelId,
         destinationUsername: info.username
       }, publishErr.message);
+      this.handleFloodWait(publishErr);
 
       return {
         status: "FAILED",
@@ -423,10 +494,11 @@ class TelegramPipelinePublisher {
     });
 
     for (const src of activeSources) {
+      if (this.cycleAborted) break;
       try {
-        const entity = await this.client.getEntity(src.username);
+        const entity = await this.getEntityCached(src.username);
         const actualId = entity.id ? entity.id.toString() : src.id;
-        const messages = await this.client.getMessages(entity, { limit });
+        const messages = await MTProtoChannelReader.withTimeout(this.client.getMessages(entity, { limit }), MTPROTO_CALL_TIMEOUT_MS, `getMessages(${src.username})`);
 
         for (const msg of messages) {
           let isVideo = false;
@@ -466,6 +538,7 @@ class TelegramPipelinePublisher {
         }
       } catch (err) {
         console.warn(`⚠️ Error reading from @${src.username}: ${err.message}`);
+        if (this.handleFloodWait(err)) break;
       }
     }
 
@@ -505,6 +578,7 @@ class TelegramPipelinePublisher {
    * @returns {Promise<object>}
    */
   async runPublishCycle() {
+    this.cycleAborted = false;
     const candidates = await this.scanSourceChannels();
     const isSmokeTest = Boolean(this.config.smokeTestMode);
     const maxPerDest = isSmokeTest ? (this.config.maxPerDestinationInSmokeTest || 1) : 100;
@@ -549,6 +623,10 @@ class TelegramPipelinePublisher {
     };
 
     for (let i = 0; i < plannedOperations.length; i++) {
+      if (this.cycleAborted || pipelineStopRequested) {
+        console.warn(`⏹️ [Pipeline Cycle] Stopping early (${this.cycleAborted ? "Telegram FloodWait" : "shutdown requested"}) after ${i} of ${plannedOperations.length} planned items.`);
+        break;
+      }
       const op = plannedOperations[i];
       // JIT destination assignment strictly for accepted items
       const decision = this.router.assignDestination(op.item);
@@ -602,6 +680,11 @@ class TelegramPipelinePublisher {
 let pipelineSchedulerTimer = null;
 let initialCycleTimer = null;
 let isPublishingCycleActive = false;
+// Set by stopPipelineScheduler() while a scheduled cycle is running so the
+// cycle stops between items; activeCyclePromise lets shutdown wait for the
+// in-flight send + ledger write to finish instead of cutting it off.
+let pipelineStopRequested = false;
+let activeCyclePromise = null;
 
 /**
  * Starts the Telegram Video Pipeline recurring scheduler inside the main process
@@ -646,6 +729,7 @@ function startPipelineScheduler(options = {}) {
   }
 
   console.log(`🚀 Starting Telegram Video Pipeline scheduler (interval: ${intervalMs / 1000}s)...`);
+  pipelineStopRequested = false;
 
   const runCycle = async () => {
     if (isPublishingCycleActive) {
@@ -653,8 +737,14 @@ function startPipelineScheduler(options = {}) {
       return;
     }
     isPublishingCycleActive = true;
+    let resolveCycle = null;
+    activeCyclePromise = new Promise(resolve => { resolveCycle = resolve; });
     try {
       const reader = new MTProtoChannelReader();
+      if (typeof reader.isFloodWaitActive === "function" && reader.isFloodWaitActive()) {
+        console.warn("⚠️ Skipping pipeline publish cycle: Telegram FloodWait is still active.");
+        return;
+      }
       const connected = await reader.connect();
       if (!connected) {
         console.warn("⚠️ Cannot run pipeline publish cycle: MTProto client not connected.");
@@ -667,6 +757,9 @@ function startPipelineScheduler(options = {}) {
       console.error("❌ Error in pipeline publish cycle:", err.message);
     } finally {
       isPublishingCycleActive = false;
+      pipelineStopRequested = false;
+      activeCyclePromise = null;
+      resolveCycle();
     }
   };
 
@@ -693,6 +786,9 @@ function startPipelineScheduler(options = {}) {
  * Stops the Telegram Video Pipeline recurring scheduler
  */
 function stopPipelineScheduler() {
+  if (activeCyclePromise) {
+    pipelineStopRequested = true;
+  }
   if (pipelineSchedulerTimer) {
     clearInterval(pipelineSchedulerTimer);
     pipelineSchedulerTimer = null;
@@ -703,6 +799,22 @@ function stopPipelineScheduler() {
     initialCycleTimer = null;
   }
   isPublishingCycleActive = false;
+}
+
+/**
+ * Resolves true once the in-flight scheduled publish cycle (if any) has
+ * finished, or false if it is still running after timeoutMs.
+ */
+async function waitForActiveCycle(timeoutMs = 10000) {
+  const pending = activeCyclePromise;
+  if (!pending) return true;
+  let timer = null;
+  const finished = await Promise.race([
+    pending.then(() => true),
+    new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); })
+  ]);
+  clearTimeout(timer);
+  return finished;
 }
 
 /**
@@ -722,6 +834,7 @@ async function runUnifiedPublisherSmokeTest(customConfig = null) {
 }
 
 if (require.main === module) {
+  require("./process_lock").assertBotNotRunning("telegram_pipeline_publisher.js");
   const args = process.argv.slice(2);
   const isDryRun = args.includes("--dry-run");
   const isForce = args.includes("--force");
@@ -766,7 +879,8 @@ if (require.main === module) {
   });
 }
 
-const publisherInstance = new TelegramPipelinePublisher();
+// No module-level publisher instance: requiring this module (index.js does at
+// startup) must not load the ledger or build an MTProto client.
 
 module.exports = {
   PublishedLedger,
@@ -774,6 +888,7 @@ module.exports = {
   loadPipelineConfig,
   startPipelineScheduler,
   stopPipelineScheduler,
+  waitForActiveCycle,
   runUnifiedPublisherSmokeTest,
   isPublishingActive: () => isPublishingCycleActive
 };

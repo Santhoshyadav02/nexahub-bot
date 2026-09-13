@@ -25,6 +25,18 @@ video_pipeline/*_state.json
 video_pipeline/media_state.json
 video_pipeline/batch_state.json
 video_pipeline/publish_state.json
+video_pipeline/state/
+video_pipeline/downloads/
+video_pipeline/output/
+
+# Runtime data dir (when NEXAHUB_DATA_DIR points inside the repo), locks,
+# atomic-write temp files and quarantined corrupt state
+data/
+avsee_runtime/
+browser_control/
+nexahub-bot.lock
+*.tmp
+*.corrupt-*
 
 # Execution logs
 *.log

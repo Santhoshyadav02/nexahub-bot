@@ -14,9 +14,8 @@
 
 const { chromium } = require("playwright");
 const { URL } = require("url");
-const fs = require("fs");
-const { execSync } = require("child_process");
 const { applyProxyToLaunchOptions } = require("./proxy_config");
+const { launchChromium } = require("./chromium_executable");
 
 const RESOLVER_STATES = Object.freeze({
   SUCCESS: "SUCCESS",
@@ -39,35 +38,6 @@ const DEFAULT_OPTIONS = Object.freeze({
   viewport: { width: 1280, height: 720 },
   logDiagnostics: true
 });
-
-/**
- * Locate system Chromium executable if available
- * @returns {string|null}
- */
-function getSystemChromiumPath() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-  if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
-    return process.env.CHROME_BIN;
-  }
-  if (process.env.CHROMIUM_PATH && fs.existsSync(process.env.CHROMIUM_PATH)) {
-    return process.env.CHROMIUM_PATH;
-  }
-
-  try {
-    const stdout = execSync("which chromium || which chromium-browser || which google-chrome-stable || which google-chrome", {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "ignore"],
-      timeout: 2000
-    }).trim();
-    if (stdout && fs.existsSync(stdout)) {
-      return stdout;
-    }
-  } catch (e) {}
-
-  return null;
-}
 
 /**
  * Redacts sensitive tokens and signature params from a URL string for safe logging.
@@ -221,6 +191,7 @@ async function resolvePlayer(postUrl, options = {}) {
 
   let browser = null;
   let ownsBrowser = false;
+  let ownedContext = null;
 
   if (!postUrl || typeof postUrl !== "string") {
     return {
@@ -243,7 +214,6 @@ async function resolvePlayer(postUrl, options = {}) {
     if (opts.browser) {
       browser = opts.browser;
     } else {
-      const execPath = getSystemChromiumPath();
       const launchOpts = applyProxyToLaunchOptions({
         headless: opts.headless !== false,
         args: [
@@ -255,17 +225,21 @@ async function resolvePlayer(postUrl, options = {}) {
           "--disable-blink-features=AutomationControlled"
         ]
       });
-      if (execPath) {
-        launchOpts.executablePath = execPath;
-      }
-      browser = await chromium.launch(launchOpts);
+      const launched = await launchChromium(chromium, launchOpts, { logPrefix: "[PlayerResolver]" });
+      browser = launched.browser;
       ownsBrowser = true;
     }
 
-    const context = opts.context || await browser.newContext({
-      userAgent: opts.userAgent,
-      viewport: opts.viewport
-    });
+    let context = opts.context;
+    if (!context) {
+      // When the caller lends us a browser, the context we create here is ours
+      // to close; otherwise it would live until the caller closes the browser.
+      context = await browser.newContext({
+        userAgent: opts.userAgent,
+        viewport: opts.viewport
+      });
+      ownedContext = context;
+    }
 
     const page = opts.page || await context.newPage();
 
@@ -515,6 +489,9 @@ async function resolvePlayer(postUrl, options = {}) {
       networkState: null
     };
   } finally {
+    if (ownedContext && !ownsBrowser) {
+      await ownedContext.close().catch(() => {});
+    }
     if (ownsBrowser && browser) {
       await browser.close().catch(() => {});
     }

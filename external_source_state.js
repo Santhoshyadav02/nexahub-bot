@@ -12,19 +12,41 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { seededDataPath, writeJsonAtomicSync, quarantineCorruptFile } = require("./runtime_paths");
 
 const MAX_GLOBAL_RETENTION = 150;
 const DEFAULT_CHANNEL_DAILY_TARGET = 100;
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Detects test/fixture records (e.g. the committed seed's `item_4` / "Video 4"):
+ * explicitly flagged records, or synthetic `item_<n>` ids with `h<n>` hashes and
+ * no page/media URL. Real pipeline records always carry a URL.
+ * @param {object} rec
+ * @returns {boolean}
+ */
+function isFixtureRecord(rec) {
+  if (!rec || typeof rec !== "object") return false;
+  if (rec.isTest === true || rec.test === true || rec.fixture === true) return true;
+  const id = String(rec.sourceItemId || rec.itemId || "");
+  const hash = String(rec.uniqueHash || "");
+  const hasLocator = Boolean(rec.canonicalUrl || rec.pageUrl || rec.mediaUrl);
+  return !hasLocator && /^item_\d+$/.test(id) && (!hash || /^h\d+$/.test(hash));
+}
 
 class ExternalSourceState {
   /**
    * @param {object} [config]
    * @param {string} [config.stateFilePath] Path to persistent JSON state store
    * @param {number} [config.maxTotalItems=150] Max items in global retention pool
+   * @param {boolean} [config.ignoreFixtureRecords] Drop test/fixture records on load (default: true for the default data-dir path)
    */
   constructor(config = {}) {
-    this.stateFilePath = config.stateFilePath || config.retentionStorePath || path.join(__dirname, "external_source_state.json");
+    const explicitStatePath = config.stateFilePath || config.retentionStorePath;
+    this.stateFilePath = explicitStatePath || seededDataPath("external_source_state.json");
+    this.ignoreFixtureRecords = config.ignoreFixtureRecords !== undefined
+      ? Boolean(config.ignoreFixtureRecords)
+      : !explicitStatePath;
     this.maxTotalItems = config.maxTotalItems || config.maxRetentionPerTopic || MAX_GLOBAL_RETENTION;
     this.externalDailyTarget = config.externalDailyTarget !== undefined ? config.externalDailyTarget : Infinity; // Default: No daily video limit for external source
     this.channelDailyTarget = config.channelDailyTarget || DEFAULT_CHANNEL_DAILY_TARGET;
@@ -219,70 +241,94 @@ class ExternalSourceState {
    * Loads state from disk safely
    */
   loadState() {
-    try {
-      if (fs.existsSync(this.stateFilePath)) {
-        const raw = fs.readFileSync(this.stateFilePath, "utf8");
-        const parsed = JSON.parse(raw);
-
-        if (parsed && typeof parsed === "object") {
-          this.lastSuccessfulPollAt = parsed.lastSuccessfulPollAt || null;
-          this.lastDiscoveredCount = parsed.lastDiscoveredCount || 0;
-          this.totalProcessedCount = parsed.totalProcessedCount || 0;
-
-          // 24-hour quota state
-          this.windowStartAt = parsed.windowStartAt || null;
-          this.externalDeliveredToday = typeof parsed.externalDeliveredToday === "number" ? parsed.externalDeliveredToday : 0;
-          this.channelDeliveriesToday = (parsed.channelDeliveriesToday && typeof parsed.channelDeliveriesToday === "object") ? parsed.channelDeliveriesToday : {};
-
-          // Round-robin & Queue state
-          if (typeof parsed.roundRobinPointer === "number" && parsed.roundRobinPointer >= 1 && parsed.roundRobinPointer <= 10) {
-            this.roundRobinPointer = parsed.roundRobinPointer;
-          }
-          if (Array.isArray(parsed.candidateQueue)) {
-            this.candidateQueue = parsed.candidateQueue;
-          }
-          this.lastSuccessfulDeliveryAt = parsed.lastSuccessfulDeliveryAt || null;
-
-          // Load delivery ledger
-          if (Array.isArray(parsed.deliveryLedger)) {
-            for (const entry of parsed.deliveryLedger) {
-              if (entry && entry.deliveryKey) {
-                this.deliveryLedger.set(entry.deliveryKey, entry);
-              }
-            }
-          }
-
-          // Load permanent records
-          if (Array.isArray(parsed.records)) {
-            for (const rec of parsed.records) {
-              if (rec && (rec.sourceItemId || rec.itemId || rec.uniqueHash)) {
-                const key = rec.sourceItemId || rec.itemId || rec.uniqueHash;
-                this.records.set(key, rec);
-                if (rec.uniqueHash && rec.uniqueHash !== key) {
-                  this.records.set(rec.uniqueHash, rec);
-                }
-                if (rec.canonicalUrl) {
-                  this.urlIndex.set(this.normalizeUrl(rec.canonicalUrl), rec.uniqueHash || key);
-                }
-              }
-            }
-          }
-
-          // Load retained pool
-          if (Array.isArray(parsed.retainedPool)) {
-            this.retainedPool = parsed.retainedPool.slice(0, this.maxTotalItems);
-          }
-
-          // Check window boundary
-          this.ensureDailyWindow();
+    let parsed = null;
+    if (fs.existsSync(this.stateFilePath)) {
+      try {
+        parsed = JSON.parse(fs.readFileSync(this.stateFilePath, "utf8"));
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new SyntaxError("state root is not a JSON object");
         }
-      } else {
-        this.ensureDailyWindow();
+      } catch (err) {
+        parsed = null;
+        if (err instanceof SyntaxError) {
+          // Preserve the damaged file for manual recovery instead of overwriting it
+          console.error(`❌ [EXTERNAL_STATE] Corrupt state file ${this.stateFilePath}: ${err.message}. Preserving it and starting fresh.`);
+          quarantineCorruptFile(this.stateFilePath);
+        } else {
+          console.warn(`⚠️ [EXTERNAL_STATE] Warning reading state from ${this.stateFilePath}: ${err.message}`);
+        }
+      }
+    }
+
+    let droppedFixtures = 0;
+    const keep = (rec) => {
+      if (this.ignoreFixtureRecords && isFixtureRecord(rec)) {
+        droppedFixtures++;
+        return false;
+      }
+      return true;
+    };
+
+    try {
+      if (parsed) {
+        this.lastSuccessfulPollAt = parsed.lastSuccessfulPollAt || null;
+        this.lastDiscoveredCount = parsed.lastDiscoveredCount || 0;
+        this.totalProcessedCount = parsed.totalProcessedCount || 0;
+
+        // 24-hour quota state
+        this.windowStartAt = parsed.windowStartAt || null;
+        this.externalDeliveredToday = typeof parsed.externalDeliveredToday === "number" ? parsed.externalDeliveredToday : 0;
+        this.channelDeliveriesToday = (parsed.channelDeliveriesToday && typeof parsed.channelDeliveriesToday === "object") ? parsed.channelDeliveriesToday : {};
+
+        // Round-robin & Queue state
+        if (typeof parsed.roundRobinPointer === "number" && parsed.roundRobinPointer >= 1 && parsed.roundRobinPointer <= 10) {
+          this.roundRobinPointer = parsed.roundRobinPointer;
+        }
+        if (Array.isArray(parsed.candidateQueue)) {
+          this.candidateQueue = parsed.candidateQueue.filter(keep);
+        }
+        this.lastSuccessfulDeliveryAt = parsed.lastSuccessfulDeliveryAt || null;
+
+        // Load delivery ledger
+        if (Array.isArray(parsed.deliveryLedger)) {
+          for (const entry of parsed.deliveryLedger) {
+            if (entry && entry.deliveryKey) {
+              this.deliveryLedger.set(entry.deliveryKey, entry);
+            }
+          }
+        }
+
+        // Load permanent records
+        if (Array.isArray(parsed.records)) {
+          for (const rec of parsed.records) {
+            if (rec && (rec.sourceItemId || rec.itemId || rec.uniqueHash) && keep(rec)) {
+              const key = rec.sourceItemId || rec.itemId || rec.uniqueHash;
+              this.records.set(key, rec);
+              if (rec.uniqueHash && rec.uniqueHash !== key) {
+                this.records.set(rec.uniqueHash, rec);
+              }
+              if (rec.canonicalUrl) {
+                this.urlIndex.set(this.normalizeUrl(rec.canonicalUrl), rec.uniqueHash || key);
+              }
+            }
+          }
+        }
+
+        // Load retained pool
+        if (Array.isArray(parsed.retainedPool)) {
+          this.retainedPool = parsed.retainedPool.filter(keep).slice(0, this.maxTotalItems);
+        }
       }
     } catch (err) {
       console.warn(`⚠️ [EXTERNAL_STATE] Warning loading state from ${this.stateFilePath}: ${err.message}`);
-      this.ensureDailyWindow();
     }
+
+    if (droppedFixtures > 0) {
+      console.warn(`⚠️ [EXTERNAL_STATE] Ignored ${droppedFixtures} test/fixture entr${droppedFixtures === 1 ? "y" : "ies"} (synthetic ids such as item_1) in ${this.stateFilePath}; they are not treated as real items.`);
+    }
+
+    // Check window boundary
+    this.ensureDailyWindow();
   }
 
   /**
@@ -290,11 +336,6 @@ class ExternalSourceState {
    */
   saveState() {
     try {
-      const dir = path.dirname(this.stateFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
       // Collect unique record list (deduplicating secondary keys)
       const uniqueRecordsMap = new Map();
       for (const rec of this.records.values()) {
@@ -325,9 +366,8 @@ class ExternalSourceState {
         records: Array.from(uniqueRecordsMap.values())
       };
 
-      const tmpPath = `${this.stateFilePath}.tmp.${Date.now()}`;
-      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf8");
-      fs.renameSync(tmpPath, this.stateFilePath);
+      // tmp file + fsync + rename (crash-safe)
+      writeJsonAtomicSync(this.stateFilePath, data);
     } catch (err) {
       console.error(`❌ [EXTERNAL_STATE] Error saving state to ${this.stateFilePath}: ${err.message}`);
     }
@@ -799,5 +839,6 @@ class ExternalSourceState {
 
 module.exports = {
   ExternalSourceState,
-  MAX_GLOBAL_RETENTION
+  MAX_GLOBAL_RETENTION,
+  isFixtureRecord
 };

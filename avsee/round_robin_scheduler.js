@@ -20,6 +20,9 @@ const fs = require('fs');
 const path = require('path');
 const { DEFAULT_CATEGORY_CONFIG, CATEGORY_STATUS } = require('./category_discovery');
 const { CategoryQueue, QUEUE_STATUS, processSidebarFallbackPosts } = require('./category_queue');
+const { dataPath, writeJsonAtomicSync } = require('../runtime_paths');
+
+const warnedDisabledCategories = new Set();
 
 const MAX_CHANNELS = 10;
 const MAX_SUCCESSFUL_DELIVERIES_PER_CHANNEL_24H = 10;
@@ -52,7 +55,7 @@ class RoundRobinScheduler {
    * @param {number} [config.rollingWindowMs=86400000] 24-hour window duration in ms
    */
   constructor(config = {}) {
-    this.stateFilePath = config.stateFilePath || path.join(__dirname, '..', 'scratch', 'round_robin_scheduler_state.json');
+    this.stateFilePath = config.stateFilePath || dataPath('avsee_runtime', 'round_robin_scheduler_state.json');
     this.categoryConfig = config.categoryConfig || DEFAULT_CATEGORY_CONFIG;
     this.perChannelQuota = config.perChannelQuota || MAX_SUCCESSFUL_DELIVERIES_PER_CHANNEL_24H;
     this.globalQuota = config.globalQuota || MAX_SUCCESSFUL_DELIVERIES_GLOBAL_24H;
@@ -254,6 +257,16 @@ class RoundRobinScheduler {
       const catDef = this.getCategoryForChannel(channelIndex);
 
       if (!catDef) {
+        currentPointer = (currentPointer % MAX_CHANNELS) + 1;
+        continue;
+      }
+
+      // Destination not configured (EXTERNAL_DEST_<n> unset): never dispatch to it
+      if (catDef.enabled === false) {
+        if (!warnedDisabledCategories.has(catDef.categoryId)) {
+          warnedDisabledCategories.add(catDef.categoryId);
+          console.warn(`⚠️ [ROUND_ROBIN] Channel ${channelIndex} (${catDef.categoryId}) is DISABLED: ${catDef.destinationEnvVar || 'destination env var'} is not set. Skipping it.`);
+        }
         currentPointer = (currentPointer % MAX_CHANNELS) + 1;
         continue;
       }
@@ -502,9 +515,8 @@ class RoundRobinScheduler {
         channelDeliveryTimestamps: channelObj
       };
 
-      const tmpPath = `${this.stateFilePath}.tmp.${Date.now()}`;
-      fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
-      fs.renameSync(tmpPath, this.stateFilePath);
+      // tmp file + fsync + rename (crash-safe)
+      writeJsonAtomicSync(this.stateFilePath, payload);
     } catch (err) {
       console.error(`❌ [ROUND_ROBIN] Failed to save scheduler state: ${err.message}`);
     }

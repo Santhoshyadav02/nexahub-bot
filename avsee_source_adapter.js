@@ -15,58 +15,15 @@ const path = require("path");
 const crypto = require("crypto");
 const http = require("http");
 const https = require("https");
-const { execSync } = require("child_process");
 const { URL } = require("url");
 const { chromium } = require("playwright");
 const { ExternalSourceAdapter, CANONICAL_12_TOPIC_RULES } = require("./external_source_adapter");
 const { applyProxyToLaunchOptions } = require("./browser_proxy_config");
+const { launchChromium } = require("./avsee/chromium_executable");
+const { dataPath } = require("./runtime_paths");
 
 const AVSEE_ENABLED = process.env.AVSEE_ENABLED === "true";
 const AVSEE_DRY_RUN = process.env.AVSEE_DRY_RUN !== "false"; // default true
-
-/**
- * /**
- * Locate system Chromium executable if present
- * @returns {string|null}
- */
-function getSystemChromiumPath() {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-  if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
-    return process.env.CHROME_BIN;
-  }
-  if (process.env.CHROMIUM_PATH && fs.existsSync(process.env.CHROMIUM_PATH)) {
-    return process.env.CHROMIUM_PATH;
-  }
-
-  try {
-    const stdout = execSync("which chromium || which chromium-browser || which google-chrome-stable || which google-chrome", {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "ignore"],
-      timeout: 2000
-    }).trim();
-    if (stdout && fs.existsSync(stdout)) {
-      return stdout;
-    }
-  } catch (e) {}
-
-  const standardPaths = [
-    "/nix/var/nix/profiles/default/bin/chromium",
-    "/root/.nix-profile/bin/chromium",
-    "/etc/profiles/per-user/root/bin/chromium",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable"
-  ];
-  for (const p of standardPaths) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-  return null;
-}
 
 class AvseeSourceAdapter extends ExternalSourceAdapter {
   /**
@@ -96,15 +53,16 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       licenseId: licenseId,
       apiKey: apiKey,
       dryRun: config.dryRun !== undefined ? Boolean(config.dryRun) : AVSEE_DRY_RUN,
-      ledgerPath: config.ledgerPath || path.join(__dirname, "avsee_source_ledger.json"),
+      ledgerPath: config.ledgerPath || dataPath("avsee_source_ledger.json"),
       ...config
     });
 
     this.enabled = config.enabled !== undefined ? Boolean(config.enabled) : AVSEE_ENABLED;
-    this.tempDir = config.tempDir || path.join(__dirname, "scratch", "avsee_temp");
+    this.tempDir = config.tempDir || dataPath("avsee_runtime", "avsee_temp");
     this.maxFileSizeMB = config.maxFileSizeMB || 500;
     this.boards = config.boards || ["korea", "caption", "javc", "javleak", "javfc2", "western"];
     this.selectedExecutablePath = null;
+    this.activeBrowsers = new Set();
     this.activeDownloads = new Set();
     this.isShuttingDown = false;
   }
@@ -393,41 +351,47 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       "--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess"
     ];
 
-    const detectedPath = getSystemChromiumPath();
-    const candidatePaths = [];
+    const { executablePath: explicitExecutablePath, ...restOptions } = extraOptions;
+    const launchOpts = applyProxyToLaunchOptions({
+      headless: true,
+      args: baseArgs,
+      ...restOptions
+    });
 
-    if (extraOptions.executablePath) {
-      candidatePaths.push(extraOptions.executablePath);
+    // Explicit path (if any) -> env path that exists -> Playwright's bundled Chromium.
+    // A custom executable that fails to start is retried once with the bundled browser.
+    const { browser, executablePath } = await launchChromium(chromium, launchOpts, {
+      executablePath: explicitExecutablePath || undefined,
+      logPrefix: "[AVSEE]"
+    });
+    this.selectedExecutablePath = executablePath;
+
+    this.activeBrowsers.add(browser);
+    if (browser && typeof browser.on === "function") {
+      browser.on("disconnected", () => this.activeBrowsers.delete(browser));
     }
-    if (detectedPath) {
-      candidatePaths.push(detectedPath);
-    }
-    // undefined represents Playwright's bundled Chromium
-    candidatePaths.push(undefined);
+    return browser;
+  }
 
-    let lastError = null;
-    for (const execPath of candidatePaths) {
-      try {
-        const launchOpts = applyProxyToLaunchOptions({
-          headless: true,
-          args: baseArgs,
-          ...extraOptions
-        });
-        if (execPath) {
-          launchOpts.executablePath = execPath;
-        } else {
-          delete launchOpts.executablePath;
-        }
+  /**
+   * Closes a browser launched by this adapter and stops tracking it.
+   * @param {import('playwright').Browser} browser
+   */
+  async releaseBrowser(browser) {
+    if (!browser) return;
+    this.activeBrowsers.delete(browser);
+    await browser.close().catch(() => {});
+  }
 
-        const browser = await chromium.launch(launchOpts);
-        this.selectedExecutablePath = execPath || "playwright-bundled";
-        return browser;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    throw lastError || new Error("[AVSEE] No working Chromium runtime found");
+  /**
+   * Closes every browser this adapter still has open (used on scheduler stop / shutdown).
+   * @returns {Promise<number>} Number of browsers closed
+   */
+  async closeActiveBrowsers() {
+    const browsers = Array.from(this.activeBrowsers);
+    this.activeBrowsers.clear();
+    await Promise.all(browsers.map(b => b.close().catch(() => {})));
+    return browsers.length;
   }
 
   /**
@@ -435,16 +399,15 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
    * @returns {Promise<{ pass: boolean, executablePath?: string, error?: string }>}
    */
   async checkBrowserLaunch() {
+    let browser = null;
     try {
-      const browser = await this.launchBrowser();
+      browser = await this.launchBrowser();
       const page = await browser.newPage();
       await page.setContent("<html><body><div id='test'>ok</div></body></html>", { timeout: 10000 });
       const text = await page.evaluate(() => {
         const el = document.getElementById("test");
         return el ? el.innerText.trim() : "";
       }).catch(() => "");
-      await page.close();
-      await browser.close();
 
       if (text !== "ok") {
         return { pass: false, error: "Failed to evaluate DOM in test page" };
@@ -453,6 +416,9 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       return { pass: true, executablePath: this.selectedExecutablePath || "playwright-bundled" };
     } catch (err) {
       return { pass: false, error: err.message };
+    } finally {
+      // Always release the browser, including when newPage/setContent throws
+      await this.releaseBrowser(browser);
     }
   }
 
@@ -572,14 +538,17 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
       console.log(`[AVSEE] parsed listings: ${items.length}`);
       return items.slice(0, limit);
     } finally {
-      await browser.close();
+      await this.releaseBrowser(browser);
     }
   }
 
   /**
-   * Fetches detailed metadata for a single item by navigating to its detail page
-   * @param {string|object} itemOrId 
+   * Fetches detailed metadata for a single item by navigating to its detail page.
+   * At most one Chromium is used per item: the same browser is lent to the
+   * player resolver (and a caller may lend one via options.browser).
+   * @param {string|object} itemOrId
    * @param {object} [options]
+   * @param {import('playwright').Browser} [options.browser] Optional caller-owned browser to reuse
    * @returns {Promise<object|null>}
    */
   async fetchItemDetails(itemOrId, options = {}) {
@@ -598,9 +567,11 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
 
     console.log(`🌐 [AVSEE] Fetching item details from: ${pageUrl}`);
 
-    const browser = await this.launchBrowser();
+    const ownsBrowser = !options.browser;
+    const browser = options.browser || await this.launchBrowser();
+    let context = null;
     try {
-      const context = await browser.newContext({
+      context = await browser.newContext({
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         viewport: { width: 1280, height: 800 }
       });
@@ -694,12 +665,17 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         }
       } catch (e) {}
 
+      // Release the detail page before player resolution to keep memory low
+      await context.close().catch(() => {});
+      context = null;
+
       // If videoSrc is still missing and player resolution is requested, use resolvePlayer
       if (!parsed.videoSrc && options.resolvePlayer !== false) {
         try {
           const { resolvePlayer } = require("./avsee/player_resolver");
           const playerRes = await resolvePlayer(pageUrl, {
             headless: true,
+            browser, // reuse this browser instead of launching a second Chromium
             pageTimeoutMs: options.playerPageTimeoutMs || 15000,
             playerTimeoutMs: options.playerTimeoutMs || 10000,
             logDiagnostics: false
@@ -725,7 +701,12 @@ class AvseeSourceAdapter extends ExternalSourceAdapter {
         ...parsed
       };
     } finally {
-      await browser.close();
+      if (context) {
+        await context.close().catch(() => {});
+      }
+      if (ownsBrowser) {
+        await this.releaseBrowser(browser);
+      }
     }
   }
 

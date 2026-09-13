@@ -5,6 +5,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -121,6 +122,14 @@ def is_valid_existing_file(target: Path) -> bool:
         return False
 
 
+def write_json_atomic(path, data):
+    """Write JSON via a same-directory temp file + os.replace, so a kill mid-write
+    never leaves a truncated report behind (os.replace is atomic on POSIX and Windows)."""
+    temp_path = path.parent / f'{path.name}.tmp.{time.time_ns()}'
+    temp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+    os.replace(temp_path, path)
+
+
 def process_job(job_info, folder, timeout):
     index, total_jobs, url, page_url = job_info
     filename = 'video_' + hashlib.sha256(url.encode()).hexdigest()[:20] + '.mp4'
@@ -164,6 +173,14 @@ def main():
     if args.workers < 1 or args.workers > 8:
         parser.error('--workers must be between 1 and 8')
 
+    # SIGTERM (service stop) takes the same path as Ctrl+C: the partial report is still written.
+    def handle_sigterm(signum, frame):
+        raise KeyboardInterrupt()
+    try:
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    except (ValueError, OSError, AttributeError):
+        pass
+
     try:
         records = json.loads(Path(args.json_file).read_text(encoding='utf-8-sig'))
         if not isinstance(records, list):
@@ -189,9 +206,7 @@ def main():
 
     if not jobs:
         print('No video URLs found in JSON.')
-        (folder / 'download_report.json').write_text(
-            json.dumps([], indent=2, ensure_ascii=False), encoding='utf-8'
-        )
+        write_json_atomic(folder / 'download_report.json', [])
         return
 
     start_time = time.monotonic()
@@ -223,9 +238,7 @@ def main():
         print('\nDownload interrupted by user.', flush=True)
 
     report = [r for r in ordered_results if r is not None]
-    (folder / 'download_report.json').write_text(
-        json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8'
-    )
+    write_json_atomic(folder / 'download_report.json', report)
 
     elapsed = time.monotonic() - start_time
     downloaded = sum(1 for r in report if r.get('status') == 'downloaded')

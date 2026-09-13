@@ -21,6 +21,8 @@ const fs = require('fs');
 const { discoverBoardPosts } = require('./board_discovery');
 const { redactUrl } = require('./player_resolver');
 const { ExternalSourceState } = require('../external_source_state');
+const { readDestinationId } = require('../external_source_destinations');
+const { dataPath } = require('../runtime_paths');
 
 /**
  * Category operational state enum
@@ -46,6 +48,8 @@ const POST_CLASSIFICATION = Object.freeze({
  * Default Category-to-Channel configuration map.
  * Defines 10 conceptual category slots mapped to 10 Telegram destination channels.
  * Configurable without hardcoding into browser or downloader logic.
+ * Destination IDs come only from EXTERNAL_DEST_1..10; a slot whose variable is
+ * unset is `enabled: false` with `destinationChannelId: null` (never a placeholder).
  */
 const DEFAULT_CATEGORY_CONFIG = Object.freeze([
   {
@@ -53,7 +57,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'myanmar',
     categoryName: 'Myanmar Documentary',
     channelIndex: 1,
-    destinationChannelId: process.env.EXTERNAL_DEST_1 || '-1002000000001',
+    destinationEnvVar: 'EXTERNAL_DEST_1',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_1'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_1')),
     channelName: 'Channel 1 (미얀마)',
     boardPath: '/bbs/board.php?bo_table=myanmar'
   },
@@ -62,7 +68,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'evergrande',
     categoryName: 'Evergrande Troupe Arts',
     channelIndex: 2,
-    destinationChannelId: process.env.EXTERNAL_DEST_2 || '-1002000000002',
+    destinationEnvVar: 'EXTERNAL_DEST_2',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_2'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_2')),
     channelName: 'Channel 2 (헝다 가무단)',
     boardPath: '/bbs/board.php?bo_table=evergrande'
   },
@@ -71,7 +79,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'korea',
     categoryName: 'Korean Media Feature',
     channelIndex: 3,
-    destinationChannelId: process.env.EXTERNAL_DEST_3 || '-1002000000003',
+    destinationEnvVar: 'EXTERNAL_DEST_3',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_3'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_3')),
     channelName: 'Channel 3 (미얀마 여성)',
     boardPath: '/bbs/board.php?bo_table=korea'
   },
@@ -80,7 +90,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'caption',
     categoryName: 'Captioned Series',
     channelIndex: 4,
-    destinationChannelId: process.env.EXTERNAL_DEST_4 || '-1002000000004',
+    destinationEnvVar: 'EXTERNAL_DEST_4',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_4'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_4')),
     channelName: 'Channel 4 (뱀 누나)',
     boardPath: '/bbs/board.php?bo_table=caption'
   },
@@ -89,7 +101,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'javc',
     categoryName: 'Asian Cinema Classics',
     channelIndex: 5,
-    destinationChannelId: process.env.EXTERNAL_DEST_5 || '-1002000000005',
+    destinationEnvVar: 'EXTERNAL_DEST_5',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_5'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_5')),
     channelName: 'Channel 5 (일거리 있음)',
     boardPath: '/bbs/board.php?bo_table=javc'
   },
@@ -98,7 +112,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'javleak',
     categoryName: 'Special Releases',
     channelIndex: 6,
-    destinationChannelId: process.env.EXTERNAL_DEST_6 || '-1002000000006',
+    destinationEnvVar: 'EXTERNAL_DEST_6',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_6'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_6')),
     channelName: 'Channel 6 (괴롭힘과 성관계)',
     boardPath: '/bbs/board.php?bo_table=javleak'
   },
@@ -107,7 +123,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'javfc2',
     categoryName: 'Independent Creator Works',
     channelIndex: 7,
-    destinationChannelId: process.env.EXTERNAL_DEST_7 || '-1002000000007',
+    destinationEnvVar: 'EXTERNAL_DEST_7',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_7'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_7')),
     channelName: 'Channel 7 (다츠거)',
     boardPath: '/bbs/board.php?bo_table=javfc2'
   },
@@ -116,7 +134,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'western',
     categoryName: 'Western Feature Cinema',
     channelIndex: 8,
-    destinationChannelId: process.env.EXTERNAL_DEST_8 || '-1002000000008',
+    destinationEnvVar: 'EXTERNAL_DEST_8',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_8'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_8')),
     channelName: 'Channel 8 (고3 사랑 이야기)',
     boardPath: '/bbs/board.php?bo_table=western'
   },
@@ -125,7 +145,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'general',
     categoryName: 'General Entertainment',
     channelIndex: 9,
-    destinationChannelId: process.env.EXTERNAL_DEST_9 || '-1002000000009',
+    destinationEnvVar: 'EXTERNAL_DEST_9',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_9'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_9')),
     channelName: 'Channel 9 (쓰촨 모자)',
     boardPath: '/bbs/board.php?bo_table=general'
   },
@@ -134,7 +156,9 @@ const DEFAULT_CATEGORY_CONFIG = Object.freeze([
     categoryCode: 'archive',
     categoryName: 'Historical Archive',
     channelIndex: 10,
-    destinationChannelId: process.env.EXTERNAL_DEST_10 || '-1002000000010',
+    destinationEnvVar: 'EXTERNAL_DEST_10',
+    destinationChannelId: readDestinationId('EXTERNAL_DEST_10'),
+    enabled: Boolean(readDestinationId('EXTERNAL_DEST_10')),
     channelName: 'Channel 10 (후쓰위안)',
     boardPath: '/bbs/board.php?bo_table=archive'
   }
@@ -160,7 +184,7 @@ class CategoryDiscovery {
     this.maxRetries = config.maxRetries || 2;
 
     this.stateStore = config.stateStore || new ExternalSourceState({
-      stateFilePath: config.stateFilePath || path.join(__dirname, '..', 'scratch', 'category_discovery_state.json'),
+      stateFilePath: config.stateFilePath || dataPath('avsee_runtime', 'category_discovery_state.json'),
       maxTotalItems: 200
     });
 
@@ -219,7 +243,7 @@ class CategoryDiscovery {
       categoryName: catDef.categoryName || catDef.categoryId,
       categoryUrl: redactUrl(categoryUrl),
       channelIndex: catDef.channelIndex || 1,
-      destinationChannelId: catDef.destinationChannelId || '-1002000000001',
+      destinationChannelId: catDef.destinationChannelId || null,
       status: CATEGORY_STATUS.ACTIVE,
       latestPostId: null,
       latestPostTitle: null,

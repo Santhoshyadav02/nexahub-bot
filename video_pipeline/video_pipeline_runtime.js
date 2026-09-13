@@ -11,6 +11,11 @@
  *   - Prevents duplicate BatchCycleManager instances and runaway schedulers.
  *   - Strict isolation: errors within the video pipeline never crash parent NexaHub.
  *   - Production safety: refuses to run or publish to production channels in dev.
+ *
+ * Runtime locations (each overridable by config or env):
+ *   - state     VIDEO_PIPELINE_STATE_DIR     default <NEXAHUB_DATA_DIR>/video_pipeline/state
+ *   - downloads VIDEO_PIPELINE_DOWNLOADS_DIR default <NEXAHUB_DATA_DIR>/video_pipeline/downloads
+ *   - output    VIDEO_PIPELINE_OUTPUT_DIR    default <NEXAHUB_DATA_DIR>/video_pipeline/output
  */
 
 const path = require('path');
@@ -23,17 +28,22 @@ const { MediaLedger } = require('./media_ledger');
 const { PublishLedger } = require('./publish_ledger');
 const { MediaCleaner } = require('./media_cleaner');
 const { VideoDestinationRouter } = require('./video_destination_router');
+const { dataPath } = require('../runtime_paths');
 
 const LOG_PREFIX = '[VIDEO_PIPELINE_RUNTIME]';
 const ROOT_DIR = path.resolve(__dirname, '..');
 
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
-const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;      // 20 minutes
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;      // 20 minutes (whole acquisition)
+const DEFAULT_PAGE_TIMEOUT_SEC = 60;            // per page/download inside video-tools
 const DEFAULT_DISCOVERY_TARGET = 100;
 const DEFAULT_DISCOVERY_MAX = 150;
 const DEFAULT_MAX_PAGES = 50;
 const DEFAULT_MIN_SUCCESSFUL_VIDEOS = 15;
 const DEFAULT_MAX_SUCCESSFUL_VIDEOS = 25;
+// Hard ceiling on stop(): index.js force-exits after its own shutdown budget,
+// so the runtime must always hand control back well before that.
+const STOP_DEADLINE_MS = 7500;
 
 // Known production channel usernames/IDs to strictly forbid as staging destinations
 const FORBIDDEN_PRODUCTION_DESTINATIONS = new Set([
@@ -50,6 +60,21 @@ const SOURCE_MODE_FIXTURE = 'fixture';
 const SOURCE_MODE_AUTHORIZED = 'authorized';
 const VALID_SOURCE_MODES = new Set([SOURCE_MODE_FIXTURE, SOURCE_MODE_AUTHORIZED]);
 
+// Pre-data-dir layout: state lived beside this file, media under the repo root.
+const LEGACY_STATE_FILES = ['batch_state.json', 'media_state.json', 'publish_state.json'];
+
+function copyIfMissing(source, target, label) {
+  try {
+    if (path.resolve(source) === path.resolve(target)) return;
+    if (!fs.existsSync(source) || fs.existsSync(target)) return;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+    console.log(`${LOG_PREFIX} Migrated legacy ${label} ${source} -> ${target}`);
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Could not migrate legacy ${label} ${source}: ${err.message}`);
+  }
+}
+
 class VideoPipelineRuntime {
   /**
    * @param {object} [config] Optional configuration override (for DI and tests)
@@ -59,13 +84,16 @@ class VideoPipelineRuntime {
       ? Boolean(config.enabled)
       : (process.env.VIDEO_PIPELINE_ENABLED === 'true');
 
-    // Explicit source mode - no automatic fallback between modes exists
-    // anywhere in this runtime. "fixture" (the safe default) uses ONLY the
-    // internal fixture server built below; "authorized" uses ONLY the
-    // explicitly configured VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL and fails
-    // closed (CONFIG_ERROR) if that URL isn't set - it never substitutes the
-    // fixture or any other source.
-    this.sourceMode = (config.sourceMode || process.env.VIDEO_PIPELINE_SOURCE_MODE || SOURCE_MODE_FIXTURE).trim().toLowerCase();
+    // Explicit source mode - there is NO default and no automatic fallback
+    // between modes anywhere in this runtime. "fixture" uses ONLY the internal
+    // synthetic fixture server built below (test videos - never appropriate
+    // for production); "authorized" uses ONLY the explicitly configured
+    // VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL and fails closed (CONFIG_ERROR) if
+    // that URL isn't set. An enabled runtime with no mode configured at all
+    // also fails closed, rather than silently publishing fixture videos.
+    const configuredSourceMode = String(config.sourceMode || process.env.VIDEO_PIPELINE_SOURCE_MODE || '').trim().toLowerCase();
+    this.sourceModeExplicit = configuredSourceMode.length > 0;
+    this.sourceMode = this.sourceModeExplicit ? configuredSourceMode : null;
     this.authorizedSourceUrl = config.authorizedSourceUrl || process.env.VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL || null;
     // Documented-inert by design: fallback between source modes is a hard
     // "never" requirement, so this flag is read only for status/logging
@@ -86,6 +114,14 @@ class VideoPipelineRuntime {
     this.timeoutMs = (config.timeoutMs && !isNaN(config.timeoutMs))
       ? config.timeoutMs
       : (!isNaN(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_TIMEOUT_MS);
+
+    // Per page/download network timeout handed to video-tools (--timeout).
+    // Deliberately separate from timeoutMs (the whole-acquisition bound):
+    // passing 20 minutes here would let one stuck page stall a cycle for 20 minutes.
+    const envPageTimeout = Number(process.env.VIDEO_PIPELINE_PAGE_TIMEOUT_SEC);
+    this.pageTimeoutSec = (config.pageTimeoutSec && !isNaN(config.pageTimeoutSec))
+      ? config.pageTimeoutSec
+      : (!isNaN(envPageTimeout) && envPageTimeout > 0 ? envPageTimeout : DEFAULT_PAGE_TIMEOUT_SEC);
 
     const envWorkers = Number(process.env.VIDEO_PIPELINE_WORKERS);
     this.workers = (config.workers && !isNaN(config.workers))
@@ -120,9 +156,14 @@ class VideoPipelineRuntime {
       ? config.maxSuccessfulVideos
       : (!isNaN(envMaxSuccessful) && envMaxSuccessful > 0 ? envMaxSuccessful : DEFAULT_MAX_SUCCESSFUL_VIDEOS);
 
-    this.downloadsDir = config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR || path.join(ROOT_DIR, 'downloads');
-    this.outputDir = config.outputDir || process.env.VIDEO_PIPELINE_OUTPUT_DIR || path.join(ROOT_DIR, 'output');
-    this.stateDir = config.stateDir || process.env.VIDEO_PIPELINE_STATE_DIR || path.join(ROOT_DIR, 'video_pipeline');
+    // Explicit config/env always wins; otherwise everything mutable lives
+    // under the data dir (outside the git checkout when NEXAHUB_DATA_DIR is set).
+    this._usingDefaultDownloadsDir = !(config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR);
+    this._usingDefaultOutputDir = !(config.outputDir || process.env.VIDEO_PIPELINE_OUTPUT_DIR);
+    this._usingDefaultStateDir = !(config.stateDir || process.env.VIDEO_PIPELINE_STATE_DIR);
+    this.downloadsDir = config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR || dataPath('video_pipeline', 'downloads');
+    this.outputDir = config.outputDir || process.env.VIDEO_PIPELINE_OUTPUT_DIR || dataPath('video_pipeline', 'output');
+    this.stateDir = config.stateDir || process.env.VIDEO_PIPELINE_STATE_DIR || dataPath('video_pipeline', 'state');
 
     this.autoPublish = config.autoPublish !== undefined
       ? Boolean(config.autoPublish)
@@ -134,7 +175,7 @@ class VideoPipelineRuntime {
 
     this.acquisitionOptions = config.acquisitionOptions || {
       workers: this.workers,
-      timeout: Math.floor(this.timeoutMs / 1000),
+      timeoutSec: this.pageTimeoutSec,
       standalone: true,
       targetLinks: this.discoveryTarget,
       maxPages: this.maxPages
@@ -163,6 +204,9 @@ class VideoPipelineRuntime {
     this._configValid = false;
     this._fixtureServer = null;
     this._fixtureServerUrl = null;
+    this._fixtureReady = null;
+    this._fixtureServerError = null;
+    this._usesInternalFixture = false;
 
     this._validateConfiguration();
   }
@@ -174,7 +218,18 @@ class VideoPipelineRuntime {
       return { valid: true, enabled: false };
     }
 
-    if (!VALID_SOURCE_MODES.has(this.sourceMode)) {
+    // An injected, fully-built batchCycleManager already carries whatever
+    // source it was constructed with - this runtime resolves no source then.
+    if (!this.sourceModeExplicit && !this.batchCycleManager) {
+      const err = 'VIDEO_PIPELINE_SOURCE_MODE is not configured. Set it explicitly to "authorized" (together with '
+        + 'VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL) or to "fixture" (internal synthetic test videos only). '
+        + 'Refusing to guess a source - there is no default.';
+      this._configValid = false;
+      this._lastConfigError = err;
+      return { valid: false, reason: err };
+    }
+
+    if (this.sourceModeExplicit && !VALID_SOURCE_MODES.has(this.sourceMode)) {
       const err = `VIDEO_PIPELINE_SOURCE_MODE must be exactly "fixture" or "authorized" (got: "${this.sourceMode}"). Refusing to guess a source.`;
       this._configValid = false;
       this._lastConfigError = err;
@@ -239,7 +294,9 @@ class VideoPipelineRuntime {
     const baseMp4Path = path.join(fixtureDir, 'base.mp4');
     if (!fs.existsSync(baseMp4Path)) {
       const ffmpeg = getFFmpegPath();
-      spawnSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=160x120:rate=5', '-pix_fmt', 'yuv420p', baseMp4Path]);
+      // One-off, tiny (1s, 160x120) generation - bounded so a wedged ffmpeg
+      // can never hang startup.
+      spawnSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=160x120:rate=5', '-pix_fmt', 'yuv420p', baseMp4Path], { timeout: 30000, windowsHide: true });
     }
     const baseMp4Buffer = fs.existsSync(baseMp4Path) ? fs.readFileSync(baseMp4Path) : Buffer.from('ftypmp42', 'utf8');
 
@@ -307,11 +364,83 @@ class VideoPipelineRuntime {
     });
 
     const port = Number(process.env.VIDEO_PIPELINE_FIXTURE_PORT) || 58923;
-    server.listen(port, '127.0.0.1');
     this._fixtureServer = server;
     this._fixtureServerUrl = `http://127.0.0.1:${port}/`;
-    console.log(`${LOG_PREFIX} Internal authorized fixture server active at ${this._fixtureServerUrl}`);
+    this._fixtureServerError = null;
+
+    // listen() is asynchronous and reports failures (EADDRINUSE, EACCES...)
+    // via an 'error' event - with no listener that event is an uncaught
+    // exception that would take the whole bot down. A busy port falls back to
+    // an OS-assigned one; any other failure fails this fixture source cleanly.
+    let triedEphemeralPort = false;
+    this._fixtureReady = new Promise((resolve) => {
+      server.on('listening', () => {
+        const address = server.address();
+        const url = `http://127.0.0.1:${address.port}/`;
+        this._fixtureServerUrl = url;
+        if (this.sourceMode !== SOURCE_MODE_AUTHORIZED && this.acquisitionUrl !== url && this._usesInternalFixture) {
+          this.acquisitionUrl = url;
+          if (this.batchCycleManager) this.batchCycleManager.acquisitionUrl = url;
+        }
+        console.log(`${LOG_PREFIX} Internal authorized fixture server active at ${url}`);
+        resolve(true);
+      });
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && !triedEphemeralPort) {
+          triedEphemeralPort = true;
+          console.warn(`${LOG_PREFIX} Fixture port ${port} is already in use; retrying on an OS-assigned port.`);
+          try {
+            server.listen(0, '127.0.0.1');
+            return;
+          } catch (retryErr) {
+            err = retryErr;
+          }
+        }
+        this._fixtureServerError = err.message;
+        console.error(`${LOG_PREFIX} FIXTURE_SERVER_ERROR: internal fixture server failed (${err.code || 'error'}): ${err.message}`);
+        try { server.close(); } catch (e) {}
+        if (this._fixtureServer === server) {
+          this._fixtureServer = null;
+        }
+        resolve(false);
+      });
+    });
+
+    try {
+      server.listen(port, '127.0.0.1');
+    } catch (err) {
+      server.emit('error', err);
+    }
     return this._fixtureServerUrl;
+  }
+
+  _closeFixtureServer() {
+    if (this._fixtureServer) {
+      try { this._fixtureServer.close(); } catch (e) {}
+      this._fixtureServer = null;
+      this._fixtureServerUrl = null;
+    }
+  }
+
+  /**
+   * One-time carry-over from the pre-data-dir layout (state beside this file,
+   * media/output under the repo root) so dedupe/publish history and the
+   * schedule clock survive the move. Only runs for locations that were NOT
+   * explicitly configured, and never overwrites an existing file.
+   * @private
+   */
+  _migrateLegacyState() {
+    if (this._usingDefaultStateDir) {
+      for (const name of LEGACY_STATE_FILES) {
+        copyIfMissing(path.join(__dirname, name), path.join(this.stateDir, name), 'state file');
+      }
+    }
+    if (this._usingDefaultOutputDir) {
+      copyIfMissing(path.join(ROOT_DIR, 'output', 'videos.json'), path.join(this.outputDir, 'videos.json'), 'discovery record');
+    }
+    if (this._usingDefaultDownloadsDir) {
+      copyIfMissing(path.join(ROOT_DIR, 'downloads', 'download_report.json'), path.join(this.downloadsDir, 'download_report.json'), 'download report');
+    }
   }
 
   /**
@@ -331,6 +460,7 @@ class VideoPipelineRuntime {
     } catch (e) {
       console.warn(`${LOG_PREFIX} Directory ensure warning: ${e.message}`);
     }
+    this._migrateLegacyState();
 
     // Explicit, non-negotiable source resolution - exactly one of these two
     // branches ever runs, chosen solely by this.sourceMode. Neither branch
@@ -339,6 +469,7 @@ class VideoPipelineRuntime {
       this.acquisitionUrl = this.authorizedSourceUrl;
       console.log(`${LOG_PREFIX} Source mode: AUTHORIZED (explicitly configured source).`);
     } else if (!this.acquisitionUrl || this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal') {
+      this._usesInternalFixture = true;
       this.acquisitionUrl = this._startInternalFixtureServer();
       console.log(`${LOG_PREFIX} Source mode: FIXTURE (internal test server, not a live/authorized source).`);
     }
@@ -380,6 +511,7 @@ class VideoPipelineRuntime {
       }),
       videoBatchPublisher: publisher,
       autoPublish: this.autoPublish,
+      enableCleanup: this.enableCleanup,
       acquisitionOptions: this.acquisitionOptions,
       acquisitionTimeoutMs: this.timeoutMs,
       minSuccessfulVideos: this.minSuccessfulVideos,
@@ -406,7 +538,7 @@ class VideoPipelineRuntime {
 
     const validation = this._validateConfiguration();
     if (!validation.valid) {
-      console.error(`${LOG_PREFIX} Startup aborted due to configuration error: ${validation.reason}`);
+      console.error(`${LOG_PREFIX} CONFIG_ERROR: startup aborted, no cycles will run. ${validation.reason}`);
       return { status: 'CONFIG_ERROR', started: false, error: validation.reason };
     }
 
@@ -422,6 +554,19 @@ class VideoPipelineRuntime {
         : (process.env.VIDEO_PIPELINE_RUN_ON_STARTUP === 'true');
       this.batchCycleManager.startScheduler(this.intervalMs, { runImmediately, ...options });
       this._started = true;
+      if (this._fixtureReady) {
+        this._fixtureReady.then((ok) => {
+          if (ok) return;
+          this._lastConfigError = `Internal fixture server failed to start: ${this._fixtureServerError}`;
+          console.error(`${LOG_PREFIX} Stopping scheduler: ${this._lastConfigError}`);
+          this._started = false;
+          if (this.batchCycleManager) {
+            Promise.resolve()
+              .then(() => this.batchCycleManager.stop())
+              .catch(err => console.error(`${LOG_PREFIX} Scheduler stop after fixture failure errored: ${err.message}`));
+          }
+        });
+      }
       console.log(`${LOG_PREFIX} Runtime started successfully (interval=${this.intervalMs}ms, autoPublish=${this.autoPublish}, runOnStartup=${runImmediately}).`);
       return { status: 'STARTED', started: true, intervalMs: this.intervalMs };
     } catch (err) {
@@ -432,34 +577,35 @@ class VideoPipelineRuntime {
 
   /**
    * Stops the recurring scheduler and any in-progress acquisition cleanly.
-   * Idempotent: safe to call multiple times.
+   * Idempotent: safe to call multiple times. Bounded to STOP_DEADLINE_MS.
    * @returns {Promise<object>}
    */
   async stop() {
     if (!this._started && (!this.batchCycleManager || !this.batchCycleManager.isSchedulerActive())) {
+      this._closeFixtureServer();
       return { status: 'NOT_RUNNING', started: false };
     }
 
     console.log(`${LOG_PREFIX} Stopping runtime...`);
     try {
       if (this.batchCycleManager) {
-        await this.batchCycleManager.stop();
+        let timer = null;
+        const outcome = await Promise.race([
+          Promise.resolve().then(() => this.batchCycleManager.stop()).then(() => 'stopped'),
+          new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), STOP_DEADLINE_MS); })
+        ]);
+        if (timer) clearTimeout(timer);
+        if (outcome === 'timeout') {
+          console.warn(`${LOG_PREFIX} Batch cycle manager did not stop within ${STOP_DEADLINE_MS}ms; returning so shutdown can proceed.`);
+        }
       }
-      if (this._fixtureServer) {
-        try { this._fixtureServer.close(); } catch (e) {}
-        this._fixtureServer = null;
-        this._fixtureServerUrl = null;
-      }
+      this._closeFixtureServer();
       this._started = false;
       console.log(`${LOG_PREFIX} Runtime stopped cleanly.`);
       return { status: 'STOPPED', started: false };
     } catch (err) {
       console.error(`${LOG_PREFIX} Error during runtime stop: ${err.message}`);
-      if (this._fixtureServer) {
-        try { this._fixtureServer.close(); } catch (e) {}
-        this._fixtureServer = null;
-        this._fixtureServerUrl = null;
-      }
+      this._closeFixtureServer();
       this._started = false;
       return { status: 'ERROR', started: false, error: err.message };
     }
@@ -483,6 +629,9 @@ class VideoPipelineRuntime {
 
     try {
       this._ensureManagerInitialized();
+      if (this._fixtureReady && !(await this._fixtureReady)) {
+        return { status: 'FAILED', error: `Internal fixture server failed to start: ${this._fixtureServerError}` };
+      }
       return await this.batchCycleManager.runOnce(options);
     } catch (err) {
       console.error(`${LOG_PREFIX} runOnce error: ${err.message}`);

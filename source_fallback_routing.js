@@ -342,6 +342,7 @@ async function runLiveStage5Pipeline() {
 }
 
 if (require.main === module) {
+  require("./process_lock").assertBotNotRunning("source_fallback_routing.js");
   runLiveStage5Pipeline().then(summary => {
     console.log("==================================================");
     console.log("📊 STAGE 5 SOURCE-BASED FALLBACK ROUTING REPORT");

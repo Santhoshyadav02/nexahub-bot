@@ -1,17 +1,28 @@
 const fs = require("fs");
 const path = require("path");
+const { dataPath, seededDataPath, writeJsonAtomicSync, quarantineCorruptFile } = require("./runtime_paths");
 
-const DATA_FILE = path.join(__dirname, "source_registry.json");
-const DEFAULT_LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+const REPO_DATA_FILE = path.join(__dirname, "source_registry.json");
+const DATA_FILE = seededDataPath("source_registry.json");
+const REPO_LEDGER_PATH = path.join(__dirname, "published_ledger.json");
+const DEFAULT_LEDGER_PATH = dataPath("published_ledger.json");
 const LEDGER_PATH = process.env.LEDGER_PATH || process.env.PUBLISHED_LEDGER_PATH || DEFAULT_LEDGER_PATH;
+
+// The ledger is re-read only when the file actually changes (mtime/size),
+// not on every topic view.
+let ledgerSuccessMapCache = { file: null, mtimeMs: 0, size: -1, map: new Map() };
 
 function getAuthoritativeLedgerSuccessMap() {
   try {
     let ledgerFile = LEDGER_PATH;
     if (!fs.existsSync(ledgerFile)) {
-      ledgerFile = DEFAULT_LEDGER_PATH;
+      ledgerFile = fs.existsSync(DEFAULT_LEDGER_PATH) ? DEFAULT_LEDGER_PATH : REPO_LEDGER_PATH;
     }
     if (fs.existsSync(ledgerFile)) {
+      const stat = fs.statSync(ledgerFile);
+      if (ledgerSuccessMapCache.file === ledgerFile && ledgerSuccessMapCache.mtimeMs === stat.mtimeMs && ledgerSuccessMapCache.size === stat.size) {
+        return ledgerSuccessMapCache.map;
+      }
       const raw = fs.readFileSync(ledgerFile, "utf8");
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.records)) {
@@ -26,6 +37,7 @@ function getAuthoritativeLedgerSuccessMap() {
             }
           }
         }
+        ledgerSuccessMapCache = { file: ledgerFile, mtimeMs: stat.mtimeMs, size: stat.size, map: successMap };
         return successMap;
       }
     }
@@ -54,28 +66,52 @@ class SourceRegistry {
     this.sources = [];
     this.posts = [];
     this.seenMessages = new Set();
+    this.batchDepth = 0;
+    this.batchDirty = false;
     this.loadData();
+  }
+
+  readDataFile(filePath) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    this.sources = parsed.sources || [];
+    this.posts = parsed.posts || [];
+    this.seenMessages = new Set(parsed.seen_messages || []);
+    for (const p of this.posts) {
+      if (p.unique_hash) this.seenMessages.add(p.unique_hash);
+      if (p.chat_id && p.message_id) this.seenMessages.add(`${p.chat_id}_${p.message_id}`);
+      if (p.keyword && p.message_id) this.seenMessages.add(`${p.keyword}_${p.message_id}`);
+    }
   }
 
   loadData() {
     try {
       if (fs.existsSync(DATA_FILE)) {
-        const raw = fs.readFileSync(DATA_FILE, "utf8");
-        const parsed = JSON.parse(raw);
-        this.sources = parsed.sources || [];
-        this.posts = parsed.posts || [];
-        this.seenMessages = new Set(parsed.seen_messages || []);
-        for (const p of this.posts) {
-          if (p.unique_hash) this.seenMessages.add(p.unique_hash);
-          if (p.chat_id && p.message_id) this.seenMessages.add(`${p.chat_id}_${p.message_id}`);
-          if (p.keyword && p.message_id) this.seenMessages.add(`${p.keyword}_${p.message_id}`);
-        }
+        this.readDataFile(DATA_FILE);
       } else {
         this.initDefaultData();
       }
     } catch (err) {
-      console.error("⚠️ Error loading source_registry.json, reinitializing:", err.message);
-      this.initDefaultData();
+      // Never silently overwrite an unreadable registry: keep the bad file for
+      // manual recovery, then fall back to the committed seed if there is a
+      // separate one, and only then to an empty registry.
+      console.error("⚠️ Error loading source_registry.json:", err.message);
+      quarantineCorruptFile(DATA_FILE);
+      let recovered = false;
+      if (DATA_FILE !== REPO_DATA_FILE && fs.existsSync(REPO_DATA_FILE)) {
+        try {
+          this.readDataFile(REPO_DATA_FILE);
+          this.saveData();
+          recovered = true;
+          console.warn("⚠️ source_registry.json restored from the committed seed copy.");
+        } catch (seedErr) {
+          console.error("⚠️ Committed seed source_registry.json is also unreadable:", seedErr.message);
+        }
+      }
+      if (!recovered) {
+        console.warn("⚠️ Reinitializing an empty source registry.");
+        this.initDefaultData();
+      }
     }
     this.ensureInitialSources();
     this.cleanSuspiciousFileIds();
@@ -149,18 +185,25 @@ class SourceRegistry {
     const retainedPosts = [];
     const grouped = {};
 
+    const groupIndexes = {};
+
     for (const post of this.posts) {
       const key = String(post.keyword || post.channel_name || "General").trim();
       if (!grouped[key]) {
         grouped[key] = [];
+        groupIndexes[key] = { hashes: new Set(), urls: new Set(), messageIds: new Set() };
       }
-      const isDup = grouped[key].some(p => 
-        (p.unique_hash && post.unique_hash && p.unique_hash === post.unique_hash) ||
-        (p.telegram_url && post.telegram_url && p.telegram_url === post.telegram_url) ||
-        (p.message_id && post.message_id && String(p.message_id) === String(post.message_id))
-      );
+      // Set lookups instead of scanning the whole group for every post (was O(n²)).
+      const idx = groupIndexes[key];
+      const isDup =
+        (post.unique_hash && idx.hashes.has(post.unique_hash)) ||
+        (post.telegram_url && idx.urls.has(post.telegram_url)) ||
+        (post.message_id && idx.messageIds.has(String(post.message_id)));
       if (!isDup) {
         grouped[key].push(post);
+        if (post.unique_hash) idx.hashes.add(post.unique_hash);
+        if (post.telegram_url) idx.urls.add(post.telegram_url);
+        if (post.message_id) idx.messageIds.add(String(post.message_id));
       }
     }
 
@@ -188,6 +231,10 @@ class SourceRegistry {
   }
 
   saveData() {
+    if (this.batchDepth > 0) {
+      this.batchDirty = true;
+      return;
+    }
     try {
       this.applyRollingRetention(50);
       const seenArr = Array.from(this.seenMessages || []);
@@ -197,9 +244,26 @@ class SourceRegistry {
         posts: this.posts,
         seen_messages: seenArr.length > 5000 ? seenArr.slice(seenArr.length - 5000) : seenArr
       };
-      fs.writeFileSync(DATA_FILE, JSON.stringify(payload, null, 2), "utf8");
+      writeJsonAtomicSync(DATA_FILE, payload);
     } catch (err) {
       console.error("❌ Error saving source_registry.json:", err.message);
+    }
+  }
+
+  /**
+   * Runs fn with saves deferred, then writes the registry once if anything
+   * changed. Nested batches flush when the outermost one ends.
+   */
+  runInBatch(fn) {
+    this.batchDepth++;
+    try {
+      return fn();
+    } finally {
+      this.batchDepth--;
+      if (this.batchDepth === 0 && this.batchDirty) {
+        this.batchDirty = false;
+        this.saveData();
+      }
     }
   }
 

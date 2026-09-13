@@ -21,7 +21,8 @@ const fs = require("fs");
 const { discoverBoardPosts, filterNewPosts } = require("./board_discovery");
 const { AvseePipelineOrchestrator, PIPELINE_STATES } = require("./pipeline_orchestrator");
 const { redactUrl } = require("./player_resolver");
-const { getDestinationForTopic } = require("../external_source_destinations");
+const { getDestinationForTopic, isDestinationEnabled } = require("../external_source_destinations");
+const { dataPath } = require("../runtime_paths");
 
 const WORKER_STATES = Object.freeze({
   IDLE: "IDLE",
@@ -60,7 +61,7 @@ class AvseeAutomatedWorker {
       ...(config.timeouts || {})
     };
 
-    this.tempDir = config.tempDir || path.join(__dirname, "..", "scratch", "worker_temp");
+    this.tempDir = config.tempDir || dataPath("avsee_runtime", "worker_temp");
     this.stateFilePath = config.stateFilePath || path.join(this.tempDir, "worker_state.json");
 
     this.orchestrator = config.orchestrator || new AvseePipelineOrchestrator({
@@ -231,6 +232,10 @@ class AvseeAutomatedWorker {
         for (const raw of discovery.posts) {
           const match = this.orchestrator.adapter.matchTopic(raw);
           const dest = getDestinationForTopic(match.topicKey);
+          if (!isDestinationEnabled(dest)) {
+            // No configured chat ID for this topic (warned once by external_source_destinations)
+            continue;
+          }
           classifiedCandidates.push({
             ...raw,
             topicKey: match.topicKey,

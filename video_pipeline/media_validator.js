@@ -27,10 +27,48 @@
  * If neither resolves to a working binary, validation FAILS CLOSED (valid:
  * false) with toolingUnavailable:true and a clear error - it never silently
  * downgrades to a weaker check and calls it "valid".
+ *
+ * All external tooling runs ASYNCHRONOUSLY (child_process.spawn wrapped in a
+ * Promise) with a hard timeout that kills the child. A full decode of a large
+ * file can take minutes; running it via spawnSync would freeze the whole
+ * bot's event loop (Telegram polling, commands, other schedulers) meanwhile.
+ *   - VIDEO_PIPELINE_PROBE_TIMEOUT_MS      (default 60s)  - ffprobe
+ *   - VIDEO_PIPELINE_VALIDATION_TIMEOUT_MS (default 5min) - ffmpeg full decode
  */
 
 const fs = require('fs');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
+
+const LOG_PREFIX = '[MEDIA_VALIDATOR]';
+const DEFAULT_PROBE_TIMEOUT_MS = 60 * 1000;
+const DEFAULT_DECODE_TIMEOUT_MS = 5 * 60 * 1000;
+const VERSION_CHECK_TIMEOUT_MS = 5000;
+const MAX_STDOUT_BYTES = 8 * 1024 * 1024;
+const MAX_STDERR_BYTES = 64 * 1024;
+
+// ffmpeg writes plenty of harmless diagnostics to stderr even at -v error
+// (e.g. a few damaged-but-concealed frames, non-monotonic DTS). A clean exit
+// code with only such noise is a PASS; these patterns mean the file is
+// genuinely unusable even when ffmpeg still exits 0.
+const FATAL_DECODE_PATTERNS = [
+  /moov atom not found/i,
+  /Invalid data found when processing input/i,
+  /could not find codec parameters/i,
+  /partial file/i
+];
+
+function readPositiveIntEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function getProbeTimeoutMs() {
+  return readPositiveIntEnv('VIDEO_PIPELINE_PROBE_TIMEOUT_MS', DEFAULT_PROBE_TIMEOUT_MS);
+}
+
+function getDecodeTimeoutMs() {
+  return readPositiveIntEnv('VIDEO_PIPELINE_VALIDATION_TIMEOUT_MS', DEFAULT_DECODE_TIMEOUT_MS);
+}
 
 function getFFmpegPath() {
   if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
@@ -46,13 +84,89 @@ function getFFprobePath() {
   return 'ffprobe';
 }
 
-function binaryAvailable(binPath) {
-  try {
-    const res = spawnSync(binPath, ['-version'], { encoding: 'utf8', timeout: 5000 });
-    return res.status === 0;
-  } catch (e) {
-    return false;
-  }
+/**
+ * Runs a child process asynchronously, collecting (bounded) stdout/stderr.
+ * Never rejects: spawn failures (e.g. ENOENT) are reported via `error`, and a
+ * child still running at timeoutMs is SIGKILLed and reported via `timedOut`.
+ * @param {string} bin
+ * @param {string[]} args
+ * @param {object} [options]
+ * @param {number} [options.timeoutMs]
+ * @returns {Promise<{code: number|null, signal: string|null, stdout: string, stderr: string, timedOut: boolean, error: Error|null}>}
+ */
+function runProcess(bin, args, { timeoutMs = DEFAULT_PROBE_TIMEOUT_MS } = {}) {
+  return new Promise((resolve) => {
+    let child;
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let timedOut = false;
+    let settled = false;
+    let timer = null;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({
+        code: null,
+        signal: null,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        timedOut,
+        error: null,
+        ...result
+      });
+    };
+
+    try {
+      child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      finish({ error: err });
+      return;
+    }
+
+    child.stdout.on('data', (chunk) => {
+      if (stdoutBytes < MAX_STDOUT_BYTES) {
+        stdoutChunks.push(chunk);
+        stdoutBytes += chunk.length;
+      }
+    });
+    child.stderr.on('data', (chunk) => {
+      if (stderrBytes < MAX_STDERR_BYTES) {
+        stderrChunks.push(chunk);
+        stderrBytes += chunk.length;
+      }
+    });
+
+    child.on('error', (err) => finish({ error: err }));
+    child.on('close', (code, signal) => finish({ code, signal }));
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        try { child.kill('SIGKILL'); } catch (e) {}
+        // 'close' normally follows the kill almost immediately; this is only a
+        // backstop so a wedged pipe can never leave the caller hanging.
+        setTimeout(() => finish({ code: null, signal: 'SIGKILL' }), 2000).unref();
+      }, timeoutMs);
+    }
+  });
+}
+
+// Positive availability results are cached per (binary, PATH) so every file
+// validated doesn't pay for two extra `-version` process launches. Negative
+// results are never cached - installing ffmpeg must take effect without a restart.
+const availabilityCache = new Set();
+
+async function binaryAvailable(binPath) {
+  const cacheKey = `${binPath}|${process.env.PATH || ''}`;
+  if (availabilityCache.has(cacheKey)) return true;
+  const res = await runProcess(binPath, ['-version'], { timeoutMs: VERSION_CHECK_TIMEOUT_MS });
+  const ok = !res.error && !res.timedOut && res.code === 0;
+  if (ok) availabilityCache.add(cacheKey);
+  return ok;
 }
 
 /**
@@ -81,24 +195,32 @@ function readHeaderPrefix(filePath, length = 32) {
 /**
  * Runs ffprobe and extracts duration/codec/resolution for the first video stream.
  * @param {string} filePath
- * @returns {{success: boolean, data?: object, error?: string}}
+ * @param {object} [options]
+ * @param {number} [options.timeoutMs] Defaults to VIDEO_PIPELINE_PROBE_TIMEOUT_MS / 60s
+ * @returns {Promise<{success: boolean, data?: object, error?: string, unavailable?: boolean, timedOut?: boolean}>}
  */
-function probeMedia(filePath) {
+async function probeMedia(filePath, { timeoutMs = getProbeTimeoutMs() } = {}) {
   const probeBin = getFFprobePath();
-  if (!binaryAvailable(probeBin)) {
+  if (!(await binaryAvailable(probeBin))) {
     return { success: false, error: 'ffprobe not available', unavailable: true };
   }
   try {
-    const res = spawnSync(probeBin, [
+    const res = await runProcess(probeBin, [
       '-v', 'error',
       '-print_format', 'json',
       '-show_format',
       '-show_streams',
       filePath
-    ], { encoding: 'utf8' });
+    ], { timeoutMs });
 
-    if (res.status !== 0) {
-      return { success: false, error: `FFprobe exited with code ${res.status}: ${(res.stderr || 'Unknown error').trim()}` };
+    if (res.error) {
+      return { success: false, error: `Failed to execute FFprobe: ${res.error.message}` };
+    }
+    if (res.timedOut) {
+      return { success: false, timedOut: true, error: `FFprobe timed out after ${timeoutMs}ms and was killed` };
+    }
+    if (res.code !== 0) {
+      return { success: false, error: `FFprobe exited with code ${res.code}: ${(res.stderr || 'Unknown error').trim()}` };
     }
 
     const json = JSON.parse(res.stdout);
@@ -146,37 +268,66 @@ function probeMedia(filePath) {
 }
 
 /**
+ * Pure decision function for an ffmpeg decode pass. Failure is based on the
+ * exit code; stderr alone is only fatal when it matches a clearly-fatal
+ * pattern - otherwise it is kept as non-fatal warnings.
+ * @param {{code: number|null, stderr?: string, timedOut?: boolean, error?: Error|null}} res
+ * @returns {{passed: boolean, error: string|null, warnings: string|null, timedOut?: boolean}}
+ */
+function evaluateDecodeResult(res) {
+  const stderr = String((res && res.stderr) || '').trim();
+  if (res && res.error) {
+    return { passed: false, error: `Failed to execute FFmpeg: ${res.error.message}`, warnings: null };
+  }
+  if (res && res.timedOut) {
+    return { passed: false, timedOut: true, error: 'FFmpeg decode timed out and was killed', warnings: stderr || null };
+  }
+  if (!res || res.code !== 0) {
+    return { passed: false, error: stderr || `FFmpeg exited with code ${res ? res.code : 'unknown'}`, warnings: null };
+  }
+  const fatal = FATAL_DECODE_PATTERNS.find(pattern => pattern.test(stderr));
+  if (fatal) {
+    return { passed: false, error: stderr, warnings: null };
+  }
+  return { passed: true, error: null, warnings: stderr || null };
+}
+
+/**
  * Runs a full FFmpeg decode pass (output discarded) to catch corruption a
  * valid-looking container/header can still hide.
  * @param {string} filePath
- * @returns {{passed: boolean, error?: string, unavailable?: boolean}}
+ * @param {object} [options]
+ * @param {number} [options.timeoutMs] Defaults to VIDEO_PIPELINE_VALIDATION_TIMEOUT_MS / 5min
+ * @returns {Promise<{passed: boolean, error?: string, warnings?: string, unavailable?: boolean, timedOut?: boolean}>}
  */
-function decodeCheck(filePath) {
+async function decodeCheck(filePath, { timeoutMs = getDecodeTimeoutMs() } = {}) {
   const ffmpegBin = getFFmpegPath();
-  if (!binaryAvailable(ffmpegBin)) {
+  if (!(await binaryAvailable(ffmpegBin))) {
     return { passed: false, error: 'ffmpeg not available', unavailable: true };
   }
   const nullTarget = process.platform === 'win32' ? 'NUL' : '/dev/null';
-  try {
-    const res = spawnSync(ffmpegBin, ['-v', 'error', '-i', filePath, '-f', 'null', nullTarget], { encoding: 'utf8' });
-    const stderr = (res.stderr || '').trim();
-    const passed = res.status === 0 && stderr.length === 0;
-    return { passed, error: passed ? null : (stderr || `FFmpeg exited with code ${res.status}`) };
-  } catch (err) {
-    return { passed: false, error: `Failed to execute FFmpeg: ${err.message}` };
+  const res = await runProcess(ffmpegBin, ['-nostdin', '-v', 'error', '-i', filePath, '-f', 'null', nullTarget], { timeoutMs });
+  const evaluated = evaluateDecodeResult(res);
+  if (evaluated.timedOut) {
+    evaluated.error = `FFmpeg decode timed out after ${timeoutMs}ms and was killed`;
   }
+  return evaluated;
 }
 
 /**
  * Full validation pipeline for a completed (stable) media file.
  * @param {string} filePath
- * @returns {{
+ * @param {object} [options]
+ * @param {number} [options.probeTimeoutMs]
+ * @param {number} [options.decodeTimeoutMs]
+ * @returns {Promise<{
  *   valid: boolean, hasVideoTrack: boolean, error: string|null,
  *   duration: number|null, width: number|null, height: number|null,
- *   codec: string|null, ffprobeUsed: boolean, ffmpegDecodeUsed: boolean
- * }}
+ *   codec: string|null, ffprobeUsed: boolean, ffmpegDecodeUsed: boolean,
+ *   toolingUnavailable: boolean, timedOut: boolean
+ * }>}
  */
-function validateMediaFile(filePath) {
+async function validateMediaFile(filePath, options = {}) {
   const result = {
     valid: false,
     hasVideoTrack: false,
@@ -192,7 +343,9 @@ function validateMediaFile(filePath) {
     audioCodec: null,
     ffprobeUsed: false,
     ffmpegDecodeUsed: false,
-    toolingUnavailable: false
+    toolingUnavailable: false,
+    timedOut: false,
+    decodeWarnings: null
   };
 
   let stat;
@@ -219,20 +372,21 @@ function validateMediaFile(filePath) {
     return result;
   }
 
-  const probeRes = probeMedia(filePath);
+  const probeRes = await probeMedia(filePath, options.probeTimeoutMs ? { timeoutMs: options.probeTimeoutMs } : undefined);
   if (probeRes.unavailable) {
     // Fail closed: ffprobe is required evidence, not optional. A missing
     // binary must never be silently treated as "validated" - that would let
     // an unverified file reach READY/publish just because tooling was absent.
     const message = 'ffprobe is required for media validation but was not found '
       + '(checked FFPROBE_PATH and the system PATH). Refusing to mark this media as valid.';
-    console.error(`[MEDIA_VALIDATOR] ${message}`);
+    console.error(`${LOG_PREFIX} ${message}`);
     result.valid = false;
     result.toolingUnavailable = true;
     result.error = message;
     return result;
   }
   if (!probeRes.success) {
+    result.timedOut = Boolean(probeRes.timedOut);
     result.error = `FFprobe validation failed: ${probeRes.error}`;
     return result;
   }
@@ -256,20 +410,22 @@ function validateMediaFile(filePath) {
     return result;
   }
 
-  const decodeRes = decodeCheck(filePath);
+  const decodeRes = await decodeCheck(filePath, options.decodeTimeoutMs ? { timeoutMs: options.decodeTimeoutMs } : undefined);
   if (decodeRes.unavailable) {
     const message = 'ffmpeg is required for media validation but was not found '
       + '(checked FFMPEG_PATH and the system PATH). Refusing to mark this media as valid.';
-    console.error(`[MEDIA_VALIDATOR] ${message}`);
+    console.error(`${LOG_PREFIX} ${message}`);
     result.valid = false;
     result.toolingUnavailable = true;
     result.error = message;
     return result;
   }
   if (!decodeRes.passed) {
+    result.timedOut = Boolean(decodeRes.timedOut);
     result.error = `FFmpeg decode failed: ${decodeRes.error}`;
     return result;
   }
+  result.decodeWarnings = decodeRes.warnings || null;
   result.ffmpegDecodeUsed = true;
   result.valid = true;
   result.hasVideoTrack = true;
@@ -281,7 +437,10 @@ module.exports = {
   readHeaderPrefix,
   probeMedia,
   decodeCheck,
+  evaluateDecodeResult,
   validateMediaFile,
+  runProcess,
   getFFmpegPath,
-  getFFprobePath
+  getFFprobePath,
+  FATAL_DECODE_PATTERNS
 };

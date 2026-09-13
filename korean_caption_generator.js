@@ -20,6 +20,17 @@ const https = require("https");
 const { TelegramContentClassifier } = require("./telegram_content_classifier");
 
 const captionTranslationCache = new Map();
+const MAX_CAPTION_CACHE_ENTRIES = 5000;
+// Hard cap per translation request. The https `timeout` option only fires on
+// an idle socket, so a slowly trickling response could otherwise hang.
+const TRANSLATION_DEADLINE_MS = 6000;
+
+function setCaptionCache(key, value) {
+  if (!captionTranslationCache.has(key) && captionTranslationCache.size >= MAX_CAPTION_CACHE_ENTRIES) {
+    captionTranslationCache.delete(captionTranslationCache.keys().next().value);
+  }
+  captionTranslationCache.set(key, value);
+}
 
 const FALLBACK_FILE = path.join(__dirname, "korean_fallback_captions.json");
 
@@ -213,10 +224,15 @@ async function translateToKorean(text) {
         req.destroy();
         resolve(null);
       });
+      const deadline = setTimeout(() => {
+        req.destroy();
+        resolve(null);
+      }, TRANSLATION_DEADLINE_MS);
+      req.on("close", () => clearTimeout(deadline));
     });
 
     if (gRes && gRes.length > 0 && gRes !== cleanForTranslation) {
-      captionTranslationCache.set(cacheKey, gRes);
+      setCaptionCache(cacheKey, gRes);
       return gRes;
     }
   } catch (err) {}
@@ -253,16 +269,21 @@ async function translateToKorean(text) {
         req.destroy();
         resolve(null);
       });
+      const deadline = setTimeout(() => {
+        req.destroy();
+        resolve(null);
+      }, TRANSLATION_DEADLINE_MS);
+      req.on("close", () => clearTimeout(deadline));
     });
 
     if (res && res.length > 0) {
-      captionTranslationCache.set(cacheKey, res);
+      setCaptionCache(cacheKey, res);
       return res;
     }
   } catch (err) {}
 
   // Fallback: Cache and return clean original text
-  captionTranslationCache.set(cacheKey, cleanForTranslation);
+  setCaptionCache(cacheKey, cleanForTranslation);
   return cleanForTranslation;
 }
 
@@ -565,6 +586,7 @@ async function runLiveStage4Pipeline() {
 }
 
 if (require.main === module) {
+  require("./process_lock").assertBotNotRunning("korean_caption_generator.js");
   runLiveStage4Pipeline().then(summary => {
     console.log("==================================================");
     console.log("📊 STAGE 4 DRY RUN REPORT");

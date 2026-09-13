@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,6 +22,63 @@ OVERLAY_SELECTOR = 'div[data-cl-overlay], div.p6driy29haev'
 # virtually any well-formed page, so extraction never simply comes back empty
 # just because none of these class names happen to match.
 POST_TITLE_SELECTORS = ['h1', '.bo_v_tit', '.view_title', '.subject', '.post-title']
+# System browser names probed on PATH, in order (Debian/Ubuntu, Fedora, Chrome).
+CHROMIUM_EXECUTABLE_NAMES = ('chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome')
+# /dev/shm is tiny on many VPS/container setups; without this Chromium tabs crash.
+CHROMIUM_LAUNCH_ARGS = ['--disable-dev-shm-usage']
+
+
+def find_chromium_executable():
+    """Explicit env override first (PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH / CHROME_BIN),
+    then a system Chromium/Chrome on PATH. Returns None if nothing is found."""
+    for env_name in ('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH', 'CHROME_BIN'):
+        candidate = os.environ.get(env_name, '').strip()
+        if candidate and os.path.exists(candidate):
+            return candidate
+    for name in CHROMIUM_EXECUTABLE_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def launch_chromium(chromium, headless, proxy):
+    """Launch Chromium for headless Linux servers as well as Windows dev boxes.
+
+    Tries a system executable first (see find_chromium_executable). If that
+    binary exists but fails to launch (snap confinement, missing libraries,
+    version mismatch with the Playwright driver), falls back to Playwright's own
+    bundled Chromium instead of aborting the whole run."""
+    launch_kwargs = {'headless': headless, 'proxy': proxy, 'args': list(CHROMIUM_LAUNCH_ARGS)}
+    exec_path = find_chromium_executable()
+    if exec_path:
+        try:
+            return chromium.launch(executable_path=exec_path, **launch_kwargs)
+        except Exception as exc:
+            first_line = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+            print(f'[Browser] Chromium at {exec_path} failed to launch ({first_line}); '
+                  f'falling back to Playwright\'s bundled Chromium.', flush=True)
+    try:
+        return chromium.launch(**launch_kwargs)
+    except Exception as exc:
+        raise RuntimeError(
+            'Could not launch Chromium. Install a system Chromium, set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, '
+            'or run "python3 -m playwright install --with-deps chromium". '
+            f'Last error: {exc}'
+        ) from exc
+
+
+def install_sigterm_handler():
+    """Turn SIGTERM (e.g. PM2/NexaHub stopping the process) into a normal
+    interpreter exit, so every pending `finally` - closing the browser and
+    context - runs exactly as it does for Ctrl+C."""
+    def handle_sigterm(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a repeated SIGTERM must not interrupt cleanup
+        raise SystemExit(128 + signum)
+    try:
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    except (ValueError, OSError, AttributeError):
+        pass  # not the main thread, or the platform lacks SIGTERM
 
 
 def connect_browser(chromium, endpoint, timeout):
@@ -285,6 +343,7 @@ def main():
         parser.error('Use --headed or --headless, not both')
     if args.cdp_url:
         args.headed = True
+    install_sigterm_handler()
     saved_links = None
     if args.input_links:
         try:
@@ -326,22 +385,10 @@ def main():
                 str(Path(args.profile).resolve()), headless=not args.headed, proxy=proxy
             )
         elif args.headless:
-            launch_kwargs = {'headless': True, 'proxy': proxy}
-            exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
-            if not exec_path or not os.path.exists(exec_path):
-                exec_path = shutil.which('chromium') or shutil.which('google-chrome') or shutil.which('chrome') or shutil.which('chromium-browser')
-            if exec_path and os.path.exists(exec_path):
-                launch_kwargs['executable_path'] = exec_path
-            browser = p.chromium.launch(**launch_kwargs)
+            browser = launch_chromium(p.chromium, True, proxy)
             context = browser.new_context()
         else:
-            launch_kwargs = {'headless': not args.headed, 'proxy': proxy}
-            exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
-            if not exec_path or not os.path.exists(exec_path):
-                exec_path = shutil.which('chromium') or shutil.which('google-chrome') or shutil.which('chrome') or shutil.which('chromium-browser')
-            if exec_path and os.path.exists(exec_path):
-                launch_kwargs['executable_path'] = exec_path
-            browser = p.chromium.launch(**launch_kwargs)
+            browser = launch_chromium(p.chromium, not args.headed, proxy)
             context = browser.new_context()
         page = context.new_page() if args.cdp_url else (context.pages[0] if context.pages else context.new_page())
         page.set_default_timeout(args.timeout * 1000)
@@ -429,9 +476,15 @@ def main():
                 if not leave_page_open and not page.is_closed():
                     page.close()
             else:
-                context.close()
+                try:
+                    context.close()
+                except Exception:
+                    pass
                 if browser is not None:
-                    browser.close()
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
     print(f'Results saved in: {folder.resolve()}')
     if verification_blocked:
         raise SystemExit(2)

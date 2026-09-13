@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import queue
-import shutil
 import signal
 import sys
 import threading
@@ -17,7 +16,48 @@ from playwright.sync_api import Error as PlaywrightError, TimeoutError as Playwr
 
 from download_videos import download, is_valid_existing_file
 from proxy_config import load_proxy_config, redacted, require_proxy_if_expected
-from scrape_videos import POST_SELECTOR, connect_browser, extract_post_title, verification_visible, video_sources
+from scrape_videos import POST_SELECTOR, connect_browser, extract_post_title, launch_chromium, verification_visible, video_sources
+
+
+def _env_int(name, default):
+    try:
+        value = int(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# download_report.json is rewritten after every job, so it must stay bounded.
+# "Already downloaded" knowledge for entries trimmed out of it is kept in a
+# compact hash list (download_seen.json) so trimming never causes re-downloads.
+REPORT_MAX_ENTRIES = _env_int("VIDEO_PIPELINE_REPORT_MAX_ENTRIES", 500)
+SEEN_HASHES_MAX = _env_int("VIDEO_PIPELINE_SEEN_HASHES_MAX", 50000)
+SEEN_STATE_FILE = "download_seen.json"
+# NexaHub escalates to SIGKILL a few seconds after SIGTERM - never block longer than this.
+STOP_JOIN_BUDGET_SEC = 2.0
+
+
+def video_url_hash(video_url):
+    """The 20-hex-char identity used in download file names (video_<hash>.mp4)."""
+    return hashlib.sha256(video_url.encode()).hexdigest()[:20]
+
+
+def trim_report(entries, max_entries=REPORT_MAX_ENTRIES):
+    """Keep only the newest entry per video_url, then the newest max_entries
+    overall, preserving chronological order."""
+    latest_index = {}
+    for idx, entry in enumerate(entries):
+        url = entry.get("video_url") if isinstance(entry, dict) else None
+        latest_index[url if url else ("__entry", idx)] = idx
+    kept = [entries[i] for i in sorted(latest_index.values())]
+    return kept[-max_entries:] if len(kept) > max_entries else kept
+
+
+def write_json_atomic(path, data):
+    """Same-directory temp file + os.replace: never leaves a truncated JSON file."""
+    temp_path = path.parent / f"{path.name}.tmp.{time.time_ns()}"
+    temp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(temp_path, path)
 
 
 class ContinuousPipeline:
@@ -52,6 +92,11 @@ class ContinuousPipeline:
         self.seen_video_urls = set()
         self.discovered_records = []
         self.download_reports = []
+        # Insertion-ordered set (dict keys) of video_url_hash() for completed downloads.
+        self.completed_hashes = {}
+        self._seen_dirty = False
+        self._stop_lock = threading.Lock()
+        self._stopped = False
 
         self.worker_threads = []
         self.job_counter = 0
@@ -79,6 +124,7 @@ class ContinuousPipeline:
             (self.downloads_dir, "*.part.*.tmp"),
             (self.output_dir, "videos.json.tmp.*"),
             (self.downloads_dir, "download_report.json.tmp.*"),
+            (self.downloads_dir, f"{SEEN_STATE_FILE}.tmp.*"),
         ]
         for directory, pattern in patterns:
             for stale in directory.glob(pattern):
@@ -102,18 +148,30 @@ class ContinuousPipeline:
             except Exception:
                 pass
 
+        seen_json = self.downloads_dir / SEEN_STATE_FILE
+        if seen_json.exists():
+            try:
+                data = json.loads(seen_json.read_text(encoding="utf-8-sig"))
+                if isinstance(data, list):
+                    for h in data[-SEEN_HASHES_MAX:]:
+                        if isinstance(h, str) and h:
+                            self.completed_hashes[h] = None
+            except Exception:
+                pass
+
         report_json = self.downloads_dir / "download_report.json"
         successful_urls = set()
         if report_json.exists():
             try:
                 rep = json.loads(report_json.read_text(encoding="utf-8-sig"))
                 if isinstance(rep, list):
-                    self.download_reports = rep
                     for r in rep:
                         if isinstance(r, dict) and r.get("status") in ("downloaded", "already_exists"):
                             vu = r.get("video_url")
                             if isinstance(vu, str) and vu.strip():
                                 successful_urls.add(vu.strip())
+                                self._mark_completed(vu.strip())
+                    self.download_reports = trim_report(rep)
             except Exception:
                 pass
 
@@ -134,8 +192,9 @@ class ContinuousPipeline:
                 if not (isinstance(v, str) and v.strip()):
                     continue
                 v = v.strip()
-                filename = "video_" + hashlib.sha256(v.encode()).hexdigest()[:20] + ".mp4"
-                if v in successful_urls or is_valid_existing_file(self.downloads_dir / filename):
+                v_hash = video_url_hash(v)
+                filename = "video_" + v_hash + ".mp4"
+                if v in successful_urls or v_hash in self.completed_hashes or is_valid_existing_file(self.downloads_dir / filename):
                     self.seen_video_urls.add(v)
                     continue
                 # Discovered earlier but never actually downloaded - resume it now
@@ -161,14 +220,23 @@ class ContinuousPipeline:
             )
             temp_path.replace(self.output_dir / "videos.json")
 
+    def _mark_completed(self, video_url):
+        """Record a completed download in the bounded, persistent seen-set."""
+        h = video_url_hash(video_url)
+        if h in self.completed_hashes:
+            return
+        self.completed_hashes[h] = None
+        self._seen_dirty = True
+        while len(self.completed_hashes) > SEEN_HASHES_MAX:
+            self.completed_hashes.pop(next(iter(self.completed_hashes)))
+
     def _save_report(self):
         with self.report_lock:
-            temp_path = self.downloads_dir / f"download_report.json.tmp.{time.time_ns()}"
-            temp_path.write_text(
-                json.dumps(self.download_reports, indent=2, ensure_ascii=False),
-                encoding="utf-8"
-            )
-            temp_path.replace(self.downloads_dir / "download_report.json")
+            self.download_reports = trim_report(self.download_reports)
+            write_json_atomic(self.downloads_dir / "download_report.json", self.download_reports)
+            if self._seen_dirty:
+                write_json_atomic(self.downloads_dir / SEEN_STATE_FILE, list(self.completed_hashes))
+                self._seen_dirty = False
 
     @staticmethod
     def _with_page_param(url, page_num):
@@ -203,7 +271,7 @@ class ContinuousPipeline:
                 break
 
             job_idx, total_jobs, video_url, page_url = job
-            filename = "video_" + hashlib.sha256(video_url.encode()).hexdigest()[:20] + ".mp4"
+            filename = "video_" + video_url_hash(video_url) + ".mp4"
             target_path = self.downloads_dir / filename
             job_prefix = f"[{worker_name}]"
             result = dict(page_url=page_url, video_url=video_url, file="", status="", error="")
@@ -236,8 +304,13 @@ class ContinuousPipeline:
                     self.stats["failed"] += 1
 
             with self.report_lock:
+                if result["status"] in ("downloaded", "already_exists"):
+                    self._mark_completed(video_url)
                 self.download_reports.append(result)
-                self._save_report()
+                try:
+                    self._save_report()
+                except OSError as exc:
+                    print(f"{job_prefix} WARNING: could not persist download report: {exc}", flush=True)
 
             self.job_queue.task_done()
 
@@ -277,13 +350,11 @@ class ContinuousPipeline:
                     return
                 context = browser.contexts[0]
             else:
-                launch_kwargs = {'headless': self.headless, 'proxy': self.proxy}
-                exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
-                if not exec_path or not os.path.exists(exec_path):
-                    exec_path = shutil.which('chromium') or shutil.which('google-chrome') or shutil.which('chrome') or shutil.which('chromium-browser')
-                if exec_path and os.path.exists(exec_path):
-                    launch_kwargs['executable_path'] = exec_path
-                browser = p.chromium.launch(**launch_kwargs)
+                try:
+                    browser = launch_chromium(p.chromium, self.headless, self.proxy)
+                except Exception as exc:
+                    print(f"[Producer] Cannot launch Chromium: {exc}", flush=True)
+                    raise SystemExit(3)
                 context = browser.new_context()
 
             page = context.new_page()
@@ -428,12 +499,17 @@ class ContinuousPipeline:
                         time.sleep(0.5)
 
             finally:
+                # Close each separately: a failing context.close() (e.g. the
+                # browser already died) must not skip browser.close().
                 try:
                     context.close()
-                    if browser is not None:
-                        browser.close()
                 except Exception:
                     pass
+                if browser is not None:
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
                 print("[Producer] Browser closed cleanly.", flush=True)
 
         if self.once:
@@ -443,15 +519,27 @@ class ContinuousPipeline:
         else:
             self.stop()
 
+    def request_stop(self):
+        """Signal-safe: only flips the stop flag; the producer/workers notice it."""
+        self.stop_event.set()
+
     def stop(self):
+        """Idempotent, bounded shutdown. Worker threads are daemons: one still
+        blocked mid-download after the join budget is abandoned, and its temp
+        file is swept by _cleanup_stale_temp_files() on the next start."""
+        with self._stop_lock:
+            if self._stopped:
+                return
+            self._stopped = True
         self.stop_event.set()
         for _ in self.worker_threads:
             try:
                 self.job_queue.put_nowait(None)
             except Exception:
                 pass
+        deadline = time.monotonic() + STOP_JOIN_BUDGET_SEC
         for t in self.worker_threads:
-            t.join(timeout=3)
+            t.join(timeout=max(0.0, deadline - time.monotonic()))
         self._print_summary()
 
     def _print_summary(self):
@@ -503,17 +591,35 @@ def main():
     if args.max_pages < 1:
         parser.error("--max-pages must be at least 1")
 
+    # stdout/stderr are pipes when run under NexaHub; never crash on a character
+    # the pipe's encoding cannot represent (e.g. a non-UTF-8 locale).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     pipeline = ContinuousPipeline(args)
 
     def sig_handler(signum, frame):
+        if pipeline.stop_event.is_set():
+            return  # already shutting down - let the in-progress cleanup finish
         print(f"\n[Pipeline] Signal {signum} caught. Initiating graceful shutdown...", flush=True)
-        pipeline.stop()
-        sys.exit(0)
+        pipeline.request_stop()
+        # Unwind the main thread (including a blocking Playwright call) so the
+        # `finally` in run() closes the browser; stop() then runs below. Doing
+        # the blocking stop() inside the handler itself would delay that close.
+        raise SystemExit(0)
 
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, sig_handler)
 
-    pipeline.run()
+    try:
+        pipeline.run()
+    finally:
+        pipeline.stop()
 
 
 if __name__ == "__main__":

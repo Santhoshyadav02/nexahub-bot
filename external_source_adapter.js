@@ -21,6 +21,7 @@ const crypto = require("crypto");
 const https = require("https");
 const http = require("http");
 const { URL } = require("url");
+const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require("./runtime_paths");
 
 /**
  * Canonical 12-Topic Hierarchical Routing Rules for External Source Adapter
@@ -184,7 +185,7 @@ class ExternalSourceAdapter {
       ? Boolean(config.dryRun) 
       : (process.env.EXTERNAL_SOURCE_DRY_RUN !== "false");
 
-    this.ledgerPath = config.ledgerPath || path.join(__dirname, "external_source_ledger.json");
+    this.ledgerPath = config.ledgerPath || dataPath("external_source_ledger.json");
     this.rateLimitDelayMs = config.rateLimitDelayMs || 500;
     this.maxRetries = config.maxRetries || 3;
     this.retryBaseDelayMs = config.retryBaseDelayMs || 1000;
@@ -264,28 +265,43 @@ class ExternalSourceAdapter {
    * @returns {Map<string, object>}
    */
   loadLedger() {
-    try {
-      if (fs.existsSync(this.ledgerPath)) {
-        const raw = fs.readFileSync(this.ledgerPath, "utf8");
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.records)) {
-          const map = new Map();
-          for (const rec of parsed.records) {
-            if (rec && rec.uniqueHash) {
-              map.set(rec.uniqueHash, rec);
-            }
-          }
-          return map;
-        }
-      }
-    } catch (err) {
-      console.warn(`⚠️ [EXTERNAL_SOURCE] Could not load ledger from ${this.ledgerPath}: ${err.message}`);
+    if (!fs.existsSync(this.ledgerPath)) {
+      return new Map();
     }
-    return new Map();
+
+    let raw;
+    try {
+      raw = fs.readFileSync(this.ledgerPath, "utf8");
+    } catch (err) {
+      console.warn(`⚠️ [EXTERNAL_SOURCE] Could not read ledger from ${this.ledgerPath}: ${err.message}`);
+      return new Map();
+    }
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      parsed = null;
+    }
+
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.records)) {
+      // Never silently overwrite a damaged ledger: move it aside for manual recovery
+      console.error(`❌ [EXTERNAL_SOURCE] Ledger at ${this.ledgerPath} is corrupt or malformed. Preserving it and starting a fresh ledger.`);
+      quarantineCorruptFile(this.ledgerPath);
+      return new Map();
+    }
+
+    const map = new Map();
+    for (const rec of parsed.records) {
+      if (rec && rec.uniqueHash) {
+        map.set(rec.uniqueHash, rec);
+      }
+    }
+    return map;
   }
 
   /**
-   * Persists the deduplication ledger to disk
+   * Persists the deduplication ledger to disk atomically (tmp + fsync + rename)
    */
   saveLedger() {
     try {
@@ -296,7 +312,7 @@ class ExternalSourceAdapter {
         totalRecords: records.length,
         records: records
       };
-      fs.writeFileSync(this.ledgerPath, JSON.stringify(data, null, 2), "utf8");
+      writeJsonAtomicSync(this.ledgerPath, data);
     } catch (err) {
       console.error(`❌ [EXTERNAL_SOURCE] Failed to save ledger to ${this.ledgerPath}: ${err.message}`);
     }

@@ -20,6 +20,12 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+
+// Keep the default singleton (section N) away from the committed repo state files
+if (!process.env.NEXAHUB_DATA_DIR) {
+  process.env.NEXAHUB_DATA_DIR = path.join(__dirname, "scratch", "test_external_source_data_dir");
+}
+
 const { ExternalSourceAdapter } = require("./external_source_adapter");
 const { ExternalSourcePublisher } = require("./external_source_publisher");
 const { ExternalSourceState, MAX_GLOBAL_RETENTION } = require("./external_source_state");
@@ -162,13 +168,18 @@ async function runTests() {
 
   // ----------------------------------------------------
   // SECTION F: All 10 destination configurations remain valid
+  // (IDs come only from env vars; unset -> disabled with null ID, never a placeholder)
   // ----------------------------------------------------
   const allDestinationsConfigured = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(idx => {
-    return Object.values(EXTERNAL_TOPIC_DESTINATIONS).some(d => d.channelIndex === idx && d.destinationChannelId);
+    return Object.values(EXTERNAL_TOPIC_DESTINATIONS).some(d => d.channelIndex === idx && d.destinationEnvVar);
   });
+  const destinationStatesConsistent = Object.values(EXTERNAL_TOPIC_DESTINATIONS).every(d =>
+    (d.enabled === false && d.destinationChannelId === null && !process.env[d.destinationEnvVar]) ||
+    (d.enabled === true && d.destinationChannelId === String(process.env[d.destinationEnvVar]).trim())
+  );
   record(
-    "F. All 10 destination configurations remain valid",
-    allDestinationsConfigured === true
+    "F. All 10 destination configurations remain valid (env-driven, disabled when unset)",
+    allDestinationsConfigured === true && destinationStatesConsistent === true
   );
 
   // ----------------------------------------------------

@@ -240,6 +240,7 @@ async function runNexaHubIntegrationTests() {
     section('TEST 3: Startup Failure Isolation');
     const runtime3 = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: null, // missing required URL
       stagingChatId: '-1009990001'
     });
@@ -317,6 +318,7 @@ async function runNexaHubIntegrationTests() {
 
     const runtime6 = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: serverUrl6,
       stagingChatId: '-1009990001',
       downloadsDir: env6.downloadsDir,
@@ -378,6 +380,7 @@ async function runNexaHubIntegrationTests() {
 
     const runtime9 = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: serverUrl9,
       stagingChatId: '-1009990001',
       downloadsDir: env9.downloadsDir,
@@ -403,6 +406,7 @@ async function runNexaHubIntegrationTests() {
     section('TEST 10: Production Destination Rejection');
     const runtime10 = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: 'http://127.0.0.1:8080/',
       stagingChatId: '@cccsefk', // Protected Dating channel
       autoPublish: true
@@ -437,6 +441,7 @@ async function runNexaHubIntegrationTests() {
 
     const runtime11 = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: 'http://127.0.0.1:8080/',
       stagingChatId: '-1009990001',
       downloadsDir: env11.downloadsDir,

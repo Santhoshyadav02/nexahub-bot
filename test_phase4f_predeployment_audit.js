@@ -22,6 +22,12 @@
 
 const http = require('http');
 const path = require('path');
+
+// Destination IDs are env-only (unset -> disabled/skipped). Provide staging test IDs
+// before the category config is loaded so the 10-channel round-robin stays active.
+for (let i = 1; i <= 10; i++) {
+  if (!process.env[`EXTERNAL_DEST_${i}`]) process.env[`EXTERNAL_DEST_${i}`] = `-1002000000${String(i).padStart(3, '0')}`;
+}
 const fs = require('fs');
 const assert = require('assert');
 

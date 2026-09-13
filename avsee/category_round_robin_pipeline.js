@@ -40,6 +40,7 @@ const { resolvePlayer, redactUrl } = require('./player_resolver');
 const { validateMp4 } = require('./mp4_validator');
 const { AvseeSourceAdapter } = require('../avsee_source_adapter');
 const { getDestinationForTopic } = require('../external_source_destinations');
+const { dataPath } = require('../runtime_paths');
 const {
   HEALTH_STATE,
   redactSensitive,
@@ -78,7 +79,7 @@ class CategoryRoundRobinPipeline {
    * @param {boolean} [config.dryRun=true]
    */
   constructor(config = {}) {
-    this.tempDir = config.tempDir || path.join(__dirname, '..', 'scratch', 'pipeline_4d_temp');
+    this.tempDir = config.tempDir || dataPath('avsee_runtime', 'pipeline_4d_temp');
     this.baseUrl = config.baseUrl || 'http://127.0.0.1';
     this.categoryConfig = config.categoryConfig || DEFAULT_CATEGORY_CONFIG;
     this.durationToleranceSec = config.durationToleranceSec || 2.0;

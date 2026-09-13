@@ -276,6 +276,7 @@ async function runMasterE2E() {
 
     const runtimeHP = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: serverUrlHP,
       stagingChatId: '-1009990001',
       downloadsDir: envHP.downloadsDir,
@@ -343,6 +344,7 @@ async function runMasterE2E() {
 
     const runtimeMC = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: serverUrlMC,
       stagingChatId: '-1009990001',
       downloadsDir: envMC.downloadsDir,
@@ -388,6 +390,7 @@ async function runMasterE2E() {
     const envFail1 = freshEnv('fail1_404');
     const runtimeFail1 = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: 'http://127.0.0.1:59999/nonexistent_404',
       stagingChatId: '-1009990001',
       downloadsDir: envFail1.downloadsDir,
@@ -407,7 +410,7 @@ async function runMasterE2E() {
     const envFail2 = freshEnv('fail2_corrupt_mp4');
     const corruptFile = path.join(envFail2.downloadsDir, 'corrupt.mp4');
     fs.writeFileSync(corruptFile, Buffer.from('NOT_AN_MP4_HEADER_GARBAGE_BYTES'));
-    const validatorRes = validateMediaFile(corruptFile);
+    const validatorRes = await validateMediaFile(corruptFile);
     check('MediaValidator rejects corrupt/non-video files', validatorRes.valid === false, 'validation');
 
     // 3. Duplicate SHA Deduplication
@@ -553,6 +556,7 @@ async function runMasterE2E() {
 
     const runtimeShut = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: serverUrlShut,
       stagingChatId: '-1009990001',
       downloadsDir: envShut.downloadsDir,
@@ -584,6 +588,7 @@ async function runMasterE2E() {
     section('STAGE 8: Production Safety & Blacklist Enforcement');
     const runtimeProdGuard = new VideoPipelineRuntime({
       enabled: true,
+      sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
       acquisitionUrl: 'http://127.0.0.1:8080/',
       stagingChatId: '@ccsfvk', // Protected Romantic Vibe channel
       autoPublish: true

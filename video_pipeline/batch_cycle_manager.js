@@ -12,21 +12,40 @@
  * job) - it only sequences them into one cycle, tracks cycle state, and
  * persists a frozen snapshot of each cycle's media for a future publisher.
  *
- * Hard boundary for this phase: a cycle stops at BATCH_READY. Nothing here
- * ever calls Telegram, routes to a destination, or deletes a file.
+ * Nothing here ever talks to Telegram directly or routes to a destination -
+ * publishing is delegated to the injected VideoBatchPublisher.
+ *
+ * Local disk hygiene (only when enableCleanup is set, and only ever INSIDE
+ * downloadsDir):
+ *   - DUPLICATE media and media that definitively failed validation are
+ *     deleted as soon as that verdict is reached.
+ *   - READY media whose publish failed is retried on later cycles, up to
+ *     VIDEO_PIPELINE_MAX_PUBLISH_ATTEMPTS (default 3), then abandoned and deleted.
+ *   - At the start of each cycle, orphan files older than
+ *     VIDEO_PIPELINE_DOWNLOAD_RETENTION_HOURS (default 48) are swept, and the
+ *     oldest files are removed while the directory exceeds
+ *     VIDEO_PIPELINE_DOWNLOAD_MAX_BYTES (default 10 GiB, 0 disables).
  */
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const { VideoPipelineManager } = require('./video_pipeline_manager');
 const { MediaIngestor } = require('./media_ingestor');
 const { BatchState } = require('./batch_state');
+const { isPathInside } = require('./media_cleaner');
 
 const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
 const DEFAULT_ACQUISITION_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_STARTUP_DELAY_MS = 60 * 1000;
+const DEFAULT_MAX_PUBLISH_ATTEMPTS = 3;
+const DEFAULT_DOWNLOAD_RETENTION_HOURS = 48;
+const DEFAULT_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024;
+const DEFAULT_STOP_ACTIVE_RUN_WAIT_MS = 1500;
+const BOOT_TIME_TOLERANCE_MS = 2 * 60 * 1000;
 const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'PROCESSING', 'STREAMING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
 
 function generateCycleId() {
@@ -39,14 +58,90 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function readNumberEnv(name, fallback, { allowZero = false } = {}) {
+  const raw = process.env[name];
+  if (raw === undefined || String(raw).trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  if (value > 0 || (allowZero && value === 0)) return value;
+  return fallback;
+}
+
+function pickNumber(configValue, envName, fallback, options) {
+  if (configValue !== undefined && configValue !== null && Number.isFinite(Number(configValue))) {
+    return Number(configValue);
+  }
+  return readNumberEnv(envName, fallback, options);
+}
+
 function isPidAlive(pid) {
   if (!pid) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (e) {
-    return false;
+    // EPERM means the PID exists but belongs to another user.
+    return e.code === 'EPERM';
   }
+}
+
+function getBootId() {
+  try {
+    return fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getBootTimeMs() {
+  return Date.now() - Math.round(os.uptime() * 1000);
+}
+
+function readProcCmdline(pid) {
+  if (process.platform !== 'linux') return null;
+  try {
+    return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim();
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Decides whether an acquisition PID recorded by a previous process is
+ * really still OUR acquisition. A bare kill(pid, 0) is not enough: after a
+ * reboot (or long enough uptime) the same PID number can belong to anything.
+ * @param {object} cycle Persisted cycle record
+ * @returns {{alive: boolean, pid: number|null, verified: boolean, reason: string}}
+ */
+function assessRecordedAcquisition(cycle) {
+  const pid = cycle ? cycle.acquisitionPid : null;
+  if (!pid) return { alive: false, pid: null, verified: false, reason: 'no acquisition PID was recorded' };
+
+  const currentBootId = getBootId();
+  if (cycle.acquisitionBootId && currentBootId && cycle.acquisitionBootId !== currentBootId) {
+    return { alive: false, pid, verified: false, reason: 'PID was recorded before the last reboot' };
+  }
+  const bootTimeMs = getBootTimeMs();
+  if (cycle.acquisitionBootTimeMs && Math.abs(cycle.acquisitionBootTimeMs - bootTimeMs) > BOOT_TIME_TOLERANCE_MS) {
+    return { alive: false, pid, verified: false, reason: 'PID was recorded before the last reboot' };
+  }
+  if (!cycle.acquisitionBootId && !cycle.acquisitionBootTimeMs) {
+    // Legacy record without boot info: a cycle that started before this boot
+    // cannot possibly still have a live child.
+    const startedAt = Date.parse(cycle.startedAt);
+    if (Number.isFinite(startedAt) && startedAt < bootTimeMs - BOOT_TIME_TOLERANCE_MS) {
+      return { alive: false, pid, verified: false, reason: 'cycle started before the last reboot' };
+    }
+  }
+
+  if (!isPidAlive(pid)) {
+    return { alive: false, pid, verified: false, reason: 'process is not running' };
+  }
+  const cmdline = readProcCmdline(pid);
+  if (cmdline !== null && !/pipeline\.py|run_pipeline/i.test(cmdline)) {
+    return { alive: false, pid, verified: false, reason: `PID ${pid} now belongs to an unrelated process` };
+  }
+  return { alive: true, pid, verified: cmdline !== null, reason: 'process is still running' };
 }
 
 class BatchCycleManager {
@@ -67,6 +162,12 @@ class BatchCycleManager {
    * @param {number} [config.discoveryTarget] Target links to discover (default 100)
    * @param {number} [config.discoveryMax] Upper bound on discovered links (default 150)
    * @param {number} [config.maxPages] Max pages to crawl (default 50)
+   * @param {boolean} [config.enableCleanup=false] Delete rejected/abandoned/orphan files inside downloadsDir
+   * @param {number} [config.maxPublishAttempts] Cross-cycle publish attempts before abandoning (default 3)
+   * @param {number} [config.downloadRetentionHours] Orphan file age limit (default 48)
+   * @param {number} [config.downloadMaxBytes] Downloads dir size cap, 0 disables (default 10 GiB)
+   * @param {number} [config.startupDelayMs] Minimum delay before the first scheduled cycle (default 60s)
+   * @param {number} [config.stopActiveRunWaitMs] How long stop() waits for an in-flight cycle to settle (default 1.5s)
    */
   constructor(config = {}) {
     const hasInputLinks = !!(config.acquisitionOptions && config.acquisitionOptions.inputLinks);
@@ -112,6 +213,13 @@ class BatchCycleManager {
       ? config.maxSuccessfulVideos
       : (!isNaN(envMaxSuccessful) && envMaxSuccessful > 0 ? envMaxSuccessful : 25);
 
+    this.enableCleanup = Boolean(config.enableCleanup);
+    this.maxPublishAttempts = Math.max(1, Math.floor(pickNumber(config.maxPublishAttempts, 'VIDEO_PIPELINE_MAX_PUBLISH_ATTEMPTS', DEFAULT_MAX_PUBLISH_ATTEMPTS)));
+    this.downloadRetentionMs = pickNumber(config.downloadRetentionHours, 'VIDEO_PIPELINE_DOWNLOAD_RETENTION_HOURS', DEFAULT_DOWNLOAD_RETENTION_HOURS) * 60 * 60 * 1000;
+    this.downloadMaxBytes = pickNumber(config.downloadMaxBytes, 'VIDEO_PIPELINE_DOWNLOAD_MAX_BYTES', DEFAULT_DOWNLOAD_MAX_BYTES, { allowZero: true });
+    this.startupDelayMs = pickNumber(config.startupDelayMs, 'VIDEO_PIPELINE_STARTUP_DELAY_MS', DEFAULT_STARTUP_DELAY_MS, { allowZero: true });
+    this.stopActiveRunWaitMs = pickNumber(config.stopActiveRunWaitMs, null, DEFAULT_STOP_ACTIVE_RUN_WAIT_MS, { allowZero: true });
+
     this.videoPipelineManager = config.videoPipelineManager || new VideoPipelineManager();
     this.mediaIngestor = config.mediaIngestor || new MediaIngestor({
       downloadsDir: this.downloadsDir,
@@ -123,9 +231,13 @@ class BatchCycleManager {
     this.publishOptions = config.publishOptions || {};
 
     this._timerId = null;
+    this._startupTimerId = null;
+    this._nextRunAt = null;
     this._acceptingRuns = true;
+    this._abortRequested = false;
     this._activeRunPromise = null;
     this._lastCycleSummary = null;
+    this._provenanceCache = null;
 
     this._recoverOnStartup();
   }
@@ -156,15 +268,24 @@ class BatchCycleManager {
 
     if (state === 'ACQUIRING' || state === 'PROCESSING' || state === 'STREAMING') {
       const cycle = this.batchState.getCycle(cycleId);
-      const pid = cycle ? cycle.acquisitionPid : null;
-      const stillAlive = isPidAlive(pid);
+      const assessment = assessRecordedAcquisition(cycle);
+      const pid = assessment.pid;
+      const stillAlive = assessment.alive;
 
-      if (stillAlive) {
+      if (stillAlive && assessment.verified) {
+        // Verified (same boot, same PID, command line is video-tools'
+        // pipeline): this is a genuine orphan from the previous process. It
+        // would otherwise keep writing into the same downloads dir as the
+        // next cycle, so terminate its whole process group.
+        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ${state} and its acquisition process (PID ${pid}) is still `
+          + `running as an orphan from the previous process. Terminating it and marking the cycle FAILED.`);
+        this._terminateOrphanAcquisition(pid);
+      } else if (stillAlive) {
         console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ${state} when this process last stopped, and PID ${pid} `
           + `still appears to be alive. Not resuming automatically - a stray acquisition process may still be running. `
           + `Marking the cycle FAILED and returning the controller to IDLE; stop PID ${pid} manually if still active.`);
       } else {
-        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (${state}, no live acquisition process). `
+        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (${state}, no live acquisition process: ${assessment.reason}). `
           + `Marking it FAILED. Any media already downloaded/validated by the Media Ingestor remains intact and untouched.`);
       }
 
@@ -172,7 +293,7 @@ class BatchCycleManager {
         status: 'FAILED',
         completedAt: new Date().toISOString(),
         lastError: stillAlive
-          ? `Recovered at startup: acquisition PID ${pid} may still be running independently; cycle marked FAILED without touching media.`
+          ? `Recovered at startup: acquisition PID ${pid} was still running${assessment.verified ? ' and was terminated' : ' independently'}; cycle marked FAILED without touching media.`
           : 'Recovered at startup: process restarted mid-acquisition with no live acquisition process; cycle marked FAILED without touching media.'
       });
       this.batchState.data.currentCycleId = null;
@@ -188,6 +309,19 @@ class BatchCycleManager {
     }
   }
 
+  _terminateOrphanAcquisition(pid) {
+    const signal = (sig) => {
+      try {
+        process.kill(-pid, sig);
+      } catch (e) {
+        try { process.kill(pid, sig); } catch (_) {}
+      }
+    };
+    signal('SIGTERM');
+    const timer = setTimeout(() => signal('SIGKILL'), 3000);
+    if (typeof timer.unref === 'function') timer.unref();
+  }
+
   // ============================================================
   // 📊 STATUS
   // ============================================================
@@ -196,7 +330,8 @@ class BatchCycleManager {
     return {
       state: this.batchState.getControllerState(),
       currentCycleId: this.batchState.getCurrentCycleId(),
-      schedulerRunning: this._timerId !== null,
+      schedulerRunning: this.isSchedulerActive(),
+      nextRunAt: this._nextRunAt ? new Date(this._nextRunAt).toISOString() : null,
       lastCycleSummary: this._lastCycleSummary,
       recentSkippedTicks: this.batchState.getSkippedTicks().slice(-10)
     };
@@ -241,6 +376,7 @@ class BatchCycleManager {
   async _runOnceInternal() {
     const cycleId = generateCycleId();
     const startedAt = new Date().toISOString();
+    this._abortRequested = false;
     console.log(`${LOG_PREFIX} Starting acquisition cycle ${cycleId} (target=${this.discoveryTarget}, success range=${this.minSuccessfulVideos}-${this.maxSuccessfulVideos})`);
     this.batchState.startCycle(cycleId, { startedAt });
 
@@ -251,9 +387,20 @@ class BatchCycleManager {
     let duplicateCount = 0;
     let failedCount = 0;
     let skippedAlreadyPublishedCount = 0;
+    let skippedTooLargeCount = 0;
+    let retriedCount = 0;
     let hitCeiling = false;
 
     try {
+      // 0. Disk hygiene before new downloads land: drop orphan/expired files.
+      if (this.enableCleanup) {
+        try {
+          await this._sweepDownloadsDir();
+        } catch (sweepErr) {
+          console.warn(`${LOG_PREFIX} Downloads sweep failed (continuing): ${sweepErr.message}`);
+        }
+      }
+
       // 1. Start video-tools through VideoPipelineManager.
       const startOptions = {
         targetLinks: this.discoveryTarget,
@@ -271,12 +418,17 @@ class BatchCycleManager {
       if (startResult.status !== 'STARTED') {
         throw new Error(`VideoPipelineManager did not start: ${JSON.stringify(startResult)}`);
       }
-      this.batchState.updateCycle(cycleId, { acquisitionPid: startResult.pid });
+      this.batchState.updateCycle(cycleId, {
+        acquisitionPid: startResult.pid,
+        acquisitionBootId: getBootId(),
+        acquisitionBootTimeMs: getBootTimeMs()
+      });
 
       const deadline = Date.now() + this.acquisitionTimeoutMs;
 
       // Helper to process a single downloaded file immediately
       const processDownloadedFile = async (filePath, videoUrlHint = '') => {
+        if (this._abortRequested) return;
         const absPath = path.resolve(filePath);
         if (processedFiles.has(absPath)) return;
         if (!fs.existsSync(absPath)) return;
@@ -300,7 +452,11 @@ class BatchCycleManager {
         const scanResult = await this.mediaIngestor.processSingleFile(absPath, { title });
         if (scanResult.status === 'READY') {
           if (scanResult.alreadyProcessed) {
-            return;
+            // Validated by an earlier cycle. Only worth touching again if its
+            // publish never succeeded and still has attempts left.
+            const retry = await this._resolveStaleReadyMedia(scanResult.id, absPath);
+            if (!retry) return;
+            retriedCount++;
           }
           const record = this.mediaIngestor.ledger.getRecord(scanResult.id);
           const resolvedTitle = (record && record.title) || title || scanResult.title || '';
@@ -345,7 +501,10 @@ class BatchCycleManager {
               }
             } else if (pubRes.status === 'SKIPPED_ALREADY_PUBLISHED') {
               skippedAlreadyPublishedCount++;
+            } else if (pubRes.status === 'SKIPPED_TOO_LARGE') {
+              skippedTooLargeCount++;
             } else {
+              // File is kept on disk: a later cycle retries it (bounded by maxPublishAttempts).
               failedCount++;
             }
             if (!hitCeiling) {
@@ -354,18 +513,20 @@ class BatchCycleManager {
           }
         } else if (scanResult.status === 'DUPLICATE') {
           duplicateCount++;
+          await this._discardRejectedMedia(scanResult, absPath);
         } else if (scanResult.status === 'FAILED') {
           failedCount++;
+          await this._discardRejectedMedia(scanResult, absPath);
         }
       };
 
       // 2. Streaming loop: process items on-the-fly while acquisition runs
-      while (this.videoPipelineManager.isRunning() && Date.now() < deadline && !hitCeiling) {
-        if (!hitCeiling && fs.existsSync(this.downloadsDir)) {
+      while (this.videoPipelineManager.isRunning() && Date.now() < deadline && !hitCeiling && !this._abortRequested) {
+        if (fs.existsSync(this.downloadsDir)) {
           try {
             const files = fs.readdirSync(this.downloadsDir);
             for (const f of files) {
-              if (hitCeiling) break;
+              if (hitCeiling || this._abortRequested) break;
               if (f.endsWith('.mp4') && !f.includes('.part.') && !f.includes('.tmp.')) {
                 await processDownloadedFile(path.join(this.downloadsDir, f));
               }
@@ -378,22 +539,26 @@ class BatchCycleManager {
       // Stop acquisition if still running
       if (this.videoPipelineManager.isRunning()) {
         await this.videoPipelineManager.stop();
-        if (!hitCeiling && Date.now() >= deadline) {
+        if (!hitCeiling && !this._abortRequested && Date.now() >= deadline) {
           throw new Error(`Acquisition did not finish within ${this.acquisitionTimeoutMs}ms and was stopped`);
         }
       }
 
       // Process any remaining files
-      if (!hitCeiling && fs.existsSync(this.downloadsDir)) {
+      if (!hitCeiling && !this._abortRequested && fs.existsSync(this.downloadsDir)) {
         try {
           const files = fs.readdirSync(this.downloadsDir);
           for (const f of files) {
-            if (hitCeiling) break;
+            if (hitCeiling || this._abortRequested) break;
             if (f.endsWith('.mp4') && !f.includes('.part.') && !f.includes('.tmp.')) {
               await processDownloadedFile(path.join(this.downloadsDir, f));
             }
           }
         } catch (e) {}
+      }
+
+      if (this._abortRequested) {
+        throw new Error('Cycle interrupted by controller stop()');
       }
 
       const discovered = this._countDiscovered();
@@ -429,11 +594,14 @@ class BatchCycleManager {
         failed: failedCount,
         publishedCount: successfulCount,
         skippedCount: skippedAlreadyPublishedCount,
+        skippedTooLargeCount,
+        retriedCount,
         lastError: statusReason,
         media: readyMediaList
       });
       this.batchState.data.currentCycleId = cycleId;
       this.batchState.setControllerState('IDLE');
+      this._recordCycleFinished(completedAt);
 
       const publishResult = {
         batchId: cycleId,
@@ -442,6 +610,7 @@ class BatchCycleManager {
         totalItems: readyMediaList.length,
         published: successfulCount,
         skipped: skippedAlreadyPublishedCount,
+        skippedTooLarge: skippedTooLargeCount,
         failed: failedCount,
         cleaned: successfulCount,
         completedAt,
@@ -460,6 +629,8 @@ class BatchCycleManager {
         failed: failedCount,
         published: successfulCount,
         skipped: skippedAlreadyPublishedCount,
+        skippedTooLarge: skippedTooLargeCount,
+        retried: retriedCount,
         reason: statusReason,
         media: readyMediaList,
         publishedItems,
@@ -468,7 +639,8 @@ class BatchCycleManager {
       this._lastCycleSummary = summary;
       console.log(`${LOG_PREFIX} Cycle ${cycleId} -> ${finalStatus} `
         + `(discovered=${discovered}, downloaded=${downloaded}, ready=${readyMediaList.length}, `
-        + `published=${successfulCount}, duplicates=${duplicateCount}, failed=${failedCount})`);
+        + `published=${successfulCount}, retried=${retriedCount}, tooLarge=${skippedTooLargeCount}, `
+        + `duplicates=${duplicateCount}, failed=${failedCount})`);
 
       return summary;
     } catch (err) {
@@ -476,12 +648,228 @@ class BatchCycleManager {
       this.batchState.updateCycle(cycleId, { status: 'FAILED', completedAt, lastError: err.message });
       this.batchState.data.currentCycleId = null;
       this.batchState.setControllerState('IDLE');
+      this._recordCycleFinished(completedAt);
       console.error(`${LOG_PREFIX} Cycle ${cycleId} FAILED: ${err.message}`);
       const summary = { cycleId, status: 'FAILED', startedAt, completedAt, error: err.message };
       this._lastCycleSummary = summary;
       return summary;
     }
   }
+
+  _recordCycleFinished(at) {
+    if (typeof this.batchState.recordCycleFinished === 'function') {
+      try {
+        this.batchState.recordCycleFinished(at);
+      } catch (e) {
+        console.warn(`${LOG_PREFIX} Could not persist cycle finish time: ${e.message}`);
+      }
+    }
+  }
+
+  // ============================================================
+  // 🧹 LOCAL DISK HYGIENE (downloadsDir only)
+  // ============================================================
+
+  _publishDestinationId() {
+    return this.publishOptions.chatIdOverride
+      || this.publishOptions.stagingChatIdOverride
+      || (this.videoBatchPublisher && this.videoBatchPublisher.stagingChatId)
+      || null;
+  }
+
+  _getPublishAttemptState(mediaId) {
+    const ledger = this.videoBatchPublisher && this.videoBatchPublisher.publishLedger;
+    const destinationId = this._publishDestinationId();
+    if (!ledger || !destinationId || typeof ledger.getAttemptState !== 'function') return null;
+    return ledger.getAttemptState(mediaId, destinationId);
+  }
+
+  /**
+   * For READY media validated by an EARLIER cycle: decides whether to retry
+   * its publish now, or - once maxPublishAttempts is exhausted - abandon it
+   * (status ABANDONED, file deleted when cleanup is enabled).
+   * @returns {Promise<boolean>} true if the item should be published in this cycle
+   */
+  async _resolveStaleReadyMedia(mediaId, filePath) {
+    if (!this.autoPublish || !this.videoBatchPublisher) return false;
+    const attempt = this._getPublishAttemptState(mediaId);
+    if (!attempt) return false;
+    // Published (possibly with cleanup withheld pending read-back review) or
+    // terminally skipped: nothing to retry. Leftover files age out via the sweep.
+    if (attempt.published || attempt.status === 'SKIPPED_TOO_LARGE') return false;
+
+    if (attempt.attempts >= this.maxPublishAttempts) {
+      const reason = `publish abandoned after ${attempt.attempts} failed attempt(s) (max ${this.maxPublishAttempts})`;
+      console.warn(`${LOG_PREFIX} Media ${mediaId}: ${reason}.`);
+      await this._removeDownloadedFile(filePath, reason, mediaId, { status: 'ABANDONED', deleteFile: this.enableCleanup });
+      return false;
+    }
+
+    console.log(`${LOG_PREFIX} Retrying publish for media ${mediaId} from an earlier cycle (attempt ${attempt.attempts + 1}/${this.maxPublishAttempts}).`);
+    return true;
+  }
+
+  /**
+   * Deletes the local file for a DUPLICATE, or for media whose validation
+   * reached a DEFINITIVE negative verdict. Missing tooling or a timeout could
+   * be a transient/configuration problem, so those files are kept (and only
+   * ever age out through the retention sweep).
+   */
+  async _discardRejectedMedia(scanResult, filePath) {
+    if (!this.enableCleanup) return false;
+    const ledger = this.mediaIngestor && this.mediaIngestor.ledger;
+    const record = ledger && typeof ledger.getRecord === 'function' ? ledger.getRecord(scanResult.id) : null;
+
+    let reason;
+    if (scanResult.status === 'DUPLICATE') {
+      reason = `duplicate of ${scanResult.duplicateOf || (record && record.duplicateOf) || 'existing media'}`;
+    } else {
+      const validation = record && record.validation;
+      const definitive = Boolean(validation) && validation.valid === false && !validation.toolingUnavailable && !validation.timedOut;
+      if (!definitive) return false;
+      reason = `validation failed: ${validation.error || 'unknown error'}`;
+    }
+    return this._removeDownloadedFile(filePath, reason, scanResult.id, { deleteFile: true });
+  }
+
+  /**
+   * The ONLY place this module deletes files. Refuses anything not strictly
+   * inside downloadsDir.
+   */
+  async _removeDownloadedFile(filePath, reason, mediaId, { status = null, deleteFile = true } = {}) {
+    const resolved = path.resolve(filePath);
+    let deleted = false;
+    if (deleteFile) {
+      if (!isPathInside(this.downloadsDir, resolved)) {
+        console.error(`${LOG_PREFIX} Refusing to delete ${resolved}: outside downloads directory ${path.resolve(this.downloadsDir)}.`);
+        return false;
+      }
+      try {
+        if (fs.existsSync(resolved)) {
+          fs.unlinkSync(resolved);
+          deleted = true;
+          console.log(`${LOG_PREFIX} Deleted local media file (${reason}): ${path.basename(resolved)}`);
+        }
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Failed to delete ${resolved}: ${err.message}`);
+        return false;
+      }
+    }
+
+    const ledger = this.mediaIngestor && this.mediaIngestor.ledger;
+    if (mediaId && ledger && typeof ledger.upsert === 'function' && typeof ledger.getRecord === 'function' && ledger.getRecord(mediaId)) {
+      const patch = {};
+      if (status) {
+        patch.status = status;
+        patch.lastError = reason;
+      }
+      if (deleted) {
+        patch.fileDeletedAt = new Date().toISOString();
+        patch.fileDeletedReason = reason;
+      }
+      if (Object.keys(patch).length > 0) {
+        try {
+          await ledger.upsert(mediaId, patch);
+        } catch (err) {
+          console.warn(`${LOG_PREFIX} Failed to update MediaLedger for ${mediaId}: ${err.message}`);
+        }
+      }
+    }
+    return deleted;
+  }
+
+  /**
+   * True if a downloaded file is still legitimately waiting to be published
+   * (so neither the age nor the size sweep may remove it).
+   */
+  _isPendingPublish(absPath) {
+    const ledger = this.mediaIngestor && this.mediaIngestor.ledger;
+    if (!ledger || typeof ledger.getRecord !== 'function') return false;
+    const id = crypto.createHash('sha256').update(path.resolve(absPath)).digest('hex');
+    const record = ledger.getRecord(id);
+    if (!record || record.status !== 'READY') return false;
+    if (!this.autoPublish || !this.videoBatchPublisher) return true; // BATCH_READY mode: awaiting a manual publish
+    const attempt = this._getPublishAttemptState(id);
+    if (!attempt) return true;
+    return !attempt.published && attempt.status !== 'SKIPPED_TOO_LARGE' && attempt.attempts < this.maxPublishAttempts;
+  }
+
+  /**
+   * Removes orphan/expired files from downloadsDir (top level only): *.mp4
+   * media and video-tools' own leftover temp files. Never touches
+   * download_report.json or any other bookkeeping file, and never removes
+   * media still pending publication.
+   * @returns {Promise<{deleted: number, freedBytes: number}>}
+   */
+  async _sweepDownloadsDir(now = Date.now()) {
+    const summary = { deleted: 0, freedBytes: 0 };
+    if (!this.enableCleanup) return summary;
+
+    let entries;
+    try {
+      entries = fs.readdirSync(this.downloadsDir, { withFileTypes: true });
+    } catch (e) {
+      return summary;
+    }
+
+    const candidates = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const name = entry.name;
+      const isMedia = name.toLowerCase().endsWith('.mp4');
+      const isTemp = /\.part\.\d+\.tmp$/i.test(name) || name.startsWith('download_report.json.tmp.');
+      if (!isMedia && !isTemp) continue;
+      const abs = path.join(this.downloadsDir, name);
+      try {
+        const stat = fs.statSync(abs);
+        candidates.push({ abs, size: stat.size, mtimeMs: stat.mtimeMs, isMedia, removed: false });
+      } catch (e) {}
+    }
+
+    const remove = async (candidate, reason) => {
+      const mediaId = candidate.isMedia
+        ? crypto.createHash('sha256').update(path.resolve(candidate.abs)).digest('hex')
+        : null;
+      if (await this._removeDownloadedFile(candidate.abs, reason, mediaId, { deleteFile: true })) {
+        candidate.removed = true;
+        summary.deleted++;
+        summary.freedBytes += candidate.size;
+      }
+    };
+
+    const retentionHours = Math.round((this.downloadRetentionMs / 3600000) * 100) / 100;
+    for (const candidate of candidates) {
+      if (now - candidate.mtimeMs > this.downloadRetentionMs && !(candidate.isMedia && this._isPendingPublish(candidate.abs))) {
+        await remove(candidate, `older than ${retentionHours}h retention`);
+      }
+    }
+
+    if (this.downloadMaxBytes > 0) {
+      let total = candidates.filter(c => !c.removed).reduce((sum, c) => sum + c.size, 0);
+      if (total > this.downloadMaxBytes) {
+        const evictable = candidates
+          .filter(c => !c.removed && !(c.isMedia && this._isPendingPublish(c.abs)))
+          .sort((a, b) => a.mtimeMs - b.mtimeMs);
+        for (const candidate of evictable) {
+          if (total <= this.downloadMaxBytes) break;
+          await remove(candidate, `downloads dir above ${this.downloadMaxBytes} byte cap`);
+          if (candidate.removed) total -= candidate.size;
+        }
+        if (total > this.downloadMaxBytes) {
+          console.warn(`${LOG_PREFIX} Downloads dir still holds ${total} bytes (cap ${this.downloadMaxBytes}); remaining files are pending publication.`);
+        }
+      }
+    }
+
+    if (summary.deleted > 0) {
+      console.log(`${LOG_PREFIX} Downloads sweep removed ${summary.deleted} file(s), freed ${(summary.freedBytes / (1024 * 1024)).toFixed(1)} MB.`);
+    }
+    return summary;
+  }
+
+  // ============================================================
+  // 📤 PUBLISH / PROVENANCE
+  // ============================================================
 
   /**
    * Publishes an existing BATCH_READY cycle using the configured VideoBatchPublisher.
@@ -543,14 +931,8 @@ class BatchCycleManager {
   }
 
   _countDownloaded() {
-    const reportPath = path.join(this.downloadsDir, 'download_report.json');
-    if (!fs.existsSync(reportPath)) return 0;
-    try {
-      const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-      return Array.isArray(report) ? report.filter(r => r.status === 'downloaded').length : 0;
-    } catch (e) {
-      return 0;
-    }
+    const report = this._readDownloadReport();
+    return report.filter(r => r && r.status === 'downloaded').length;
   }
 
   /**
@@ -567,13 +949,40 @@ class BatchCycleManager {
     return map;
   }
 
+  _statKey(filePath) {
+    try {
+      const stat = fs.statSync(filePath);
+      return `${stat.size}:${stat.mtimeMs}`;
+    } catch (e) {
+      return 'missing';
+    }
+  }
+
   /**
    * Same correlation as the title map above, but also carries the source
    * page_url/video_url through for each downloaded file - required so every
    * media record can prove exactly which source_mode/page/URL it came from,
    * all the way through to the Telegram caption and publish ledger.
+   *
+   * Cached on the size/mtime of videos.json, download_report.json and the
+   * downloads directory itself: a cycle processes many files, but both JSON
+   * files are only re-parsed when video-tools has actually rewritten them.
    */
   _buildFileProvenanceMap() {
+    const key = [
+      this._statKey(path.join(this.outputDir, 'videos.json')),
+      this._statKey(path.join(this.downloadsDir, 'download_report.json')),
+      this._statKey(this.downloadsDir)
+    ].join('|');
+    if (this._provenanceCache && this._provenanceCache.key === key) {
+      return this._provenanceCache.map;
+    }
+    const map = this._buildFileProvenanceMapUncached();
+    this._provenanceCache = { key, map };
+    return map;
+  }
+
+  _buildFileProvenanceMapUncached() {
     const map = new Map();
     const videosJsonPath = path.join(this.outputDir, 'videos.json');
     const reportPath = path.join(this.downloadsDir, 'download_report.json');
@@ -688,8 +1097,27 @@ class BatchCycleManager {
   }
 
   // ============================================================
-  // ⏱️ RECURRING SCHEDULE (not enabled in production by this phase)
+  // ⏱️ RECURRING SCHEDULE
   // ============================================================
+
+  /**
+   * Delay before the first scheduled cycle. The cadence is anchored to the
+   * persisted start time of the last cycle, so a restart neither resets the
+   * clock (waiting a full interval again) nor runs a cycle immediately if
+   * one just ran. Always at least min(startupDelayMs, interval) and never
+   * more than one interval away.
+   * @param {number} intervalMs
+   * @param {number} [now]
+   * @returns {number}
+   */
+  computeFirstRunDelayMs(intervalMs, now = Date.now()) {
+    const startupDelay = Math.min(this.startupDelayMs, intervalMs);
+    const times = typeof this.batchState.getLastCycleTimes === 'function' ? this.batchState.getLastCycleTimes() : {};
+    const lastStartedMs = Date.parse(times && times.lastCycleStartedAt);
+    if (!Number.isFinite(lastStartedMs)) return startupDelay;
+    const dueInMs = lastStartedMs + intervalMs - now;
+    return Math.min(intervalMs, Math.max(startupDelay, dueInMs));
+  }
 
   /**
    * Starts the recurring schedule. Never overlaps cycles: if a scheduled
@@ -698,18 +1126,39 @@ class BatchCycleManager {
    * batchState.recordSkippedTick() - never queued, never forced.
    * @param {number} [intervalMs] Defaults to 3 hours; pass a short value (e.g. 5000) for local tests only - production default is untouched either way.
    * @param {object} [options]
-   * @param {boolean} [options.runImmediately=false]
+   * @param {boolean} [options.runImmediately=false] Run a cycle right now (VIDEO_PIPELINE_RUN_ON_STARTUP)
    */
   start(intervalMs = DEFAULT_INTERVAL_MS, options = {}) {
-    if (this._timerId) {
+    if (this.isSchedulerActive()) {
       return { status: 'ALREADY_RUNNING' };
     }
     this._acceptingRuns = true;
+    this._abortRequested = false;
+
     if (options.runImmediately) {
       this._scheduledTick();
+      this._startInterval(intervalMs);
+      return { status: 'STARTED', firstRunInMs: 0 };
     }
-    this._timerId = setInterval(() => this._scheduledTick(), intervalMs);
-    return { status: 'STARTED' };
+
+    const delayMs = this.computeFirstRunDelayMs(intervalMs);
+    this._nextRunAt = Date.now() + delayMs;
+    console.log(`${LOG_PREFIX} Scheduler started: first cycle in ${Math.round(delayMs / 1000)}s, then every ${Math.round(intervalMs / 1000)}s.`);
+    this._startupTimerId = setTimeout(() => {
+      this._startupTimerId = null;
+      if (!this._acceptingRuns) return;
+      this._scheduledTick();
+      this._startInterval(intervalMs);
+    }, delayMs);
+    return { status: 'STARTED', firstRunInMs: delayMs };
+  }
+
+  _startInterval(intervalMs) {
+    this._nextRunAt = Date.now() + intervalMs;
+    this._timerId = setInterval(() => {
+      this._nextRunAt = Date.now() + intervalMs;
+      this._scheduledTick();
+    }, intervalMs);
   }
 
   startScheduler(intervalMs = DEFAULT_INTERVAL_MS, options = {}) {
@@ -717,7 +1166,7 @@ class BatchCycleManager {
   }
 
   isSchedulerActive() {
-    return this._timerId !== null;
+    return this._timerId !== null || this._startupTimerId !== null;
   }
 
   getLastCycleSummary() {
@@ -740,14 +1189,25 @@ class BatchCycleManager {
 
   /**
    * Stops the recurring schedule and, if a cycle is actively ACQUIRING,
-   * gracefully stops the underlying acquisition process via the existing
-   * VideoPipelineManager before settling - never leaves an orphan process.
+   * stops the underlying acquisition process via the existing
+   * VideoPipelineManager (itself bounded: graceful, then forced) - never
+   * leaves an orphan process. Waits at most stopActiveRunWaitMs for an
+   * in-flight cycle (e.g. mid-upload) to settle so shutdown stays bounded;
+   * that cycle sees the abort flag and stops picking up new work.
    */
   async stop() {
     this._acceptingRuns = false;
+    if (this._startupTimerId) {
+      clearTimeout(this._startupTimerId);
+      this._startupTimerId = null;
+    }
     if (this._timerId) {
       clearInterval(this._timerId);
       this._timerId = null;
+    }
+    this._nextRunAt = null;
+    if (this._activeRunPromise) {
+      this._abortRequested = true;
     }
 
     if (this.videoPipelineManager.isRunning()) {
@@ -767,13 +1227,20 @@ class BatchCycleManager {
     }
 
     if (this._activeRunPromise) {
-      try {
-        await this._activeRunPromise;
-      } catch (e) {}
+      let timer = null;
+      const settled = await Promise.race([
+        this._activeRunPromise.then(() => true, () => true),
+        new Promise(resolve => { timer = setTimeout(() => resolve(false), this.stopActiveRunWaitMs); })
+      ]);
+      if (timer) clearTimeout(timer);
+      if (!settled) {
+        console.warn(`${LOG_PREFIX} In-flight cycle did not settle within ${this.stopActiveRunWaitMs}ms; `
+          + 'it has been told to abort and will finish in the background.');
+      }
     }
 
     return { status: 'STOPPED' };
   }
 }
 
-module.exports = { BatchCycleManager, generateCycleId, DEFAULT_INTERVAL_MS };
+module.exports = { BatchCycleManager, generateCycleId, assessRecordedAcquisition, DEFAULT_INTERVAL_MS };

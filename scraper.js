@@ -1,6 +1,7 @@
-const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
+const https = require("https");
+const { dataPath, writeJsonAtomicSync } = require("./runtime_paths");
 
 let isScrapingTrending = false;
 let isScrapingBreaking = false;
@@ -42,9 +43,13 @@ async function scrapeTrending() {
             updatedAt: new Date().toISOString(),
             keywords: keywords
           };
-          fs.writeFileSync("trending.json", JSON.stringify(payload, null, 2), "utf8");
-          console.log(`✅ Saved ${keywords.length} trending keywords to trending.json:`);
-          keywords.forEach((kw, i) => console.log(`   ${i + 1}. ${kw}`));
+          try {
+            writeJsonAtomicSync(dataPath("trending.json"), payload);
+            console.log(`✅ Saved ${keywords.length} trending keywords to trending.json:`);
+            keywords.forEach((kw, i) => console.log(`   ${i + 1}. ${kw}`));
+          } catch (writeErr) {
+            console.error("❌ Failed to save trending.json:", writeErr.message);
+          }
         } else {
           console.log("⚠️ No trending keywords parsed!");
         }
@@ -112,8 +117,12 @@ async function scrapeBreakingNews() {
             updatedAt: new Date().toISOString(),
             news: news
           };
-          fs.writeFileSync("breaking.json", JSON.stringify(payload, null, 2), "utf8");
-          console.log(`✅ Saved ${news.length} breaking news items to breaking.json`);
+          try {
+            writeJsonAtomicSync(dataPath("breaking.json"), payload);
+            console.log(`✅ Saved ${news.length} breaking news items to breaking.json`);
+          } catch (writeErr) {
+            console.error("❌ Failed to save breaking.json:", writeErr.message);
+          }
         } else {
           console.log("⚠️ No breaking news items found!");
         }
@@ -156,16 +165,14 @@ async function safeScrapeBreakingNews() {
   }
 }
 
-const https = require("https");
-
-function fetchTelegramEmbed(url) {
+function fetchTelegramEmbed(url, redirectsLeft = 5) {
   return new Promise((resolve) => {
     let embedUrl = url;
     if (!embedUrl.includes("?embed=1")) {
       embedUrl = embedUrl.split("?")[0] + "?embed=1";
     }
 
-    https.get(embedUrl, {
+    const req = https.get(embedUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9"
@@ -173,16 +180,23 @@ function fetchTelegramEmbed(url) {
       timeout: 5000
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchTelegramEmbed(res.headers.location).then(resolve);
+        res.resume();
+        if (redirectsLeft <= 0) {
+          return resolve({ url, title: null, error: "too many redirects" });
+        }
+        return fetchTelegramEmbed(res.headers.location, redirectsLeft - 1).then(resolve);
       }
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {
         resolve(parseEmbedHTML(url, data));
       });
-    }).on("error", (err) => {
+    });
+    req.on("error", (err) => {
       resolve({ url, title: null, error: err.message });
-    }).on("timeout", () => {
+    });
+    req.on("timeout", () => {
+      req.destroy();
       resolve({ url, title: null, error: "timeout" });
     });
   });
@@ -305,7 +319,7 @@ async function refreshTelegramPosts() {
       errors: totalErrors,
       status: totalErrors === 0 ? "SUCCESS" : "PARTIAL"
     };
-    fs.writeFileSync(path.join(__dirname, "channels_cache.json"), JSON.stringify(updateLog, null, 2), "utf8");
+    writeJsonAtomicSync(dataPath("channels_cache.json"), updateLog);
   } catch (err) {
     console.error("❌ Error during periodic Telegram MTProto sync:", err.message);
   } finally {
@@ -313,20 +327,32 @@ async function refreshTelegramPosts() {
   }
 }
 
+let scraperTimers = [];
+
 function startScraperScheduler() {
+  stopScraperScheduler();
+
   // Run trending & breaking news immediately on start
   safeScrapeTrending();
   safeScrapeBreakingNews();
 
-  // Stagger initial Telegram MTProto sync by 5s to allow rolling deployment handoff
-  setTimeout(refreshTelegramPosts, 5000);
+  // Stagger initial Telegram MTProto sync by 5s so startup work is spread out
+  scraperTimers.push(setTimeout(refreshTelegramPosts, 5000));
 
   // Recurring intervals: Trending (10m), Breaking news (3m), Telegram posts (10m)
-  setInterval(safeScrapeTrending, 10 * 60 * 1000);
-  setInterval(safeScrapeBreakingNews, 3 * 60 * 1000);
-  setInterval(refreshTelegramPosts, 10 * 60 * 1000);
+  scraperTimers.push(setInterval(safeScrapeTrending, 10 * 60 * 1000));
+  scraperTimers.push(setInterval(safeScrapeBreakingNews, 3 * 60 * 1000));
+  scraperTimers.push(setInterval(refreshTelegramPosts, 10 * 60 * 1000));
 
   console.log("⏰ Scrapers active: Trending (10m), Breaking news (3m), Telegram posts (10m)");
+}
+
+function stopScraperScheduler() {
+  for (const timer of scraperTimers) {
+    clearTimeout(timer);
+    clearInterval(timer);
+  }
+  scraperTimers = [];
 }
 
 if (require.main === module) {
@@ -340,4 +366,5 @@ module.exports = {
   safeScrapeBreakingNews,
   refreshTelegramPosts,
   startScraperScheduler,
+  stopScraperScheduler,
 };

@@ -19,6 +19,8 @@ const path = require('path');
 const { chromium } = require('playwright');
 const { redactUrl, detectChallenge } = require('./navigation_recovery');
 const { pacedClick } = require('./interaction_pacing');
+const { launchWithExecutableFallback } = require('../avsee/chromium_executable');
+const { dataPath, writeJsonAtomicSync } = require('../runtime_paths');
 
 const ACTION_DELAY_MIN_MS = 3000;
 const ACTION_DELAY_MAX_MS = 5000;
@@ -64,8 +66,8 @@ class VideoSourceCapture {
   constructor(options = {}) {
     this.boardUrl = options.boardUrl || process.env.AVSEE_API_URL || 'https://02.avsee.is/bbs/board.php?bo_table=korea';
     this.postUrl = options.postUrl || null;
-    this.userDataDir = options.userDataDir || path.join(__dirname, '..', 'scratch', 'video_capture_profile');
-    this.outputPath = options.outputPath || path.join(__dirname, '..', 'artifacts', 'video_source_capture.json');
+    this.userDataDir = options.userDataDir || dataPath('browser_control', 'video_capture_profile');
+    this.outputPath = options.outputPath || dataPath('browser_control', 'video_source_capture.json');
     this.headless = options.headless !== undefined ? Boolean(options.headless) : true;
     this.actionDelayMinMs = typeof options.actionDelayMinMs === 'number' ? options.actionDelayMinMs : ACTION_DELAY_MIN_MS;
     this.actionDelayMaxMs = typeof options.actionDelayMaxMs === 'number' ? options.actionDelayMaxMs : ACTION_DELAY_MAX_MS;
@@ -182,7 +184,12 @@ class VideoSourceCapture {
       }
 
       if (this.usePersistentContext) {
-        this.context = await chromium.launchPersistentContext(this.userDataDir, launchOptions);
+        const launched = await launchWithExecutableFallback(
+          (opts) => chromium.launchPersistentContext(this.userDataDir, opts),
+          launchOptions,
+          { logPrefix: '[video-source-capture]' }
+        );
+        this.context = launched.browser;
         this.page = this.context.pages().length > 0 ? this.context.pages()[0] : await this.context.newPage();
       } else {
         const launchArgs = {
@@ -190,7 +197,12 @@ class VideoSourceCapture {
           args: launchOptions.args
         };
         if (this.proxy) launchArgs.proxy = this.proxy;
-        this.browser = await chromium.launch(launchArgs);
+        const launched = await launchWithExecutableFallback(
+          (opts) => chromium.launch(opts),
+          launchArgs,
+          { logPrefix: '[video-source-capture]' }
+        );
+        this.browser = launched.browser;
         this.context = await this.browser.newContext({
           userAgent: launchOptions.userAgent,
           viewport: launchOptions.viewport,
@@ -476,11 +488,6 @@ class VideoSourceCapture {
       result.actionSequence.push('22. Video source captured and validated');
 
       // Save output JSON
-      const outDir = path.dirname(this.outputPath);
-      if (!fs.existsSync(outDir)) {
-        fs.mkdirSync(outDir, { recursive: true });
-      }
-
       let srcHost = null;
       try {
         if (result.video.currentSrc) {
@@ -507,7 +514,7 @@ class VideoSourceCapture {
         }
       };
 
-      fs.writeFileSync(this.outputPath, JSON.stringify(jsonToSave, null, 2), 'utf8');
+      writeJsonAtomicSync(this.outputPath, jsonToSave);
       this.logAction('SAVED_OUTPUT_JSON', { outputPath: this.outputPath });
       result.actionSequence.push(`23. Saved output to ${this.outputPath}`);
 
@@ -526,6 +533,9 @@ class VideoSourceCapture {
         await this.browser.close().catch(() => {});
         this.logAction('CLOSED_BROWSER_INSTANCE');
       }
+      this.context = null;
+      this.browser = null;
+      this.page = null;
     }
   }
 }

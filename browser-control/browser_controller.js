@@ -6,6 +6,7 @@
 
 const { EventEmitter } = require('events');
 const { chromium } = require('playwright');
+const { launchChromium } = require('../avsee/chromium_executable');
 const { NavigationRecovery, redactUrl, CHALLENGE_STATES } = require('./navigation_recovery');
 const { inspectFrames } = require('./frame_inspector');
 const { inspectVideos } = require('./video_inspector');
@@ -150,7 +151,8 @@ class BrowserController extends EventEmitter {
         launchOptions.proxy = options.proxy;
       }
 
-      this.browser = await chromium.launch(launchOptions);
+      const launched = await launchChromium(chromium, launchOptions, { logPrefix: '[BROWSER LAUNCH]' });
+      this.browser = launched.browser;
 
       this.context = await this.browser.newContext({
         userAgent: options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',

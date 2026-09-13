@@ -15,7 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const { ExternalSourceAdapter } = require("./external_source_adapter");
 const { AvseeSourceAdapter } = require("./avsee_source_adapter");
-const { ExternalSourcePublisher } = require("./external_source_publisher");
+const { ExternalSourcePublisher, isCountedAsDelivery } = require("./external_source_publisher");
 const { ExternalSourceState, MAX_GLOBAL_RETENTION } = require("./external_source_state");
 const { getDestinationForTopic } = require("./external_source_destinations");
 
@@ -177,11 +177,12 @@ class ExternalSourcePipeline {
 
         // 4. Ingest into global 150 pool
         console.log(`[AVSEE] pipeline processing: PASS`);
-        await this.publisher.publishAuthorizedItem(normalized, null, destination);
-        console.log(`[AVSEE] dry-run delivery: PASS`);
+        const publishResult = await this.publisher.publishAuthorizedItem(normalized, null, destination);
+        const delivered = isCountedAsDelivery(publishResult);
+        console.log(`[AVSEE] dry-run delivery: ${delivered ? "PASS" : `NOT DELIVERED (${publishResult ? publishResult.status : "no result"})`}`);
 
-        // 5. If within daily delivery quota (15/day), record delivery
-        if (externalRemaining > 0 && summary.queued < externalRemaining) {
+        // 5. If within daily delivery quota (15/day) AND the publisher reported a delivery, record it
+        if (delivered && externalRemaining > 0 && summary.queued < externalRemaining) {
           this.stateStore.recordExternalDelivery(normalized, destination);
           summary.queued++;
         } else {
@@ -297,7 +298,12 @@ class ExternalSourcePipeline {
           const dest = getDestinationForTopic(item.topicKey);
           item.destinationChannel = dest.destinationChannelId;
 
-          await this.publisher.publishAuthorizedItem(item, null, dest);
+          const publishResult = await this.publisher.publishAuthorizedItem(item, null, dest);
+          if (!isCountedAsDelivery(publishResult)) {
+            // e.g. live publishing not implemented: keep items undelivered, stop trying this cycle
+            summary.notDelivered = (summary.notDelivered || 0) + 1;
+            break;
+          }
           this.stateStore.recordExternalDelivery(item, dest);
           summary.queued++;
         }
@@ -305,7 +311,7 @@ class ExternalSourcePipeline {
 
       // Priority 2: Fallback from previously discovered never-delivered items
       const remainingQuotaAfterNew = this.stateStore.getExternalRemainingQuota();
-      if (remainingQuotaAfterNew > 0) {
+      if (remainingQuotaAfterNew > 0 && !summary.notDelivered) {
         const fallbackCandidates = this.stateStore.getNeverDeliveredFallbackCandidates(remainingQuotaAfterNew);
         summary.fallbackCandidates = fallbackCandidates.length;
 
@@ -314,7 +320,11 @@ class ExternalSourcePipeline {
             const dest = getDestinationForTopic(item.routedTopicKey || item.topicKey);
             item.destinationChannel = dest ? dest.destinationChannelId : null;
 
-            await this.publisher.publishAuthorizedItem(item, null, dest);
+            const publishResult = await this.publisher.publishAuthorizedItem(item, null, dest);
+            if (!isCountedAsDelivery(publishResult)) {
+              summary.notDelivered = (summary.notDelivered || 0) + 1;
+              break;
+            }
             this.stateStore.recordExternalDelivery(item, dest);
             summary.queued++;
             summary.fallbackDelivered++;
@@ -393,7 +403,7 @@ class ExternalSourcePipeline {
     } else {
       console.log(`[EXTERNAL_SOURCE] authorization: NOT CONFIGURED`);
     }
-    console.log(`[EXTERNAL_SOURCE] publishing: ${this.publisher && this.publisher.publishEnabled ? "ENABLED" : "DISABLED"}`);
+    console.log(`[EXTERNAL_SOURCE] publishing: ${this.publisher && this.publisher.publishEnabled ? "ENABLED BUT NOT IMPLEMENTED (nothing will be delivered)" : "DISABLED"}`);
     console.log(`[EXTERNAL_SOURCE] media download: ${this.dryRun ? "DISABLED" : "ENABLED"}`);
 
     if (this.adapter && typeof this.adapter.checkBrowserLaunch === "function") {
@@ -437,7 +447,9 @@ class ExternalSourcePipeline {
   }
 
   /**
-   * Executes a single media cycle via CategoryRoundRobinPipeline when enabled
+   * Executes a single media cycle via CategoryRoundRobinPipeline when enabled.
+   * NOTE: intentionally NOT called by startScheduler(); wiring it in would
+   * activate media downloading, which is pending a product decision.
    * @param {object} [options]
    * @returns {Promise<object>}
    */
@@ -454,21 +466,49 @@ class ExternalSourcePipeline {
   }
 
   /**
-   * Stops the recurring scheduler cleanly
+   * Stops the recurring scheduler cleanly: clears the poll interval, shuts the
+   * media pipeline down, aborts in-flight downloads and closes open browsers.
+   * Synchronous callers can ignore the returned promise; it resolves once
+   * asynchronous cleanup has finished (it never rejects).
+   * @returns {Promise<void>}
    */
   stopScheduler() {
     if (this.timerId) {
       clearInterval(this.timerId);
       this.timerId = null;
     }
-    if (this.mediaPipeline && typeof this.mediaPipeline.stopPipeline === "function") {
-      try {
-        this.mediaPipeline.stopPipeline();
-      } catch (e) {}
-    }
     this.isStarted = false;
     this.isPollingActive = false;
+
+    const cleanupTasks = [];
+
+    if (this.mediaPipeline && typeof this.mediaPipeline.shutdown === "function") {
+      cleanupTasks.push(
+        Promise.resolve()
+          .then(() => this.mediaPipeline.shutdown())
+          .catch(err => console.warn(`⚠️ [EXTERNAL_SOURCE] Media pipeline shutdown warning: ${err.message}`))
+      );
+    }
+
+    if (this.adapter && this.adapter.activeDownloads && this.adapter.activeDownloads.size > 0 && typeof this.adapter.abortActiveDownloads === "function") {
+      try {
+        this.adapter.abortActiveDownloads("External source scheduler stopped");
+      } catch (e) {}
+      if (typeof this.adapter.resetShutdown === "function") {
+        this.adapter.resetShutdown();
+      }
+    }
+
+    if (this.adapter && typeof this.adapter.closeActiveBrowsers === "function") {
+      cleanupTasks.push(
+        Promise.resolve()
+          .then(() => this.adapter.closeActiveBrowsers())
+          .catch(err => console.warn(`⚠️ [EXTERNAL_SOURCE] Browser cleanup warning: ${err.message}`))
+      );
+    }
+
     console.log(`[EXTERNAL_SOURCE] scheduler stopped cleanly`);
+    return Promise.all(cleanupTasks).then(() => undefined);
   }
 }
 
@@ -485,6 +525,12 @@ function getPipelineInstance(config = {}) {
 module.exports = {
   ExternalSourcePipeline,
   POLLING_INTERVAL_MS,
-  getPipelineInstance,
-  instance: getPipelineInstance()
+  getPipelineInstance
 };
+
+// Lazy singleton accessor: requiring this module must not construct the
+// pipeline (which loads/writes state files and builds adapters).
+Object.defineProperty(module.exports, "instance", {
+  enumerable: true,
+  get: () => getPipelineInstance()
+});

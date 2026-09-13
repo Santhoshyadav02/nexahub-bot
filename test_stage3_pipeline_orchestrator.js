@@ -13,6 +13,30 @@
  * - Zero production Telegram traffic.
  */
 
+// Destination IDs are env-only (unset -> disabled/skipped). Provide the staging
+// test IDs this suite asserts on before any destination config is loaded.
+const TEST_EXTERNAL_DESTINATIONS = {
+  EXTERNAL_DEST_MYANMAR: "-1002000000001",
+  EXTERNAL_DEST_EVERGRANDE: "-1002000000002",
+  EXTERNAL_DEST_MYANMAR_WOMEN: "-1002000000003",
+  EXTERNAL_DEST_SISTER_SNAKE: "-1002000000004",
+  EXTERNAL_DEST_HAS_WORK: "-1002000000005",
+  EXTERNAL_DEST_BULLYING: "-1002000000006",
+  EXTERNAL_DEST_DACIGE: "-1002000000007",
+  EXTERNAL_DEST_SENIOR_YEAR: "-1002000000008",
+  EXTERNAL_DEST_SICHUAN: "-1002000000009",
+  EXTERNAL_DEST_HU_SIYUAN: "-1002000000010",
+  EXTERNAL_DEST_KEPT_LOVER: "-1002000000001",
+  EXTERNAL_DEST_DIDI: "-1002000000002",
+  EXTERNAL_DEST_GENERAL: "-1002000000000"
+};
+for (const [key, value] of Object.entries(TEST_EXTERNAL_DESTINATIONS)) {
+  if (!process.env[key]) process.env[key] = value;
+}
+for (let i = 1; i <= 10; i++) {
+  if (!process.env[`EXTERNAL_DEST_${i}`]) process.env[`EXTERNAL_DEST_${i}`] = `-1002000000${String(i).padStart(3, "0")}`;
+}
+
 const http = require("http");
 const fs = require("fs");
 const path = require("path");

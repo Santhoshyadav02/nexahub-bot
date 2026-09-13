@@ -216,6 +216,7 @@ async function runRuntimeTests() {
   section('TEST 3: Invalid Config Fail-Closed');
   const runtime3 = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: null,
     stagingChatId: '-1009990001'
   });
@@ -238,6 +239,7 @@ async function runRuntimeTests() {
   const env4 = freshEnv('test4_valid_config');
   const runtime4 = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:8080/',
     stagingChatId: '-1009990001',
     intervalMs: 10800000,
@@ -312,6 +314,7 @@ async function runRuntimeTests() {
 
   const runtime6 = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: serverUrl6,
     stagingChatId: '-1009990001',
     downloadsDir: env6.downloadsDir,
@@ -385,6 +388,7 @@ async function runRuntimeTests() {
   section('TEST 10: Config Safety on Forbidden Channels');
   const runtime10 = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:8080/',
     stagingChatId: '@ccsfvk', // Protected production channel
     autoPublish: true
@@ -396,6 +400,7 @@ async function runRuntimeTests() {
   // Missing staging with autoPublish=true
   const runtime10B = new VideoPipelineRuntime({
     enabled: true,
+    sourceMode: 'fixture', // explicit: the runtime no longer defaults to any source
     acquisitionUrl: 'http://127.0.0.1:8080/',
     stagingChatId: null,
     autoPublish: true
