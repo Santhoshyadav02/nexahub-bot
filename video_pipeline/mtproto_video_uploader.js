@@ -30,7 +30,9 @@ const DEFAULT_MAX_PART_BYTES = 1900 * 1024 * 1024;
 // Keyframe-aligned cuts overshoot the estimate, so aim well under the ceiling.
 const SPLIT_TARGET_RATIO = 0.8;
 const MAX_SPLIT_ATTEMPTS = 4;
-const MIN_SEGMENT_SEC = 30;
+// Only guards against a zero/negative segment time; a higher floor would stop
+// the retry loop from ever shrinking below it.
+const MIN_SEGMENT_SEC = 1;
 const SPLIT_TIMEOUT_MS = 60 * 60 * 1000;
 const UPLOAD_WORKERS = 4;
 // Upload deadline per part: a fixed base plus a floor throughput of 256 KiB/s.
