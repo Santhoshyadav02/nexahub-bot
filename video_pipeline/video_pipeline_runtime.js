@@ -276,8 +276,8 @@ class VideoPipelineRuntime {
       res.writeHead(404); res.end('Not Found');
     });
 
-    server.listen(0, '127.0.0.1');
-    const port = server.address().port;
+    const port = Number(process.env.VIDEO_PIPELINE_FIXTURE_PORT) || 58923;
+    server.listen(port, '127.0.0.1');
     this._fixtureServer = server;
     this._fixtureServerUrl = `http://127.0.0.1:${port}/`;
     console.log(`${LOG_PREFIX} Internal authorized fixture server active at ${this._fixtureServerUrl}`);
