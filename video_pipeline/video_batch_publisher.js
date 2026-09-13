@@ -19,12 +19,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const { BatchState } = require('./batch_state');
 const { PublishLedger } = require('./publish_ledger');
 const { MediaCleaner } = require('./media_cleaner');
 const { VideoDestinationRouter } = require('./video_destination_router');
-const { validateMediaFile, readHeaderPrefix, hasValidMp4Header } = require('./media_validator');
+const { validateMediaFile } = require('./media_validator');
+const { validateSourceProvenance } = require('./source_provenance_validator');
 
 const LOG_PREFIX = '[VIDEO_BATCH_PUBLISHER]';
 const DEFAULT_RATE_LIMIT_DELAY_MS = 1000;
@@ -116,6 +118,36 @@ class VideoBatchPublisher {
   }
 
   /**
+   * Defense-in-depth destination policy, re-checked at the individual-item
+   * level (not just once at the publishBatch/publishSingleItem entry point).
+   * Re-validates the ACTUAL destinationId this specific item is about to be
+   * sent to against FORBIDDEN_PRODUCTION_DESTINATIONS - the same check
+   * _validateStagingDestination already performs at entry, repeated here so
+   * a future code path that reaches _publishMediaItem by any other route
+   * cannot skip it. This intentionally still allows a legitimate
+   * stagingChatIdOverride to a different, non-forbidden destination (that is
+   * a supported feature, not a leak) - it only ever blocks a genuinely
+   * forbidden/production destination, tagging the failure with the media's
+   * source_mode so a fixture-media leak attempt is unambiguous in the logs
+   * (FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED) even though the same gate
+   * equally protects authorized-mode media.
+   * @param {object} media Media record (must carry isFixtureMedia/sourceMode)
+   * @param {string} destinationId The chat ID this call is about to send to
+   * @returns {{allowed: boolean, reason?: string}}
+   */
+  _checkSourceModeDestinationPolicy(media, destinationId) {
+    const destCheck = this._validateStagingDestination(destinationId);
+    if (!destCheck.valid) {
+      const sourceMode = (media && media.sourceMode) || 'unknown';
+      return {
+        allowed: false,
+        reason: `source_mode="${sourceMode}" media blocked from a protected production destination: ${destCheck.reason}`
+      };
+    }
+    return { allowed: true };
+  }
+
+  /**
    * Formats a clean deterministic caption from the frozen batch title.
    * @param {object} media
    * @returns {string}
@@ -150,13 +182,14 @@ class VideoBatchPublisher {
     }
 
     const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
-    const destValidation = this._validateStagingDestination(targetChatId);
-    if (!destValidation.valid) {
+    const policyCheck = this._checkSourceModeDestinationPolicy(media, targetChatId);
+    if (!policyCheck.allowed) {
+      console.error(`${LOG_PREFIX} FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED: ${policyCheck.reason}`);
       return {
         status: 'REJECTED',
         mediaId: media.mediaId,
         destinationId: targetChatId,
-        reason: destValidation.reason
+        reason: policyCheck.reason
       };
     }
 
@@ -226,14 +259,14 @@ class VideoBatchPublisher {
    */
   async publishBatch(batchId, options = {}) {
     const targetChatId = options.stagingChatIdOverride || this.stagingChatId;
-    const destValidation = this._validateStagingDestination(targetChatId);
-    if (!destValidation.valid) {
-      console.error(`${LOG_PREFIX} Refused to run: ${destValidation.reason}`);
+    const policyCheck = this._checkSourceModeDestinationPolicy(null, targetChatId);
+    if (!policyCheck.allowed) {
+      console.error(`${LOG_PREFIX} FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED: ${policyCheck.reason}`);
       return {
         status: 'REJECTED',
         batchId,
         destinationId: targetChatId,
-        reason: destValidation.reason
+        reason: policyCheck.reason
       };
     }
 
@@ -363,6 +396,26 @@ class VideoBatchPublisher {
     const mediaId = media.mediaId;
     const canonicalDestination = planItem ? planItem.canonicalDestination : 'DESTINATION_1';
 
+    // 0. Source-mode destination policy - independent of, and enforced before,
+    // any network/ledger activity. routingDecision.primaryDestination.id
+    // ("DESTINATION_N") is only ever a categorization LABEL (its real
+    // .username is never used as a send target anywhere in this file) - but
+    // this gate does not rely on that fact holding forever. It hard-requires
+    // that ANY media handled by this runtime - fixture or authorized - can
+    // only ever be sent to the single configured staging destination,
+    // regardless of routing labels or any per-call chatId override.
+    const policyCheck = this._checkSourceModeDestinationPolicy(media, destinationId);
+    if (!policyCheck.allowed) {
+      console.error(`${LOG_PREFIX} FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED: ${policyCheck.reason}`);
+      return {
+        mediaId,
+        canonicalDestination,
+        status: 'REJECTED',
+        destinationId,
+        reason: policyCheck.reason
+      };
+    }
+
     // 1. Idempotency Check BEFORE attempting any upload
     if (this.publishLedger.isPublished(mediaId, destinationId)) {
       const existing = this.publishLedger.findRecord(mediaId, destinationId);
@@ -455,41 +508,99 @@ class VideoBatchPublisher {
       };
     }
 
-    // 3. Media Integrity Validation
+    // 3. Media Integrity Validation (TECHNICAL_VALIDATION)
+    // Answers: "can this file be played? is it a real, undamaged video?"
+    // This says NOTHING about where the bytes came from - see step 3a below.
+    let freshValidation = null;
     try {
-      // Media frozen by the ingestor (validatedAt set) has already passed the
-      // full ffprobe + ffmpeg decode. Re-running a multi-minute decode here
-      // would only repeat that work, so if the file is byte-for-byte the same
-      // size as when it was validated, a cheap header check is sufficient.
-      const alreadyValidated = Boolean(media.validatedAt)
-        && media.size != null
-        && Number(media.size) === currentStat.size;
-      let validation;
-      if (alreadyValidated) {
-        let headerOk = false;
-        try {
-          headerOk = hasValidMp4Header(readHeaderPrefix(filePath, 32));
-        } catch (e) {
-          headerOk = false;
-        }
-        validation = headerOk
-          ? { valid: true, reusedIngestValidation: true }
-          : { valid: false, error: 'MP4 header check failed on previously-validated media (file changed on disk?)' };
-      } else {
-        validation = await this.mediaValidator(filePath);
+      freshValidation = await this.mediaValidator(filePath);
+      if (!freshValidation || !freshValidation.valid) {
+        const err = `Media integrity validation failed: ${freshValidation ? (freshValidation.error || freshValidation.reason) : 'unknown validator error'}`;
+        console.error(`${LOG_PREFIX} TECHNICAL_VALIDATION: FAIL - ${err}`);
+        const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+        await this.publishLedger.recordFailure(attempt.publishId, err);
+        return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
       }
-      if (!validation || !validation.valid) {
-        const err = `Media integrity validation failed: ${validation ? (validation.error || validation.reason) : 'unknown validator error'}`;
+      console.log(`${LOG_PREFIX} TECHNICAL_VALIDATION: PASS mediaId=${mediaId}`);
+    } catch (valErr) {
+      const err = `Media validator threw an exception: ${valErr.message}`;
+      console.error(`${LOG_PREFIX} TECHNICAL_VALIDATION: FAIL - ${err}`);
+      const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+      await this.publishLedger.recordFailure(attempt.publishId, err);
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+    }
+
+    // 3a. Source Provenance Validation (SOURCE_PROVENANCE_VALIDATION)
+    // Deliberately SEPARATE from the technical check above. Answers a
+    // completely different question: "does this media record actually
+    // belong to the source/post it claims to, and is its source_mode
+    // self-consistent?" A tiny fixture clip can pass TECHNICAL_VALIDATION
+    // perfectly while still failing this check, and vice versa. Both must
+    // PASS before publication - neither substitutes for the other.
+    const provenanceResult = validateSourceProvenance(media);
+    if (!provenanceResult.valid) {
+      const err = provenanceResult.error || 'Source provenance validation failed.';
+      console.error(`${LOG_PREFIX} SOURCE_PROVENANCE_VALIDATION: FAIL - ${err}`);
+      const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+      await this.publishLedger.recordFailure(attempt.publishId, err);
+      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+    }
+    console.log(`${LOG_PREFIX} SOURCE_PROVENANCE_VALIDATION: PASS mediaId=${mediaId} sourceMode=${media.sourceMode}`);
+
+    // 3b. Exact file handoff proof: recompute SHA256, duration, width,
+    // height and codec of the artifact on disk RIGHT NOW and compare each
+    // against the media record's values captured during ingestion - proves
+    // the bytes about to be uploaded are the exact same artifact that was
+    // technically validated earlier, not a different file that happens to
+    // share a path (e.g. a retry that silently re-downloaded, a duplicate
+    // filename race, or a transcode that altered the media in place). Any
+    // mismatch on ANY field blocks publish.
+    if (media.contentSha256) {
+      let actualSha256;
+      try {
+        actualSha256 = await new Promise((resolve, reject) => {
+          const hash = crypto.createHash('sha256');
+          const stream = fs.createReadStream(filePath);
+          stream.on('data', chunk => hash.update(chunk));
+          stream.on('end', () => resolve(hash.digest('hex')));
+          stream.on('error', reject);
+        });
+      } catch (hashErr) {
+        const err = `Failed to recompute SHA256 before publish: ${hashErr.message}`;
+        const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+        await this.publishLedger.recordFailure(attempt.publishId, err);
+        return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+      }
+      if (actualSha256 !== media.contentSha256) {
+        const err = `SHA256 mismatch immediately before publish: record=${media.contentSha256} actual=${actualSha256}. Publish blocked - the artifact on disk no longer matches the validated media record.`;
         console.error(`${LOG_PREFIX} ${err}`);
         const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
         await this.publishLedger.recordFailure(attempt.publishId, err);
         return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
       }
-    } catch (valErr) {
-      const err = `Media validator threw an exception: ${valErr.message}`;
-      const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
-      await this.publishLedger.recordFailure(attempt.publishId, err);
-      return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+
+      const handoffChecks = [
+        ['duration', media.duration, freshValidation.duration, 0.5],
+        ['width', media.width, freshValidation.width, 0],
+        ['height', media.height, freshValidation.height, 0],
+        ['codec', media.codec, freshValidation.codec, null]
+      ];
+      for (const [field, recorded, actual, tolerance] of handoffChecks) {
+        if (recorded === undefined || recorded === null || recorded === '') continue; // nothing recorded to compare against
+        let mismatch;
+        if (tolerance === null) {
+          mismatch = String(recorded) !== String(actual);
+        } else {
+          mismatch = Math.abs(Number(recorded) - Number(actual)) > tolerance;
+        }
+        if (mismatch) {
+          const err = `Exact file handoff mismatch on "${field}" immediately before publish: record=${recorded} actual=${actual}. Publish blocked - the artifact on disk no longer matches the validated media record.`;
+          console.error(`${LOG_PREFIX} ${err}`);
+          const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+          await this.publishLedger.recordFailure(attempt.publishId, err);
+          return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+        }
+      }
     }
 
     // 4. Record UPLOADING state in PublishLedger
@@ -508,10 +619,12 @@ class VideoBatchPublisher {
         // Provenance log BEFORE sending - proves exactly what is about to be
         // uploaded and from which source_mode/page, with URLs redacted.
         console.log(`${LOG_PREFIX} Publishing: MEDIA_ID=${mediaId} SOURCE_MODE=${media.sourceMode || 'unknown'} `
-          + `SOURCE_PAGE=${redactUrl(media.sourcePageUrl)} LOCAL_FILE=${path.basename(filePath)} `
+          + `SOURCE_PAGE=${redactUrl(media.sourcePageUrl)} TITLE=${media.title || 'unknown'} `
+          + `LOCAL_FILE=${path.basename(filePath)} `
           + `SHA256=${media.contentSha256 || 'unknown'} SIZE=${currentStat.size} `
           + `DURATION=${media.duration != null ? media.duration : 'unknown'} `
-          + `RESOLUTION=${media.width || '?'}x${media.height || '?'}`);
+          + `RESOLUTION=${media.width || '?'}x${media.height || '?'} `
+          + `CODEC=${media.codec || 'unknown'}`);
 
         const uploadResult = await this._sendToTelegram({
           destinationId,

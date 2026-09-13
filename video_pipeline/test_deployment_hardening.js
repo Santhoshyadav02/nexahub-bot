@@ -237,12 +237,21 @@ async function testAsyncValidation() {
 }
 
 async function testPublisherReusesIngestValidation() {
-  section('B8: publisher does not re-run the full decode for media the ingestor already validated');
+  section('B8: publisher re-validates every upload (fresh technical + provenance + SHA256 handoff checks)');
   const dir = freshDir('b8_publisher');
   const downloads = path.join(dir, 'downloads');
   const file = writeFakeMp4(path.join(downloads, 'validated.mp4'), 2048);
+  const sha256Of = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+  const provenance = (id, filePath) => ({
+    sourceMode: 'fixture',
+    isFixtureMedia: true,
+    sourcePageUrl: `http://127.0.0.1:58923/post/${id}`,
+    sourceVideoUrl: `http://127.0.0.1:58923/media/${id}.mp4`,
+    contentSha256: sha256Of(filePath)
+  });
   let validatorCalls = 0;
-  const bot = { sendVideo: async () => ({ message_id: 77 }) };
+  const sent = [];
+  const bot = { sendVideo: async (...args) => { sent.push(args); return { message_id: 77 }; } };
   const publisher = new VideoBatchPublisher({
     stagingChatId: DEST,
     telegramClient: bot,
@@ -252,17 +261,22 @@ async function testPublisherReusesIngestValidation() {
     mediaValidator: async () => { validatorCalls++; return { valid: true }; }
   });
 
-  const r1 = await publisher.publishSingleItem('c1', { mediaId: 'm_validated', title: 'Validated', filePath: file, size: 2048, validatedAt: new Date().toISOString() });
-  check('pre-validated media publishes', r1.status === 'PUBLISHED', JSON.stringify(r1));
-  check('full validator was NOT called again for pre-validated media', validatorCalls === 0, `calls=${validatorCalls}`);
+  const r1 = await publisher.publishSingleItem('c1', { mediaId: 'm_validated', title: 'Validated', filePath: file, size: 2048, validatedAt: new Date().toISOString(), ...provenance('m_validated', file) });
+  check('media with valid provenance publishes', r1.status === 'PUBLISHED', JSON.stringify(r1));
+  check('technical validator runs again even for ingest-validated media', validatorCalls === 1, `calls=${validatorCalls}`);
 
-  const r2 = await publisher.publishSingleItem('c1', { mediaId: 'm_unvalidated', title: 'Unvalidated', filePath: file, size: 2048 });
-  check('media without ingest validation publishes', r2.status === 'PUBLISHED', JSON.stringify(r2));
-  check('full validator IS called for media never validated', validatorCalls === 1, `calls=${validatorCalls}`);
+  const bare = writeFakeMp4(path.join(downloads, 'bare.mp4'), 2048);
+  const sentBefore = sent.length;
+  const r2 = await publisher.publishSingleItem('c1', { mediaId: 'm_no_provenance', title: 'No provenance', filePath: bare, size: 2048 });
+  check('media without provenance fields is blocked', r2.status === 'FAILED' && /provenance/i.test(r2.reason || ''), JSON.stringify(r2));
+  check('nothing uploaded for media without provenance', sent.length === sentBefore);
 
-  const changed = writeFakeMp4(path.join(downloads, 'changed.mp4'), 4096);
-  await publisher.publishSingleItem('c1', { mediaId: 'm_changed', title: 'Changed', filePath: changed, size: 2048, validatedAt: new Date().toISOString() });
-  check('full validator IS called when the file size changed since validation', validatorCalls === 2, `calls=${validatorCalls}`);
+  const changed = writeFakeMp4(path.join(downloads, 'changed.mp4'), 2048);
+  const staleRecord = provenance('m_changed', changed);
+  fs.appendFileSync(changed, Buffer.from('tampered-after-hash'));
+  const r3 = await publisher.publishSingleItem('c1', { mediaId: 'm_changed', title: 'Changed', filePath: changed, size: 2048, ...staleRecord });
+  check('file changed after hashing is blocked by the SHA256 handoff check', r3.status === 'FAILED' && /SHA256 mismatch/.test(r3.reason || ''), JSON.stringify(r3));
+  check('nothing uploaded for the changed file', sent.length === sentBefore);
 }
 
 // ============================================================

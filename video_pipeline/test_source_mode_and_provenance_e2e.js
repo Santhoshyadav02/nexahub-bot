@@ -38,6 +38,20 @@ function check(label, cond, detail = '') {
   else { console.error(`❌ ${label}${detail ? ' - ' + detail : ''}`); failed++; }
 }
 
+// Shared provenance fields for hand-built test media records (Sections 2-4
+// construct media objects directly rather than through the real fixture
+// cycle, so they must carry the same sourcePageUrl/sourceVideoUrl/
+// isFixtureMedia fields the real pipeline now populates, or the new
+// SOURCE_PROVENANCE_VALIDATION gate correctly rejects them as incomplete).
+const TEST_PROVENANCE_FIXTURE = {
+  sourcePageUrl: 'http://127.0.0.1:1/post/test-fixture',
+  sourceVideoUrl: 'http://127.0.0.1:1/video/test-fixture.mp4'
+};
+const TEST_PROVENANCE_AUTHORIZED = {
+  sourcePageUrl: 'https://authorized-test-source.internal/posts/test',
+  sourceVideoUrl: 'https://authorized-test-source.internal/video/test.mp4'
+};
+
 const WORKSPACE = path.join(__dirname, '..', 'scratch', 'source_mode_provenance_e2e');
 
 function freshEnv(tag) {
@@ -246,6 +260,36 @@ async function testProvenanceThreading() {
     const pubRecord = publishRecords[0];
     check('publish record has readBackVerified=true (strict path, real metadata matched)', pubRecord.readBackVerified === true, JSON.stringify(pubRecord));
 
+    // PHASE 7: the persisted publish ledger record IS the per-item
+    // verification record - MEDIA_ID, TITLE, LOCAL_SHA256, LOCAL_SIZE,
+    // LOCAL_DURATION, LOCAL_RESOLUTION, TELEGRAM_MESSAGE_ID, DESTINATION,
+    // READBACK_STATUS must all be present and non-null for every published
+    // item, not just readBackVerified=true (which only proves Telegram
+    // accepted SOMETHING, not that it was the correct video).
+    console.log('PHASE 7 VERIFICATION RECORD: ' + JSON.stringify({
+      MEDIA_ID: pubRecord.mediaId, TITLE: pubRecord.title, LOCAL_SHA256: pubRecord.contentSha256,
+      LOCAL_SIZE: pubRecord.size, LOCAL_DURATION: pubRecord.duration,
+      LOCAL_RESOLUTION: `${pubRecord.width}x${pubRecord.height}`,
+      TELEGRAM_MESSAGE_ID: pubRecord.telegramMessageId, DESTINATION: pubRecord.destinationId,
+      READBACK_STATUS: pubRecord.readBackVerified
+    }));
+    check('verification record: MEDIA_ID present', Boolean(pubRecord.mediaId));
+    check('verification record: TITLE present', Boolean(pubRecord.title));
+    check('verification record: LOCAL_SHA256 present (64 hex chars)', /^[0-9a-f]{64}$/.test(pubRecord.contentSha256 || ''));
+    check('verification record: LOCAL_SIZE present and > 0', pubRecord.size > 0);
+    check('verification record: LOCAL_DURATION present and > 0', pubRecord.duration > 0);
+    check('verification record: LOCAL_RESOLUTION present (width & height > 0)', pubRecord.width > 0 && pubRecord.height > 0);
+    check('verification record: TELEGRAM_MESSAGE_ID present', Boolean(pubRecord.telegramMessageId));
+    check('verification record: DESTINATION present', Boolean(pubRecord.destinationId));
+    check('verification record: READBACK_STATUS explicitly recorded (not undefined)', pubRecord.readBackVerified !== undefined);
+    console.log('LIMITATION (stated explicitly, not glossed over): this verification compares Telegram\'s '
+      + 'read-back metadata (file_size/duration/width/height from the Bot API sendVideo response) against the '
+      + 'locally computed values. The Bot API does not expose a raw byte-for-byte download of the stored file '
+      + 'within this harness, so byte-for-byte identity between the uploaded artifact and what Telegram stores '
+      + 'is NOT independently re-verified after upload - metadata identity (SHA256 of the LOCAL artifact immediately '
+      + 'before send, matched against Telegram-reported size/duration/resolution) is the strongest proof available '
+      + 'through this API, and is what is actually being claimed here - not full byte-for-byte re-download comparison.');
+
     const mediaLedgerData = JSON.parse(fs.readFileSync(path.join(env.stateDir, 'media_state.json'), 'utf8'));
     const mediaRecords = Object.values(mediaLedgerData.records || {});
     check('media ledger has exactly one record', mediaRecords.length === 1, `count=${mediaRecords.length}`);
@@ -279,6 +323,7 @@ async function testReadBackVerification() {
     const stat = fs.statSync(mp4);
     const localCopy = path.join(env.downloadsDir, 'item.mp4');
     fs.copyFileSync(mp4, localCopy);
+    const localSha256 = crypto.createHash('sha256').update(fs.readFileSync(localCopy)).digest('hex');
 
     const batchState = new BatchState({ statePath: path.join(env.stateDir, 'batch_state.json') });
     const publishLedger = new PublishLedger({ ledgerPath: path.join(env.stateDir, 'publish_state.json') });
@@ -288,7 +333,7 @@ async function testReadBackVerification() {
       stagingChatId: '-1009990001', telegramClient: mockBot, batchState, publishLedger, mediaCleaner, enableCleanup: true
     });
 
-    const media = { mediaId: 'rb_match_1', title: 'Read-back Match Test', filePath: localCopy, contentSha256: 'abc', size: stat.size, duration: 2, width: 320, height: 240, sourceMode: 'fixture' };
+    const media = { mediaId: 'rb_match_1', title: 'Read-back Match Test', filePath: localCopy, contentSha256: localSha256, size: stat.size, duration: 2, width: 320, height: 240, sourceMode: 'fixture', isFixtureMedia: true, ...TEST_PROVENANCE_FIXTURE };
     const res = await publisher.publishSingleItem('cycle_rb_1', media);
     check('matching metadata -> PUBLISHED', res.status === 'PUBLISHED', JSON.stringify(res));
     check('matching metadata -> readBackVerified true', res.readBackVerified === true);
@@ -302,6 +347,7 @@ async function testReadBackVerification() {
     const stat = fs.statSync(mp4);
     const localCopy = path.join(env.downloadsDir, 'item.mp4');
     fs.copyFileSync(mp4, localCopy);
+    const localSha256 = crypto.createHash('sha256').update(fs.readFileSync(localCopy)).digest('hex');
 
     const batchState = new BatchState({ statePath: path.join(env.stateDir, 'batch_state.json') });
     const publishLedger = new PublishLedger({ ledgerPath: path.join(env.stateDir, 'publish_state.json') });
@@ -311,7 +357,7 @@ async function testReadBackVerification() {
       stagingChatId: '-1009990001', telegramClient: mockBot, batchState, publishLedger, mediaCleaner, enableCleanup: true
     });
 
-    const media = { mediaId: 'rb_mismatch_1', title: 'Read-back Mismatch Test', filePath: localCopy, contentSha256: 'abc', size: stat.size, duration: 2, width: 320, height: 240, sourceMode: 'fixture' };
+    const media = { mediaId: 'rb_mismatch_1', title: 'Read-back Mismatch Test', filePath: localCopy, contentSha256: localSha256, size: stat.size, duration: 2, width: 320, height: 240, sourceMode: 'fixture', isFixtureMedia: true, ...TEST_PROVENANCE_FIXTURE };
     const res = await publisher.publishSingleItem('cycle_rb_2', media);
     check('duration mismatch -> still PUBLISHED (Telegram genuinely accepted it)', res.status === 'PUBLISHED', JSON.stringify(res));
     check('duration mismatch -> readBackVerified false', res.readBackVerified === false);
@@ -329,6 +375,7 @@ async function testReadBackVerification() {
     const mp4 = getRealMp4();
     const localCopy = path.join(env.downloadsDir, 'item.mp4');
     fs.copyFileSync(mp4, localCopy);
+    const localSha256 = crypto.createHash('sha256').update(fs.readFileSync(localCopy)).digest('hex');
 
     const batchState = new BatchState({ statePath: path.join(env.stateDir, 'batch_state.json') });
     const publishLedger = new PublishLedger({ ledgerPath: path.join(env.stateDir, 'publish_state.json') });
@@ -338,11 +385,113 @@ async function testReadBackVerification() {
       stagingChatId: '-1009990001', telegramClient: minimalBot, batchState, publishLedger, mediaCleaner, enableCleanup: true
     });
 
-    const media = { mediaId: 'rb_minimal_1', title: 'Legacy Mock Test', filePath: localCopy, contentSha256: 'abc', size: 123, sourceMode: 'fixture' };
+    const media = { mediaId: 'rb_minimal_1', title: 'Legacy Mock Test', filePath: localCopy, contentSha256: localSha256, size: fs.statSync(localCopy).size, sourceMode: 'fixture', isFixtureMedia: true, ...TEST_PROVENANCE_FIXTURE };
     const res = await publisher.publishSingleItem('cycle_rb_3', media);
     check('minimal mock (no metadata) -> still PUBLISHED', res.status === 'PUBLISHED', JSON.stringify(res));
     check('minimal mock -> treated as verified (backward compatible), not a fabricated failure', res.readBackVerified === true);
     check('minimal mock -> cleanup still proceeds (existing test suites depend on this)', res.cleaned === true);
+  }
+}
+
+// ================================================================
+// SECTION 4: DESTINATION ROUTING POLICY (fixture/authorized safety)
+// ================================================================
+async function testDestinationRoutingPolicy() {
+  console.log('\n=== SECTION 4: Destination routing policy ===');
+  const STAGING = '-1009990001';
+  const PRODUCTION = '@ccsfvk'; // real entry in FORBIDDEN_PRODUCTION_DESTINATIONS
+
+  function makeHarness(tag) {
+    const env = freshEnv(tag);
+    const mp4 = getRealMp4();
+    const localCopy = path.join(env.downloadsDir, 'item.mp4');
+    fs.copyFileSync(mp4, localCopy);
+    const sha256 = crypto.createHash('sha256').update(fs.readFileSync(localCopy)).digest('hex');
+    const batchState = new BatchState({ statePath: path.join(env.stateDir, 'batch_state.json') });
+    const publishLedger = new PublishLedger({ ledgerPath: path.join(env.stateDir, 'publish_state.json') });
+    const mediaCleaner = new MediaCleaner({ publishLedger, allowedDirectory: env.downloadsDir });
+    const mockBot = makeRealisticMockBot();
+    return { env, localCopy, sha256, batchState, publishLedger, mediaCleaner, mockBot };
+  }
+
+  // A. fixture + staging = ALLOWED
+  {
+    const h = makeHarness('policy_fixture_staging');
+    const publisher = new VideoBatchPublisher({
+      stagingChatId: STAGING, telegramClient: h.mockBot, batchState: h.batchState,
+      publishLedger: h.publishLedger, mediaCleaner: h.mediaCleaner, enableCleanup: true
+    });
+    const media = { mediaId: 'policy_a', title: 'Fixture Staging Test', filePath: h.localCopy, contentSha256: h.sha256, size: fs.statSync(h.localCopy).size, sourceMode: 'fixture', isFixtureMedia: true, ...TEST_PROVENANCE_FIXTURE };
+    const res = await publisher.publishSingleItem('cycle_policy_a', media);
+    check('fixture + staging -> ALLOWED (PUBLISHED)', res.status === 'PUBLISHED', JSON.stringify(res));
+    check('fixture + staging -> real sendVideo call made', h.mockBot.calls.length === 1);
+  }
+
+  // B. fixture + production destination override = BLOCKED, FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED, no send
+  {
+    const h = makeHarness('policy_fixture_production');
+    const publisher = new VideoBatchPublisher({
+      stagingChatId: STAGING, telegramClient: h.mockBot, batchState: h.batchState,
+      publishLedger: h.publishLedger, mediaCleaner: h.mediaCleaner, enableCleanup: true
+    });
+    const media = { mediaId: 'policy_b', title: 'Fixture Production Attempt', filePath: h.localCopy, contentSha256: h.sha256, size: fs.statSync(h.localCopy).size, sourceMode: 'fixture', isFixtureMedia: true, ...TEST_PROVENANCE_FIXTURE };
+    const logs = [];
+    const origError = console.error;
+    console.error = (...args) => { logs.push(args.join(' ')); origError(...args); };
+    let res;
+    try {
+      res = await publisher.publishSingleItem('cycle_policy_b', media, { chatIdOverride: PRODUCTION });
+    } finally {
+      console.error = origError;
+    }
+    check('fixture + production override -> BLOCKED (REJECTED)', res.status === 'REJECTED', JSON.stringify(res));
+    check('fixture + production override -> FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED logged', logs.some(l => l.includes('FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED')));
+    check('fixture + production override -> NO sendVideo call was made', h.mockBot.calls.length === 0);
+    check('fixture + production override -> file NOT deleted', fs.existsSync(h.localCopy));
+  }
+
+  // C. authorized mode + the same configured staging destination = ALLOWED
+  {
+    const h = makeHarness('policy_authorized_staging');
+    const publisher = new VideoBatchPublisher({
+      stagingChatId: STAGING, telegramClient: h.mockBot, batchState: h.batchState,
+      publishLedger: h.publishLedger, mediaCleaner: h.mediaCleaner, enableCleanup: true
+    });
+    const media = { mediaId: 'policy_c', title: 'Authorized Staging Test', filePath: h.localCopy, contentSha256: h.sha256, size: fs.statSync(h.localCopy).size, sourceMode: 'authorized', isFixtureMedia: false, ...TEST_PROVENANCE_AUTHORIZED };
+    const res = await publisher.publishSingleItem('cycle_policy_c', media);
+    check('authorized + staging -> ALLOWED (PUBLISHED)', res.status === 'PUBLISHED', JSON.stringify(res));
+  }
+
+  // D. authorized mode media also blocked from a production override (policy is source-mode-agnostic at the gate)
+  {
+    const h = makeHarness('policy_authorized_production');
+    const publisher = new VideoBatchPublisher({
+      stagingChatId: STAGING, telegramClient: h.mockBot, batchState: h.batchState,
+      publishLedger: h.publishLedger, mediaCleaner: h.mediaCleaner, enableCleanup: true
+    });
+    const media = { mediaId: 'policy_d', title: 'Authorized Production Attempt', filePath: h.localCopy, contentSha256: h.sha256, size: fs.statSync(h.localCopy).size, sourceMode: 'authorized', isFixtureMedia: false, ...TEST_PROVENANCE_AUTHORIZED };
+    const res = await publisher.publishSingleItem('cycle_policy_d', media, { chatIdOverride: PRODUCTION });
+    check('authorized + production override -> BLOCKED (REJECTED)', res.status === 'REJECTED', JSON.stringify(res));
+    check('authorized + production override -> NO sendVideo call was made', h.mockBot.calls.length === 0);
+  }
+
+  // E. Exact file handoff: tampering with the file after validation but before
+  // publish must block the send (SHA256 recomputed immediately before upload)
+  {
+    const h = makeHarness('policy_tamper_detection');
+    const publisher = new VideoBatchPublisher({
+      stagingChatId: STAGING, telegramClient: h.mockBot, batchState: h.batchState,
+      publishLedger: h.publishLedger, mediaCleaner: h.mediaCleaner, enableCleanup: true
+    });
+    // Media record claims the ORIGINAL hash, but the on-disk file is replaced
+    // with different content before publish is called - simulating a second
+    // generated/replaced file sneaking in between validation and upload.
+    fs.writeFileSync(h.localCopy, Buffer.concat([fs.readFileSync(h.localCopy), Buffer.from('TAMPERED')]));
+    const media = { mediaId: 'policy_e', title: 'Tamper Detection Test', filePath: h.localCopy, contentSha256: h.sha256, size: fs.statSync(h.localCopy).size, sourceMode: 'fixture', isFixtureMedia: true, ...TEST_PROVENANCE_FIXTURE };
+    const res = await publisher.publishSingleItem('cycle_policy_e', media);
+    check('tampered file (SHA256 no longer matches record) -> PUBLISH BLOCKED', res.status === 'FAILED', JSON.stringify(res));
+    check('tampered file -> reason cites SHA256 mismatch', /SHA256 mismatch/.test(res.reason || ''));
+    check('tampered file -> NO sendVideo call was made', h.mockBot.calls.length === 0);
   }
 }
 
@@ -446,6 +595,20 @@ async function runAuthorizedSourceE2E() {
   }
 }
 
+// video-tools' own optional proxy config (.proxy.local.json - a runtime
+// config artifact, not part of its shipped code) would otherwise route this
+// file's local HTTP fixtures through a real external proxy that cannot reach
+// 127.0.0.1, causing 0 links to ever be discovered. Set aside for the
+// duration of this file only and restore unconditionally afterward -
+// matching the same pattern already used by every other local-fixture test.
+const PROXY_CONFIG_PATH = path.join(__dirname, '..', 'video-scrapper', 'video-tools', '.proxy.local.json');
+const PROXY_CONFIG_BACKUP_PATH = `${PROXY_CONFIG_PATH}.set-aside-by-source-mode-provenance-test`;
+const hadProxyConfig = fs.existsSync(PROXY_CONFIG_PATH);
+if (hadProxyConfig) fs.renameSync(PROXY_CONFIG_PATH, PROXY_CONFIG_BACKUP_PATH);
+function restoreProxyConfig() {
+  if (hadProxyConfig && fs.existsSync(PROXY_CONFIG_BACKUP_PATH)) fs.renameSync(PROXY_CONFIG_BACKUP_PATH, PROXY_CONFIG_PATH);
+}
+
 async function main() {
   if (fs.existsSync(WORKSPACE)) fs.rmSync(WORKSPACE, { recursive: true, force: true });
   fs.mkdirSync(WORKSPACE, { recursive: true });
@@ -453,6 +616,7 @@ async function main() {
   await testSourceModeFailClosed();
   await testProvenanceThreading();
   await testReadBackVerification();
+  await testDestinationRoutingPolicy();
 
   const fixtureResult = await runFixtureE2E();
   const authorizedResult = await runAuthorizedSourceE2E();
@@ -466,10 +630,13 @@ async function main() {
   console.log('============================================================');
 
   const overallOk = failed === 0 && fixtureResult && authorizedResult !== false;
-  process.exit(overallOk ? 0 : 1);
+  return overallOk;
 }
 
-main().catch(err => {
-  console.error('CRASHED:', err);
-  process.exit(1);
-});
+main()
+  .then(ok => { restoreProxyConfig(); process.exit(ok ? 0 : 1); })
+  .catch(err => {
+    console.error('CRASHED:', err);
+    restoreProxyConfig();
+    process.exit(1);
+  });

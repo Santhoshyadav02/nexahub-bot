@@ -10,6 +10,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { VideoPipelineRuntime, _resetRuntimeInstanceForTesting, getVideoPipelineRuntime } = require('./video_pipeline_runtime');
 
 let passed = 0, failed = 0;
@@ -107,12 +108,26 @@ async function testEndToEndStagingPublishViaWiredClient() {
   const fixturePath = path.join(dir, 'downloads', 'video_wiring_test.mp4');
   fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
   fs.copyFileSync(path.join(__dirname, '..', 'scratch', 'real_video_test.mp4'), fixturePath);
+  // Must be the REAL hash of the fixture, not a placeholder - the publisher
+  // now recomputes SHA256 immediately before send and blocks publish on any
+  // mismatch against the media record (exact file handoff proof).
+  const fixtureSha256 = crypto.createHash('sha256').update(fs.readFileSync(fixturePath)).digest('hex');
 
   const bcm = rt.batchCycleManager;
   bcm.batchState.startCycle('cycle_wiring_test', { startedAt: new Date().toISOString() });
   bcm.batchState.updateCycle('cycle_wiring_test', {
     status: 'BATCH_READY',
-    media: [{ mediaId: 'media_wiring_test', title: 'Wiring Test Video', filePath: fixturePath, contentSha256: 'x', sourceKeyHash: 'y' }]
+    media: [{
+      mediaId: 'media_wiring_test',
+      title: 'Wiring Test Video',
+      filePath: fixturePath,
+      contentSha256: fixtureSha256,
+      sourceKeyHash: 'y',
+      sourceMode: 'authorized',
+      isFixtureMedia: false,
+      sourcePageUrl: 'https://authorized-test-source.internal/posts/test',
+      sourceVideoUrl: 'https://authorized-test-source.internal/video/test.mp4'
+    }]
   });
 
   const pubResult = await bcm.publishCycle('cycle_wiring_test');

@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const crypto = require('crypto');
 
 const { VideoBatchPublisher, FORBIDDEN_PRODUCTION_DESTINATIONS } = require('./video_batch_publisher');
 const { BatchState } = require('./batch_state');
@@ -61,6 +62,20 @@ function copyFixture(destPath) {
   return destPath;
 }
 
+function hashFile(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
+
+// Shared authorized-source provenance fields for test media records that
+// must pass SOURCE_PROVENANCE_VALIDATION (not just TECHNICAL_VALIDATION).
+// Same origin on both URLs so sourceVideoUrlConsistentWithPage holds.
+const AUTHORIZED_PROVENANCE = {
+  sourceMode: 'authorized',
+  isFixtureMedia: false,
+  sourcePageUrl: 'https://authorized-test-source.internal/posts/test',
+  sourceVideoUrl: 'https://authorized-test-source.internal/video/test.mp4'
+};
+
 async function runPublisherTests() {
   console.log('============================================================');
   console.log('🧪 VIDEO BATCH PUBLISHER TEST SUITE (PHASE 4A)');
@@ -87,7 +102,8 @@ async function runPublisherTests() {
         title: 'Authorized Test Staging Video 1',
         filePath: validMp4Path,
         size: validSize,
-        contentSha256: '08e7ad5e901ecfd886cf5ea9c88557a6fb6a65f9dede5b79065f74c32fe34985'
+        contentSha256: hashFile(validMp4Path),
+        ...AUTHORIZED_PROVENANCE
       }
     ]
   });
@@ -263,7 +279,9 @@ async function runPublisherTests() {
         mediaId: 'media_retry',
         title: 'Retry Test Video',
         filePath: retryMp4Path,
-        size: fs.statSync(retryMp4Path).size
+        size: fs.statSync(retryMp4Path).size,
+        contentSha256: hashFile(retryMp4Path),
+        ...AUTHORIZED_PROVENANCE
       }
     ]
   });
@@ -321,7 +339,9 @@ async function runPublisherTests() {
         mediaId: 'media_perm_fail',
         title: 'Perm Fail Video',
         filePath: retryMp4Path,
-        size: fs.statSync(retryMp4Path).size
+        size: fs.statSync(retryMp4Path).size,
+        contentSha256: hashFile(retryMp4Path),
+        ...AUTHORIZED_PROVENANCE
       }
     ]
   });
@@ -357,7 +377,9 @@ async function runPublisherTests() {
         mediaId: 'media_crashed',
         title: 'Crashed Mid Upload',
         filePath: crashMp4,
-        size: fs.statSync(crashMp4).size
+        size: fs.statSync(crashMp4).size,
+        contentSha256: hashFile(crashMp4),
+        ...AUTHORIZED_PROVENANCE
       }
     ]
   });

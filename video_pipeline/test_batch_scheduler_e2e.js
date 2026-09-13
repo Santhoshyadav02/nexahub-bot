@@ -90,6 +90,20 @@ function copyFixture(destPath, id = 'p1') {
   return destPath;
 }
 
+function hashFile(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
+
+// Shared provenance fields for hand-built media records in this suite - the
+// SOURCE_PROVENANCE_VALIDATION gate requires these on every record, distinct
+// from TECHNICAL_VALIDATION (playability), regardless of source_mode.
+const TEST_PROVENANCE = {
+  sourceMode: 'fixture',
+  isFixtureMedia: true,
+  sourcePageUrl: 'http://127.0.0.1:1/post/test-fixture',
+  sourceVideoUrl: 'http://127.0.0.1:1/video/test-fixture.mp4'
+};
+
 function freshEnv(tag) {
   const dir = path.join(TEST_WORKSPACE, tag);
   fs.rmSync(dir, { recursive: true, force: true });
@@ -394,8 +408,8 @@ async function runMasterE2E() {
     batchState5.startCycle(batchId5, {
       status: 'BATCH_READY',
       media: [
-        { mediaId: 'media_ok', title: 'Good Video Title', filePath: v1, size: fs.statSync(v1).size },
-        { mediaId: 'media_fail', title: 'Failing Video Title', filePath: v2, size: fs.statSync(v2).size }
+        { mediaId: 'media_ok', title: 'Good Video Title', filePath: v1, size: fs.statSync(v1).size, contentSha256: hashFile(v1), ...TEST_PROVENANCE },
+        { mediaId: 'media_fail', title: 'Failing Video Title', filePath: v2, size: fs.statSync(v2).size, contentSha256: hashFile(v2), ...TEST_PROVENANCE }
       ]
     });
     batchState5.updateCycle(batchId5, { status: 'BATCH_READY' });
