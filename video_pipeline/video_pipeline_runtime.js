@@ -29,6 +29,11 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;      // 20 minutes
+const DEFAULT_DISCOVERY_TARGET = 100;
+const DEFAULT_DISCOVERY_MAX = 150;
+const DEFAULT_MAX_PAGES = 50;
+const DEFAULT_MIN_SUCCESSFUL_VIDEOS = 15;
+const DEFAULT_MAX_SUCCESSFUL_VIDEOS = 25;
 
 // Known production channel usernames/IDs to strictly forbid as staging destinations
 const FORBIDDEN_PRODUCTION_DESTINATIONS = new Set([
@@ -69,6 +74,34 @@ class VideoPipelineRuntime {
       ? config.workers
       : (!isNaN(envWorkers) && envWorkers > 0 ? envWorkers : 1);
 
+    const envDiscoveryTarget = Number(process.env.VIDEO_PIPELINE_DISCOVERY_TARGET);
+    this.discoveryTarget = (config.discoveryTarget && !isNaN(config.discoveryTarget))
+      ? config.discoveryTarget
+      : (!isNaN(envDiscoveryTarget) && envDiscoveryTarget > 0 ? envDiscoveryTarget : DEFAULT_DISCOVERY_TARGET);
+
+    const envDiscoveryMax = Number(process.env.VIDEO_PIPELINE_DISCOVERY_MAX);
+    this.discoveryMax = (config.discoveryMax && !isNaN(config.discoveryMax))
+      ? config.discoveryMax
+      : (!isNaN(envDiscoveryMax) && envDiscoveryMax > 0 ? envDiscoveryMax : DEFAULT_DISCOVERY_MAX);
+
+    const envMaxPages = Number(process.env.VIDEO_PIPELINE_MAX_PAGES);
+    this.maxPages = (config.maxPages && !isNaN(config.maxPages))
+      ? config.maxPages
+      : (!isNaN(envMaxPages) && envMaxPages > 0 ? envMaxPages : DEFAULT_MAX_PAGES);
+
+    const envMinSuccessful = Number(process.env.VIDEO_PIPELINE_MIN_SUCCESSFUL_VIDEOS);
+    const defaultMin = (config.acquisitionOptions && config.acquisitionOptions.targetLinks && config.acquisitionOptions.targetLinks < DEFAULT_MIN_SUCCESSFUL_VIDEOS)
+      ? config.acquisitionOptions.targetLinks
+      : DEFAULT_MIN_SUCCESSFUL_VIDEOS;
+    this.minSuccessfulVideos = (config.minSuccessfulVideos !== undefined && !isNaN(config.minSuccessfulVideos))
+      ? config.minSuccessfulVideos
+      : (!isNaN(envMinSuccessful) && envMinSuccessful > 0 ? envMinSuccessful : defaultMin);
+
+    const envMaxSuccessful = Number(process.env.VIDEO_PIPELINE_MAX_SUCCESSFUL_VIDEOS);
+    this.maxSuccessfulVideos = (config.maxSuccessfulVideos && !isNaN(config.maxSuccessfulVideos))
+      ? config.maxSuccessfulVideos
+      : (!isNaN(envMaxSuccessful) && envMaxSuccessful > 0 ? envMaxSuccessful : DEFAULT_MAX_SUCCESSFUL_VIDEOS);
+
     this.downloadsDir = config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR || path.join(ROOT_DIR, 'downloads');
     this.outputDir = config.outputDir || process.env.VIDEO_PIPELINE_OUTPUT_DIR || path.join(ROOT_DIR, 'output');
     this.stateDir = config.stateDir || process.env.VIDEO_PIPELINE_STATE_DIR || path.join(ROOT_DIR, 'video_pipeline');
@@ -84,8 +117,16 @@ class VideoPipelineRuntime {
     this.acquisitionOptions = config.acquisitionOptions || {
       workers: this.workers,
       timeout: Math.floor(this.timeoutMs / 1000),
-      standalone: true
+      standalone: true,
+      targetLinks: this.discoveryTarget,
+      maxPages: this.maxPages
     };
+    if (!this.acquisitionOptions.targetLinks) {
+      this.acquisitionOptions.targetLinks = this.discoveryTarget;
+    }
+    if (!this.acquisitionOptions.maxPages) {
+      this.acquisitionOptions.maxPages = this.maxPages;
+    }
     if (this.inputLinks) {
       this.acquisitionOptions.inputLinks = this.inputLinks;
     }
@@ -210,7 +251,11 @@ class VideoPipelineRuntime {
       videoBatchPublisher: publisher,
       autoPublish: this.autoPublish,
       acquisitionOptions: this.acquisitionOptions,
-      acquisitionTimeoutMs: this.timeoutMs
+      acquisitionTimeoutMs: this.timeoutMs,
+      minSuccessfulVideos: this.minSuccessfulVideos,
+      maxSuccessfulVideos: this.maxSuccessfulVideos,
+      discoveryTarget: this.discoveryTarget,
+      discoveryMax: this.discoveryMax
     });
 
     return this.batchCycleManager;
@@ -219,9 +264,11 @@ class VideoPipelineRuntime {
   /**
    * Starts the 3-hour recurring batch scheduler.
    * Fail-closed: does nothing if disabled or if configuration is invalid.
+   * @param {object} [options]
+   * @param {boolean} [options.runImmediately=false]
    * @returns {object} Status object
    */
-  start() {
+  start(options = {}) {
     if (!this.enabled) {
       console.log(`${LOG_PREFIX} Runtime is DISABLED (VIDEO_PIPELINE_ENABLED !== 'true'). Remaining dormant.`);
       return { status: 'DISABLED', started: false };
@@ -240,7 +287,7 @@ class VideoPipelineRuntime {
 
     try {
       this._ensureManagerInitialized();
-      this.batchCycleManager.startScheduler(this.intervalMs);
+      this.batchCycleManager.startScheduler(this.intervalMs, options);
       this._started = true;
       console.log(`${LOG_PREFIX} Runtime started successfully (interval=${this.intervalMs}ms, autoPublish=${this.autoPublish}).`);
       return { status: 'STARTED', started: true, intervalMs: this.intervalMs };

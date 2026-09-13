@@ -27,7 +27,7 @@ const { BatchState } = require('./batch_state');
 const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
 const DEFAULT_ACQUISITION_TIMEOUT_MS = 20 * 60 * 1000;
-const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
+const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'PROCESSING', 'STREAMING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
 
 function generateCycleId() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -62,6 +62,11 @@ class BatchCycleManager {
    * @param {string} [config.batchStatePath]
    * @param {number} [config.acquisitionTimeoutMs] Bound on step 2's wait-for-completion poll
    * @param {number} [config.stabilityCheckMs] Passed through to a freshly-constructed MediaIngestor
+   * @param {number} [config.minSuccessfulVideos] Minimum successful videos for COMPLETED status
+   * @param {number} [config.maxSuccessfulVideos] Ceiling on successful videos per cycle (default 25)
+   * @param {number} [config.discoveryTarget] Target links to discover (default 100)
+   * @param {number} [config.discoveryMax] Upper bound on discovered links (default 150)
+   * @param {number} [config.maxPages] Max pages to crawl (default 50)
    */
   constructor(config = {}) {
     const hasInputLinks = !!(config.acquisitionOptions && config.acquisitionOptions.inputLinks);
@@ -77,6 +82,34 @@ class BatchCycleManager {
     this.downloadsDir = config.downloadsDir;
     this.acquisitionOptions = config.acquisitionOptions || {};
     this.acquisitionTimeoutMs = config.acquisitionTimeoutMs || DEFAULT_ACQUISITION_TIMEOUT_MS;
+
+    const envDiscoveryTarget = Number(process.env.VIDEO_PIPELINE_DISCOVERY_TARGET);
+    this.discoveryTarget = (config.discoveryTarget !== undefined && !isNaN(config.discoveryTarget))
+      ? config.discoveryTarget
+      : (!isNaN(envDiscoveryTarget) && envDiscoveryTarget > 0 ? envDiscoveryTarget : 100);
+
+    const envDiscoveryMax = Number(process.env.VIDEO_PIPELINE_DISCOVERY_MAX);
+    this.discoveryMax = (config.discoveryMax !== undefined && !isNaN(config.discoveryMax))
+      ? config.discoveryMax
+      : (!isNaN(envDiscoveryMax) && envDiscoveryMax > 0 ? envDiscoveryMax : 150);
+
+    const envMaxPages = Number(process.env.VIDEO_PIPELINE_MAX_PAGES);
+    this.maxPages = (config.maxPages !== undefined && !isNaN(config.maxPages))
+      ? config.maxPages
+      : (!isNaN(envMaxPages) && envMaxPages > 0 ? envMaxPages : 50);
+
+    const envMinSuccessful = Number(process.env.VIDEO_PIPELINE_MIN_SUCCESSFUL_VIDEOS);
+    const defaultMin = (config.acquisitionOptions && config.acquisitionOptions.targetLinks && config.acquisitionOptions.targetLinks < 15)
+      ? config.acquisitionOptions.targetLinks
+      : 15;
+    this.minSuccessfulVideos = (config.minSuccessfulVideos !== undefined && !isNaN(config.minSuccessfulVideos))
+      ? config.minSuccessfulVideos
+      : (!isNaN(envMinSuccessful) && envMinSuccessful > 0 ? envMinSuccessful : defaultMin);
+
+    const envMaxSuccessful = Number(process.env.VIDEO_PIPELINE_MAX_SUCCESSFUL_VIDEOS);
+    this.maxSuccessfulVideos = (config.maxSuccessfulVideos !== undefined && !isNaN(config.maxSuccessfulVideos))
+      ? config.maxSuccessfulVideos
+      : (!isNaN(envMaxSuccessful) && envMaxSuccessful > 0 ? envMaxSuccessful : 25);
 
     this.videoPipelineManager = config.videoPipelineManager || new VideoPipelineManager();
     this.mediaIngestor = config.mediaIngestor || new MediaIngestor({
@@ -105,17 +138,17 @@ class BatchCycleManager {
     const cycleId = this.batchState.getCurrentCycleId();
     if (!cycleId) return;
 
-    if (state === 'ACQUIRING') {
+    if (state === 'ACQUIRING' || state === 'PROCESSING' || state === 'STREAMING') {
       const cycle = this.batchState.getCycle(cycleId);
       const pid = cycle ? cycle.acquisitionPid : null;
       const stillAlive = isPidAlive(pid);
 
       if (stillAlive) {
-        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ACQUIRING when this process last stopped, and PID ${pid} `
+        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ${state} when this process last stopped, and PID ${pid} `
           + `still appears to be alive. Not resuming automatically - a stray acquisition process may still be running. `
           + `Marking the cycle FAILED and returning the controller to IDLE; stop PID ${pid} manually if still active.`);
       } else {
-        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (ACQUIRING, no live acquisition process). `
+        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (${state}, no live acquisition process). `
           + `Marking it FAILED. Any media already downloaded/validated by the Media Ingestor remains intact and untouched.`);
       }
 
@@ -192,16 +225,27 @@ class BatchCycleManager {
   async _runOnceInternal() {
     const cycleId = generateCycleId();
     const startedAt = new Date().toISOString();
-    console.log(`${LOG_PREFIX} Starting acquisition cycle ${cycleId}`);
+    console.log(`${LOG_PREFIX} Starting acquisition cycle ${cycleId} (target=${this.discoveryTarget}, success range=${this.minSuccessfulVideos}-${this.maxSuccessfulVideos})`);
     this.batchState.startCycle(cycleId, { startedAt });
 
+    const processedFiles = new Set();
+    const readyMediaList = [];
+    const publishedItems = [];
+    let successfulCount = 0;
+    let duplicateCount = 0;
+    let failedCount = 0;
+    let skippedAlreadyPublishedCount = 0;
+    let hitCeiling = false;
+
     try {
-      // 1. Start video-tools through the existing, unmodified VideoPipelineManager.
+      // 1. Start video-tools through VideoPipelineManager.
       const startOptions = {
+        targetLinks: this.discoveryTarget,
+        maxPages: this.maxPages,
         ...this.acquisitionOptions,
         output: this.outputDir,
         downloads: this.downloadsDir,
-        once: true // an acquisition cycle is, by definition, one bounded batch
+        once: true
       };
       if (!startOptions.inputLinks && this.acquisitionUrl) {
         startOptions.url = this.acquisitionUrl;
@@ -213,64 +257,189 @@ class BatchCycleManager {
       }
       this.batchState.updateCycle(cycleId, { acquisitionPid: startResult.pid });
 
-      // 2. Wait for the acquisition pipeline to finish (bounded).
       const deadline = Date.now() + this.acquisitionTimeoutMs;
-      while (this.videoPipelineManager.isRunning() && Date.now() < deadline) {
+
+      // Helper to process a single downloaded file immediately
+      const processDownloadedFile = async (filePath, videoUrlHint = '') => {
+        const absPath = path.resolve(filePath);
+        if (processedFiles.has(absPath)) return;
+        if (!fs.existsSync(absPath)) return;
+
+        try {
+          const initialStat = fs.statSync(absPath);
+          if (initialStat.size === 0) return;
+        } catch (e) {
+          return;
+        }
+
+        processedFiles.add(absPath);
+
+        const fileTitleMap = this._buildFileTitleMap();
+        let title = fileTitleMap.get(absPath) || '';
+        if (!title && videoUrlHint) {
+          title = this._lookupTitleByUrl(videoUrlHint) || '';
+        }
+
+        const scanResult = await this.mediaIngestor.processSingleFile(absPath, { title });
+        if (scanResult.status === 'READY') {
+          if (scanResult.alreadyProcessed) {
+            return;
+          }
+          const record = this.mediaIngestor.ledger.getRecord(scanResult.id);
+          const resolvedTitle = (record && record.title) || title || scanResult.title || '';
+          const mediaRecord = {
+            mediaId: scanResult.id,
+            title: resolvedTitle,
+            filePath: absPath,
+            size: record ? record.size : scanResult.size,
+            contentSha256: record ? record.contentSha256 : scanResult.contentSha256,
+            sourceKeyHash: record ? record.sourceKeyHash : scanResult.sourceKeyHash,
+            discoveredAt: record ? record.discoveredAt : new Date().toISOString(),
+            validatedAt: record ? record.validatedAt : new Date().toISOString()
+          };
+          readyMediaList.push(mediaRecord);
+
+          // Immediate Publishing
+          if (this.autoPublish && this.videoBatchPublisher && !hitCeiling) {
+            this.batchState.setControllerState('PUBLISHING');
+            const pubRes = await this.videoBatchPublisher.publishSingleItem(cycleId, mediaRecord, this.publishOptions);
+            if (pubRes.status === 'PUBLISHED') {
+              successfulCount++;
+              publishedItems.push(pubRes);
+              console.log(`${LOG_PREFIX} Immediate publication ${successfulCount}/${this.maxSuccessfulVideos} complete for ${mediaRecord.mediaId} (msgId: ${pubRes.telegramMessageId})`);
+              if (successfulCount >= this.maxSuccessfulVideos) {
+                console.log(`${LOG_PREFIX} Reached maximum successful target (${this.maxSuccessfulVideos}). Halting cycle.`);
+                hitCeiling = true;
+                if (this.videoPipelineManager.isRunning()) {
+                  await this.videoPipelineManager.stop();
+                }
+              }
+            } else if (pubRes.status === 'SKIPPED_ALREADY_PUBLISHED') {
+              skippedAlreadyPublishedCount++;
+            } else {
+              failedCount++;
+            }
+            if (!hitCeiling) {
+              this.batchState.setControllerState(this.videoPipelineManager.isRunning() ? 'ACQUIRING' : 'PROCESSING');
+            }
+          }
+        } else if (scanResult.status === 'DUPLICATE') {
+          duplicateCount++;
+        } else if (scanResult.status === 'FAILED') {
+          failedCount++;
+        }
+      };
+
+      // 2. Streaming loop: process items on-the-fly while acquisition runs
+      while (this.videoPipelineManager.isRunning() && Date.now() < deadline && !hitCeiling) {
+        if (!hitCeiling && fs.existsSync(this.downloadsDir)) {
+          try {
+            const files = fs.readdirSync(this.downloadsDir);
+            for (const f of files) {
+              if (hitCeiling) break;
+              if (f.endsWith('.mp4') && !f.includes('.part.') && !f.includes('.tmp.')) {
+                await processDownloadedFile(path.join(this.downloadsDir, f));
+              }
+            }
+          } catch (e) {}
+        }
         await sleep(300);
       }
+
+      // Stop acquisition if still running
       if (this.videoPipelineManager.isRunning()) {
         await this.videoPipelineManager.stop();
-        throw new Error(`Acquisition did not finish within ${this.acquisitionTimeoutMs}ms and was stopped`);
+        if (!hitCeiling && Date.now() >= deadline) {
+          throw new Error(`Acquisition did not finish within ${this.acquisitionTimeoutMs}ms and was stopped`);
+        }
+      }
+
+      // Process any remaining files
+      if (!hitCeiling && fs.existsSync(this.downloadsDir)) {
+        try {
+          const files = fs.readdirSync(this.downloadsDir);
+          for (const f of files) {
+            if (hitCeiling) break;
+            if (f.endsWith('.mp4') && !f.includes('.part.') && !f.includes('.tmp.')) {
+              await processDownloadedFile(path.join(this.downloadsDir, f));
+            }
+          }
+        } catch (e) {}
       }
 
       const discovered = this._countDiscovered();
       const downloaded = this._countDownloaded();
-
-      // 3/4. Scan downloads using the existing, unmodified MediaIngestor.
-      this.batchState.setControllerState('INGESTING');
-      const scanSummary = await this.mediaIngestor.scanOnce();
-
-      // 5/6/7. Freeze this cycle's READY media and mark the cycle BATCH_READY.
-      const media = this._freezeReadyMedia(scanSummary);
       const completedAt = new Date().toISOString();
-      const updated = this.batchState.updateCycle(cycleId, {
-        status: 'BATCH_READY',
+
+      let finalStatus = 'COMPLETED';
+      let statusReason = null;
+
+      if (!this.autoPublish) {
+        finalStatus = 'BATCH_READY';
+      } else {
+        if (successfulCount >= this.minSuccessfulVideos) {
+          finalStatus = 'COMPLETED';
+        } else if (successfulCount > 0) {
+          finalStatus = 'PARTIAL';
+          statusReason = `Candidate set exhausted before reaching minimum target (${successfulCount}/${this.minSuccessfulVideos})`;
+        } else if (readyMediaList.length === 0 && (discovered === 0 || (duplicateCount === 0 && failedCount === 0))) {
+          finalStatus = 'COMPLETED_EMPTY';
+        } else {
+          finalStatus = 'FAILED';
+          statusReason = '0 successful video publications in cycle';
+        }
+      }
+
+      this.batchState.updateCycle(cycleId, {
+        status: finalStatus,
         completedAt,
         discovered,
         downloaded,
-        ready: scanSummary.ready || 0,
-        duplicates: scanSummary.duplicate || 0,
-        failed: scanSummary.failed || 0,
-        media
+        ready: readyMediaList.length,
+        duplicates: duplicateCount,
+        failed: failedCount,
+        publishedCount: successfulCount,
+        skippedCount: skippedAlreadyPublishedCount,
+        lastError: statusReason,
+        media: readyMediaList
       });
       this.batchState.data.currentCycleId = cycleId;
-      this.batchState.setControllerState('BATCH_READY');
+      this.batchState.setControllerState('IDLE');
+
+      const publishResult = {
+        batchId: cycleId,
+        destinationId: (this.videoBatchPublisher && this.videoBatchPublisher.stagingChatId) || this.publishOptions.stagingChatIdOverride || '-1009990001',
+        status: finalStatus,
+        totalItems: readyMediaList.length,
+        published: successfulCount,
+        skipped: skippedAlreadyPublishedCount,
+        failed: failedCount,
+        cleaned: successfulCount,
+        completedAt,
+        items: publishedItems
+      };
 
       const summary = {
         cycleId,
-        status: 'BATCH_READY',
+        status: finalStatus,
         startedAt,
         completedAt,
         discovered,
         downloaded,
-        ready: updated.ready,
-        duplicates: updated.duplicates,
-        failed: updated.failed
+        ready: readyMediaList.length,
+        duplicates: duplicateCount,
+        failed: failedCount,
+        published: successfulCount,
+        skipped: skippedAlreadyPublishedCount,
+        reason: statusReason,
+        media: readyMediaList,
+        publishedItems,
+        publishResult: this.autoPublish ? publishResult : undefined
       };
       this._lastCycleSummary = summary;
-      console.log(`${LOG_PREFIX} Cycle ${cycleId} -> BATCH_READY `
-        + `(discovered=${discovered}, downloaded=${downloaded}, ready=${updated.ready}, `
-        + `duplicates=${updated.duplicates}, failed=${updated.failed})`);
-
-      // Optional auto-publishing against frozen BATCH_READY snapshot
-      if (this.autoPublish && this.videoBatchPublisher) {
-        console.log(`${LOG_PREFIX} Auto-publishing cycle ${cycleId} via VideoBatchPublisher...`);
-        const pubResult = await this.videoBatchPublisher.publishBatch(cycleId, this.publishOptions);
-        summary.publishResult = pubResult;
-        summary.status = pubResult.status;
-        this._lastCycleSummary = summary;
-        this.batchState.setControllerState('IDLE');
-      }
+      console.log(`${LOG_PREFIX} Cycle ${cycleId} -> ${finalStatus} `
+        + `(discovered=${discovered}, downloaded=${downloaded}, ready=${readyMediaList.length}, `
+        + `published=${successfulCount}, duplicates=${duplicateCount}, failed=${failedCount})`);
 
       return summary;
     } catch (err) {
@@ -302,6 +471,35 @@ class BatchCycleManager {
       this._lastCycleSummary.status = pubResult.status;
     }
     return pubResult;
+  }
+
+  _readDownloadReport() {
+    const reportPath = path.join(this.downloadsDir, 'download_report.json');
+    if (!fs.existsSync(reportPath)) return [];
+    try {
+      const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+      return Array.isArray(report) ? report : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  _lookupTitleByUrl(videoUrl) {
+    if (!videoUrl) return '';
+    const videosJsonPath = path.join(this.outputDir, 'videos.json');
+    if (!fs.existsSync(videosJsonPath)) return '';
+    try {
+      const records = JSON.parse(fs.readFileSync(videosJsonPath, 'utf8'));
+      for (const rec of records || []) {
+        if (Array.isArray(rec.video_urls) && rec.video_urls.includes(videoUrl)) {
+          return rec.title || '';
+        }
+        if (rec.page_url === videoUrl) {
+          return rec.title || '';
+        }
+      }
+    } catch (e) {}
+    return '';
   }
 
   _countDiscovered() {
@@ -336,15 +534,29 @@ class BatchCycleManager {
     const map = new Map();
     const videosJsonPath = path.join(this.outputDir, 'videos.json');
     const reportPath = path.join(this.downloadsDir, 'download_report.json');
-    if (!fs.existsSync(videosJsonPath) || !fs.existsSync(reportPath)) return map;
+    if (!fs.existsSync(videosJsonPath)) return map;
 
     const titleByUrl = new Map();
+    const titleByFilename = new Map();
+
     try {
       const records = JSON.parse(fs.readFileSync(videosJsonPath, 'utf8'));
       for (const rec of records || []) {
+        const title = (rec.title || '').trim();
+        if (rec.page_url) titleByUrl.set(rec.page_url, title);
         if (Array.isArray(rec.video_urls)) {
           for (const url of rec.video_urls) {
-            if (url) titleByUrl.set(url, rec.title || '');
+            if (url) {
+              titleByUrl.set(url, title);
+              try {
+                const parsed = new URL(url, 'http://127.0.0.1');
+                titleByUrl.set(parsed.pathname, title);
+              } catch (_) {}
+              try {
+                const h = crypto.createHash('sha256').update(url).digest('hex').substring(0, 20);
+                titleByFilename.set(`video_${h}.mp4`, title);
+              } catch (_) {}
+            }
           }
         }
       }
@@ -352,16 +564,42 @@ class BatchCycleManager {
       return map;
     }
 
-    try {
-      const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-      for (const entry of report || []) {
-        if (entry.file && entry.video_url && titleByUrl.has(entry.video_url)) {
-          map.set(path.resolve(entry.file), titleByUrl.get(entry.video_url));
+    // Map from download_report.json if present
+    if (fs.existsSync(reportPath)) {
+      try {
+        const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+        for (const entry of report || []) {
+          if (entry.file && entry.video_url) {
+            let title = titleByUrl.get(entry.video_url);
+            if (!title) {
+              try {
+                const parsed = new URL(entry.video_url, 'http://127.0.0.1');
+                title = titleByUrl.get(parsed.pathname);
+              } catch (_) {}
+            }
+            if (title) {
+              map.set(path.resolve(entry.file), title);
+            }
+          }
         }
+      } catch (e) {
+        // best effort only
       }
-    } catch (e) {
-      // best effort only
     }
+
+    // Also populate for any downloads matching filename hash directly
+    if (fs.existsSync(this.downloadsDir)) {
+      try {
+        const files = fs.readdirSync(this.downloadsDir);
+        for (const f of files) {
+          const abs = path.resolve(path.join(this.downloadsDir, f));
+          if (!map.has(abs) && titleByFilename.has(f)) {
+            map.set(abs, titleByFilename.get(f));
+          }
+        }
+      } catch (e) {}
+    }
+
     return map;
   }
 
@@ -372,9 +610,6 @@ class BatchCycleManager {
    */
   _freezeReadyMedia(scanSummary) {
     const fileTitleMap = this._buildFileTitleMap();
-    // alreadyProcessed=true means this file's READY status was determined by
-    // an earlier scan, not this cycle - excluding it is what makes this a
-    // true snapshot of THIS cycle's new work, not "all READY files right now".
     const readyOutcomes = (scanSummary.results || []).filter(r => r.status === 'READY' && !r.alreadyProcessed);
     return readyOutcomes.map(outcome => {
       const record = this.mediaIngestor.ledger.getRecord(outcome.id);

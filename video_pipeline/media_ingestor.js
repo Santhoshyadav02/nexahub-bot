@@ -144,6 +144,23 @@ class MediaIngestor {
   // ============================================================
 
   /**
+   * Processes and ingests a single candidate file on-the-fly.
+   * Performs stability check, SHA256 hashing, media validation, deduplication, and ledger upsert.
+   * @param {string} filePath
+   * @param {object} [options]
+   * @param {string} [options.title]
+   * @returns {Promise<object>} Outcome { filePath, id, status, contentSha256, ... }
+   */
+  async processSingleFile(filePath, options = {}) {
+    const sourceMap = this._loadSourceMap();
+    const outcome = await this._processFile(filePath, sourceMap);
+    if (outcome.status === 'READY' && options.title) {
+      await this.ledger.upsert(outcome.id, { title: options.title });
+    }
+    return outcome;
+  }
+
+  /**
    * Performs exactly one scan pass over downloadsDir. Concurrent calls to
    * scanOnce() are serialized (never interleaved) so repeated/simultaneous
    * scans can never create duplicate records for the same file.

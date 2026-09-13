@@ -21,14 +21,19 @@ const BATCH_STATE_VERSION = '1.0.0';
 const BATCH_LIFECYCLE_STATES = [
   'IDLE',
   'ACQUIRING',
+  'PROCESSING',
+  'STREAMING',
   'INGESTING',
   'BATCH_READY',
   'PUBLISHING',
   'COMPLETED',
   'COMPLETED_PARTIAL',
   'COMPLETED_EMPTY',
+  'PARTIAL',
+  'INSUFFICIENT_SUCCESS',
   'FAILED',
-  'STOPPING'
+  'STOPPING',
+  'STOPPED'
 ];
 
 class BatchState {
@@ -105,6 +110,7 @@ class BatchState {
 
   save() {
     this.data.updatedAt = new Date().toISOString();
+    fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
     const tmpPath = `${this.statePath}.tmp.${process.hrtime.bigint()}`;
     const json = JSON.stringify(this.data, null, 2);
     const fd = fs.openSync(tmpPath, 'w');

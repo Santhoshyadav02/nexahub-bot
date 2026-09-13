@@ -93,15 +93,66 @@ class VideoBatchPublisher {
    * @returns {string}
    */
   formatCaption(media) {
-    const title = (media && media.title ? String(media.title).trim() : '');
+    let title = (media && media.title ? String(media.title).trim() : '');
     if (!title) {
-      return '';
+      const fallbackId = (media && media.mediaId ? String(media.mediaId).substring(0, 8) : 'item');
+      title = `Video Update (${fallbackId})`;
+      console.log(`${LOG_PREFIX} Missing title for media ${fallbackId}; using fallback caption: "${title}"`);
     }
     // Limit caption length to Telegram max (1024 chars for media captions)
     if (title.length > 1000) {
       return title.substring(0, 997) + '...';
     }
     return title;
+  }
+
+  /**
+   * Publishes a single media item to the configured staging destination.
+   * Performs destination validation, idempotency check, file stability & validation,
+   * ledger attempt recording, Telegram upload, ledger success recording, and post-publish cleanup.
+   *
+   * @param {string} batchId Cycle or batch ID
+   * @param {object} media Media record { mediaId, title, filePath, contentSha256, ... }
+   * @param {object} [options] Options override
+   * @returns {Promise<object>} Item publish result
+   */
+  async publishSingleItem(batchId, media, options = {}) {
+    if (!media || !media.mediaId) {
+      return { status: 'FAILED', reason: 'Invalid media record: missing mediaId' };
+    }
+
+    const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
+    const destValidation = this._validateStagingDestination(targetChatId);
+    if (!destValidation.valid) {
+      return {
+        status: 'REJECTED',
+        mediaId: media.mediaId,
+        destinationId: targetChatId,
+        reason: destValidation.reason
+      };
+    }
+
+    const shouldCleanup = options.enableCleanup !== undefined ? Boolean(options.enableCleanup) : this.enableCleanup;
+    const routingDecision = this.destinationRouter.routeMedia(media);
+    const canonicalDest = routingDecision.primaryDestination
+      ? routingDecision.primaryDestination.id
+      : 'DESTINATION_1';
+
+    const planItem = {
+      planId: `plan_${batchId}_${media.mediaId}`,
+      cycleId: batchId,
+      mediaId: media.mediaId,
+      title: media.title || '',
+      filePath: media.filePath,
+      contentSha256: media.contentSha256,
+      canonicalDestination: canonicalDest,
+      targetDestinationId: targetChatId,
+      routingDecision,
+      status: 'PENDING',
+      attempts: 0
+    };
+
+    return this._publishMediaItem(batchId, media, targetChatId, planItem, shouldCleanup);
   }
 
   /**
@@ -297,6 +348,7 @@ class VideoBatchPublisher {
       return {
         mediaId,
         canonicalDestination,
+        title: media.title || (planItem && planItem.title) || (existing && existing.title) || '',
         status: 'SKIPPED_ALREADY_PUBLISHED',
         publishId: existing.publishId,
         telegramMessageId: existing.telegramMessageId,
@@ -399,6 +451,7 @@ class VideoBatchPublisher {
           mediaId,
           publishId,
           canonicalDestination,
+          title: media.title || (planItem && planItem.title) || '',
           status: 'PUBLISHED',
           destinationId,
           telegramMessageId: String(telegramMessageId),
