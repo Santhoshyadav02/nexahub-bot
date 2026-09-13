@@ -78,14 +78,9 @@ nixLibs = [
   "freetype"
 ]
 
-[phases.install]
-cmds = [
-  "...",
-  "python3 -m pip install --no-cache-dir playwright",
-  "python3 -m playwright install --with-deps chromium || true"
-]
-
 [variables]
 PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true"
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/root/.nix-profile/bin/chromium"
+CHROME_BIN = "/root/.nix-profile/bin/chromium"
 
 
