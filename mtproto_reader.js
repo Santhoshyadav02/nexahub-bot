@@ -38,6 +38,7 @@ class MTProtoChannelReader {
       connectionRetries: 5,
     });
     this.authMode = "USER_SESSION";
+    this.isBotSession = null;
     this.connectingPromise = null;
 
     MTProtoChannelReader.instance = this;
@@ -67,10 +68,27 @@ class MTProtoChannelReader {
       try {
         console.log("📡 MTProto client: CONNECTING...");
         await this.client.connect();
-        try {
-          // Cache all joined channel entities in 1 single request to avoid CheckChatInvite flood wait
-          await this.client.getDialogs({ limit: 100 });
-        } catch (e) {}
+
+        if (typeof this.client.isBot === "function") {
+          try {
+            this.isBotSession = Boolean(await this.client.isBot());
+          } catch (e) {
+            this.isBotSession = null;
+          }
+        } else {
+          this.isBotSession = null;
+        }
+        this.authMode = this.isBotSession === true ? "BOT_SESSION" : (this.isBotSession === false ? "USER_SESSION" : "UNKNOWN_SESSION");
+
+        if (this.isBotSession === false) {
+          try {
+            // Cache all joined channel entities in 1 single request to avoid CheckChatInvite flood wait
+            await this.client.getDialogs({ limit: 100 });
+          } catch (e) {}
+        } else {
+          console.log(`ℹ️ [MTProto] ${this.isBotSession === true ? "Bot session detected" : "Session type unverified"}. Entity-cache prefill skipped.`);
+        }
+
         console.log("✅ MTProto client: CONNECTED");
         this.backoffUntil = null;
         return true;
@@ -129,253 +147,267 @@ class MTProtoChannelReader {
 
       console.log("📡 MTProto client: SYNC START");
 
-    let dialogs = [];
-    try {
-      dialogs = await this.client.getDialogs({ limit: 100 });
-      console.log(`📋 MTProto entity cache prefilled with ${dialogs.length} dialogs.`);
-    } catch (e) {
-      console.warn("⚠️ getDialogs error during entity cache prefill:", e.message);
-    }
-
-    for (let idx = 0; idx < TARGET_CHANNELS.length; idx++) {
-      const ch = TARGET_CHANNELS[idx];
-      const channelReport = {
-        channel_name: ch.name,
-        chat_id: "NOT BOUND YET",
-        access: "NO",
-        history_status: "FAILED",
-        posts_found: 0,
-        num_videos: 0,
-        num_photos: 0,
-        num_text: 0,
-        latest_msg_id: "None",
-        latest_date: "None",
-        media_type: "None",
-        latest_caption: "None",
-        error: null,
-        posts: []
-      };
-
-      try {
-        let chatEntity = null;
-        if (ch.username) {
-          try {
-            chatEntity = await this.client.getEntity(ch.username);
-            channelReport.access = "YES";
-          } catch (e) {}
+      let dialogs = [];
+      if (this.isBotSession === false) {
+        try {
+          dialogs = await this.client.getDialogs({ limit: 100 });
+          console.log(`📋 MTProto entity cache prefilled with ${dialogs.length} dialogs.`);
+        } catch (e) {
+          console.warn("⚠️ getDialogs error during entity cache prefill:", e.message);
         }
-
-        if (!chatEntity && ch.chat_id) {
-          try {
-            chatEntity = await this.client.getEntity(ch.chat_id);
-            channelReport.access = "YES";
-          } catch (e) {}
-        }
-
-        if (!chatEntity && dialogs.length > 0) {
-          const foundDialog = dialogs.find(d => {
-            const ent = d.entity;
-            if (!ent) return false;
-            if (ent.username && ch.username && ent.username.toLowerCase() === ch.username.toLowerCase()) return true;
-            if (ent.title && ch.name && ent.title.toLowerCase() === ch.name.toLowerCase()) return true;
-            if (ent.id && ch.chat_id && String(ent.id).includes(String(ch.chat_id).replace("-100", ""))) return true;
-            return false;
-          });
-          if (foundDialog) {
-            chatEntity = foundDialog.entity;
-            channelReport.access = "YES";
-          }
-        }
-
-        if (!chatEntity && ch.hash) {
-          const inviteInfo = await this.client.invoke(
-            new Api.messages.CheckChatInvite({ hash: ch.hash })
-          );
-          if (inviteInfo instanceof Api.ChatInviteAlready) {
-            chatEntity = inviteInfo.chat;
-            channelReport.access = "YES";
-          } else if (inviteInfo instanceof Api.ChatInvite) {
-            channelReport.access = "PREVIEW_ONLY";
-            channelReport.error = "Account is not a joined member of this private channel yet";
-          }
-        }
-
-        if (chatEntity) {
-          const rawChatId = String(chatEntity.id);
-          const fullChatId = rawChatId.startsWith("-100") ? rawChatId : `-100${rawChatId}`;
-          channelReport.chat_id = fullChatId;
-
-          const lastProcessedMsgId = sourceRegistry.getLatestRealMessageId(ch.name);
-          const parsedPosts = [];
-          let offsetId = 0;
-          let hasMore = true;
-          let videosFoundCount = 0;
-
-          while (hasMore && videosFoundCount < limit) {
-            const historyParams = {
-              peer: chatEntity,
-              limit: 100,
-            };
-
-            if (offsetId > 0) {
-              historyParams.offsetId = offsetId;
-            }
-
-            const history = await this.client.invoke(
-              new Api.messages.GetHistory(historyParams)
-            );
-
-            const msgs = history.messages || [];
-            if (msgs.length === 0) {
-              hasMore = false;
-              break;
-            }
-
-            let validCountInBatch = 0;
-            for (const m of msgs) {
-              if (m instanceof Api.MessageEmpty) continue;
-
-              validCountInBatch++;
-
-              let mediaType = "text";
-              let durationStr = null;
-              let videoFileId = null;
-
-              if (m.media instanceof Api.MessageMediaDocument) {
-                const doc = m.media.document;
-                let videoAttr = null;
-                let isVideo = false;
-
-                if (doc) {
-                  const mime = (doc.mimeType || doc.mime_type || "").toLowerCase();
-                  if (mime.startsWith("video/")) {
-                    isVideo = true;
-                  }
-                  if (doc.attributes) {
-                    videoAttr = doc.attributes.find(a =>
-                      (a instanceof Api.DocumentAttributeVideo) ||
-                      (a && (a.className === "DocumentAttributeVideo" || a.CONSTRUCTOR_ID === 0xef02ce60))
-                    );
-                    if (videoAttr) isVideo = true;
-                  }
-                }
-
-                if (isVideo) {
-                  mediaType = "video";
-                  videosFoundCount++;
-                  channelReport.num_videos++;
-                  // Do not store raw MTProto numeric doc.id as Bot API file_id
-                  videoFileId = null;
-                  if (videoAttr && videoAttr.duration) {
-                    const dur = Math.floor(videoAttr.duration);
-                    const mins = Math.floor(dur / 60);
-                    const secs = dur % 60;
-                    durationStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-                  }
-                } else {
-                  mediaType = "file";
-                  if (!channelReport.num_documents) channelReport.num_documents = 0;
-                  channelReport.num_documents++;
-                }
-              } else if (m.media instanceof Api.MessageMediaPhoto) {
-                mediaType = "photo";
-                channelReport.num_photos++;
-              } else {
-                channelReport.num_text++;
-              }
-
-              const textContent = m.message || "";
-              let rawTextTitle = textContent.split("\n")[0] ? textContent.split("\n")[0].trim() : "";
-              let titleText = rawTextTitle.length > 0 ? (rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle) : "제목 없음";
-
-              const fullTitle = titleText;
-              const postObj = {
-                message_id: m.id,
-                date: m.date,
-                chat: { id: fullChatId, title: ch.name, username: ch.username, type: "channel" },
-                caption: textContent,
-                text: textContent,
-                media_type: mediaType,
-                duration: durationStr,
-                video_file_id: videoFileId,
-                title: fullTitle,
-                telegram_url: ch.username ? `https://t.me/${ch.username}/${m.id}` : `https://t.me/c/${fullChatId.substring(4)}/${m.id}`
-              };
-
-              parsedPosts.push(postObj);
-            }
-
-            if (msgs.length < 100 || validCountInBatch === 0) {
-              hasMore = false;
-            } else {
-              const minIdInBatch = Math.min(...msgs.map(m => m.id));
-              if (offsetId > 0 && minIdInBatch >= offsetId) {
-                hasMore = false;
-              } else {
-                offsetId = minIdInBatch;
-              }
-            }
-          }
-
-          channelReport.posts_found = parsedPosts.length;
-          channelReport.history_status = "SUCCESS";
-
-          channelReport.posts = parsedPosts;
-          if (parsedPosts.length > 0) {
-            const top = parsedPosts[0];
-            channelReport.latest_msg_id = top.message_id;
-            channelReport.latest_date = new Date(top.date * 1000).toISOString();
-            channelReport.media_type = top.media_type;
-            channelReport.latest_caption = top.caption || top.title;
-
-            if (saveToDisk) {
-              const postsBefore = sourceRegistry.getPostsForKeyword(ch.name);
-              channelReport.existing_before = postsBefore.length;
-
-              let newCount = 0;
-              let insertedCount = 0;
-              let skippedCount = 0;
-
-              // Sort by message_id ascending so newest post is unshifted last to position 0
-              const sortedMsgs = [...parsedPosts].sort((a, b) => a.message_id - b.message_id);
-              for (const p of sortedMsgs) {
-                const res = sourceRegistry.processChannelPost(p, ch.name, true);
-                if (res && res.isNew) {
-                  newCount++;
-                  insertedCount++;
-                } else {
-                  skippedCount++;
-                }
-              }
-
-              const postsAfter = sourceRegistry.getPostsForKeyword(ch.name);
-              channelReport.fetched = parsedPosts.length;
-              channelReport.new_posts = newCount;
-              channelReport.inserted = insertedCount;
-              channelReport.skipped = skippedCount;
-              channelReport.existing_after = postsAfter.length;
-
-              console.log(`📦 [SYNC] channel=${ch.name} fetched=${channelReport.fetched} new=${channelReport.new_posts} skipped=${channelReport.skipped} existing_after=${channelReport.existing_after}`);
-            }
-          }
-        }
-      } catch (err) {
-        channelReport.history_status = "ERROR";
-        channelReport.error = err.message;
-        if (err.message && (err.message.includes("disconnected") || err.message.includes("closed") || err.message.includes("TIMEOUT"))) {
-          console.warn("⚠️ MTProto CONNECTION LOST during channel sync:", err.message);
-          console.log("🔄 RECONNECTING MTProto client...");
-          try {
-            await this.connect();
-            console.log("✅ MTProto RECONNECTED");
-          } catch (recErr) {
-            console.error("❌ MTProto reconnection failed:", recErr.message);
-          }
-        }
+      } else {
+        console.log(`ℹ️ [MTProto] Entity-cache prefill skipped (${this.isBotSession === true ? "bot MTProto session" : "unverified MTProto session capability"})`);
       }
 
-      results.push(channelReport);
-    }
+      for (let idx = 0; idx < TARGET_CHANNELS.length; idx++) {
+        const ch = TARGET_CHANNELS[idx];
+        const channelReport = {
+          channel_name: ch.name,
+          chat_id: "NOT BOUND YET",
+          access: "NO",
+          history_status: "FAILED",
+          posts_found: 0,
+          num_videos: 0,
+          num_photos: 0,
+          num_text: 0,
+          latest_msg_id: "None",
+          latest_date: "None",
+          media_type: "None",
+          latest_caption: "None",
+          error: null,
+          posts: []
+        };
+
+        try {
+          let chatEntity = null;
+          if (ch.username) {
+            try {
+              chatEntity = await this.client.getEntity(ch.username);
+              channelReport.access = "YES";
+            } catch (e) {}
+          }
+
+          if (!chatEntity && ch.chat_id) {
+            try {
+              chatEntity = await this.client.getEntity(ch.chat_id);
+              channelReport.access = "YES";
+            } catch (e) {}
+          }
+
+          if (!chatEntity && this.isBotSession === false && dialogs.length > 0) {
+            const foundDialog = dialogs.find(d => {
+              const ent = d.entity;
+              if (!ent) return false;
+              if (ent.username && ch.username && ent.username.toLowerCase() === ch.username.toLowerCase()) return true;
+              if (ent.title && ch.name && ent.title.toLowerCase() === ch.name.toLowerCase()) return true;
+              if (ent.id && ch.chat_id && String(ent.id).includes(String(ch.chat_id).replace("-100", ""))) return true;
+              return false;
+            });
+            if (foundDialog) {
+              chatEntity = foundDialog.entity;
+              channelReport.access = "YES";
+            }
+          }
+
+          if (!chatEntity && this.isBotSession === false && ch.hash) {
+            const inviteInfo = await this.client.invoke(
+              new Api.messages.CheckChatInvite({ hash: ch.hash })
+            );
+            if (inviteInfo instanceof Api.ChatInviteAlready) {
+              chatEntity = inviteInfo.chat;
+              channelReport.access = "YES";
+            } else if (inviteInfo instanceof Api.ChatInvite) {
+              channelReport.access = "PREVIEW_ONLY";
+              channelReport.error = "Account is not a joined member of this private channel yet";
+            }
+          }
+
+          if (chatEntity) {
+            const rawChatId = String(chatEntity.id);
+            const fullChatId = rawChatId.startsWith("-100") ? rawChatId : `-100${rawChatId}`;
+            channelReport.chat_id = fullChatId;
+
+            if (this.isBotSession === false) {
+              const lastProcessedMsgId = sourceRegistry.getLatestRealMessageId(ch.name);
+              const parsedPosts = [];
+              let offsetId = 0;
+              let hasMore = true;
+              let videosFoundCount = 0;
+
+              while (hasMore && videosFoundCount < limit) {
+                const historyParams = {
+                  peer: chatEntity,
+                  limit: 100,
+                };
+
+                if (offsetId > 0) {
+                  historyParams.offsetId = offsetId;
+                }
+
+                const history = await this.client.invoke(
+                  new Api.messages.GetHistory(historyParams)
+                );
+
+                const msgs = history.messages || [];
+                if (msgs.length === 0) {
+                  hasMore = false;
+                  break;
+                }
+
+                let validCountInBatch = 0;
+                for (const m of msgs) {
+                  if (m instanceof Api.MessageEmpty) continue;
+
+                  validCountInBatch++;
+
+                  let mediaType = "text";
+                  let durationStr = null;
+                  let videoFileId = null;
+
+                  if (m.media instanceof Api.MessageMediaDocument) {
+                    const doc = m.media.document;
+                    let videoAttr = null;
+                    let isVideo = false;
+
+                    if (doc) {
+                      const mime = (doc.mimeType || doc.mime_type || "").toLowerCase();
+                      if (mime.startsWith("video/")) {
+                        isVideo = true;
+                      }
+                      if (doc.attributes) {
+                        videoAttr = doc.attributes.find(a =>
+                          (a instanceof Api.DocumentAttributeVideo) ||
+                          (a && (a.className === "DocumentAttributeVideo" || a.CONSTRUCTOR_ID === 0xef02ce60))
+                        );
+                        if (videoAttr) isVideo = true;
+                      }
+                    }
+
+                    if (isVideo) {
+                      mediaType = "video";
+                      videosFoundCount++;
+                      channelReport.num_videos++;
+                      // Do not store raw MTProto numeric doc.id as Bot API file_id
+                      videoFileId = null;
+                      if (videoAttr && videoAttr.duration) {
+                        const dur = Math.floor(videoAttr.duration);
+                        const mins = Math.floor(dur / 60);
+                        const secs = dur % 60;
+                        durationStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+                      }
+                    } else {
+                      mediaType = "file";
+                      if (!channelReport.num_documents) channelReport.num_documents = 0;
+                      channelReport.num_documents++;
+                    }
+                  } else if (m.media instanceof Api.MessageMediaPhoto) {
+                    mediaType = "photo";
+                    channelReport.num_photos++;
+                  } else {
+                    channelReport.num_text++;
+                  }
+
+                  const textContent = m.message || "";
+                  let rawTextTitle = textContent.split("\n")[0] ? textContent.split("\n")[0].trim() : "";
+                  let titleText = rawTextTitle.length > 0 ? (rawTextTitle.length > 80 ? rawTextTitle.substring(0, 77) + "..." : rawTextTitle) : "제목 없음";
+
+                  const fullTitle = titleText;
+                  const postObj = {
+                    message_id: m.id,
+                    date: m.date,
+                    chat: { id: fullChatId, title: ch.name, username: ch.username, type: "channel" },
+                    caption: textContent,
+                    text: textContent,
+                    media_type: mediaType,
+                    duration: durationStr,
+                    video_file_id: videoFileId,
+                    title: fullTitle,
+                    telegram_url: ch.username ? `https://t.me/${ch.username}/${m.id}` : `https://t.me/c/${fullChatId.substring(4)}/${m.id}`
+                  };
+
+                  parsedPosts.push(postObj);
+                }
+
+                if (msgs.length < 100 || validCountInBatch === 0) {
+                  hasMore = false;
+                } else {
+                  const minIdInBatch = Math.min(...msgs.map(m => m.id));
+                  if (offsetId > 0 && minIdInBatch >= offsetId) {
+                    hasMore = false;
+                  } else {
+                    offsetId = minIdInBatch;
+                  }
+                }
+              }
+
+              channelReport.posts_found = parsedPosts.length;
+              channelReport.history_status = "SUCCESS";
+
+              channelReport.posts = parsedPosts;
+              if (parsedPosts.length > 0) {
+                const top = parsedPosts[0];
+                channelReport.latest_msg_id = top.message_id;
+                channelReport.latest_date = new Date(top.date * 1000).toISOString();
+                channelReport.media_type = top.media_type;
+                channelReport.latest_caption = top.caption || top.title;
+
+                if (saveToDisk) {
+                  const postsBefore = sourceRegistry.getPostsForKeyword(ch.name);
+                  channelReport.existing_before = postsBefore.length;
+
+                  let newCount = 0;
+                  let insertedCount = 0;
+                  let skippedCount = 0;
+
+                  // Sort by message_id ascending so newest post is unshifted last to position 0
+                  const sortedMsgs = [...parsedPosts].sort((a, b) => a.message_id - b.message_id);
+                  for (const p of sortedMsgs) {
+                    const res = sourceRegistry.processChannelPost(p, ch.name, true);
+                    if (res && res.isNew) {
+                      newCount++;
+                      insertedCount++;
+                    } else {
+                      skippedCount++;
+                    }
+                  }
+
+                  const postsAfter = sourceRegistry.getPostsForKeyword(ch.name);
+                  channelReport.fetched = parsedPosts.length;
+                  channelReport.new_posts = newCount;
+                  channelReport.inserted = insertedCount;
+                  channelReport.skipped = skippedCount;
+                  channelReport.existing_after = postsAfter.length;
+
+                  console.log(`📦 [SYNC] channel=${ch.name} fetched=${channelReport.fetched} new=${channelReport.new_posts} skipped=${channelReport.skipped} existing_after=${channelReport.existing_after}`);
+                }
+              }
+            } else {
+              // Bot or unverified session: fail-closed against invoking user-only messages.GetHistory
+              channelReport.posts_found = 0;
+              channelReport.history_status = this.isBotSession === true ? "SKIPPED_BOT_SESSION" : "SKIPPED_UNVERIFIED_SESSION";
+              channelReport.error = this.isBotSession === true
+                ? "Channel message history reading is not supported for Bot MTProto sessions by Telegram API (requires user account)"
+                : "Channel message history reading skipped: MTProto session type is unverified / fail-closed";
+              console.log(`ℹ️ [MTProto] Channel "${ch.name}" resolved (${fullChatId}), history reading skipped (${this.isBotSession === true ? "bot MTProto session capability limitation" : "unverified session fail-closed"}).`);
+            }
+          }
+        } catch (err) {
+          channelReport.history_status = "ERROR";
+          channelReport.error = err.message;
+          if (err.message && (err.message.includes("disconnected") || err.message.includes("closed") || err.message.includes("TIMEOUT"))) {
+            console.warn("⚠️ MTProto CONNECTION LOST during channel sync:", err.message);
+            console.log("🔄 RECONNECTING MTProto client...");
+            try {
+              await this.connect();
+              console.log("✅ MTProto RECONNECTED");
+            } catch (recErr) {
+              console.error("❌ MTProto reconnection failed:", recErr.message);
+            }
+          }
+        }
+
+        results.push(channelReport);
+      }
 
       console.log("📡 MTProto client: SYNC COMPLETE");
       console.log("📡 MTProto client: STILL CONNECTED");
@@ -395,7 +427,7 @@ class MTProtoChannelReader {
       if (post.username) {
         try { chatEntity = await this.client.getEntity(post.username); } catch (e) {}
       }
-      if (!chatEntity) {
+      if (!chatEntity && this.isBotSession === false) {
         try {
           const dialogs = await this.client.getDialogs({ limit: 100 });
           const found = dialogs.find(d => {
