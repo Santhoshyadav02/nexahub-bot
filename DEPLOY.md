@@ -62,6 +62,34 @@ The bot token was previously deployed elsewhere (Railway). During testing on 202
 - Check: `curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates?timeout=0&limit=1"` repeated a few times must never return `409`.
 - If that deployment also used `TELEGRAM_SESSION_STRING`, regenerate the session after stopping it.
 
+## 4b. Remote verified browser for video downloads
+
+Sites protected by a "verify you are human" check block the headless downloader on the server. The server equivalent of `start_browser.ps1` is a real Chrome on a virtual display that **you** verify manually through a private remote screen:
+
+```bash
+sudo bash deploy/remote_browser_setup.sh
+```
+
+It installs Google Chrome, Xvfb, x11vnc and noVNC, creates the unprivileged user `nexabrowser`, and starts systemd services `nexahub-xvfb`, `nexahub-fluxbox`, `nexahub-chrome`, `nexahub-vnc`, `nexahub-novnc`. Chrome DevTools listens on `127.0.0.1:9222`, the viewer on `127.0.0.1:6080` — nothing is exposed publicly.
+
+**Use it (from your PC):**
+
+1. Open a tunnel and keep the window open:
+   ```powershell
+   ssh -N -L 6080:127.0.0.1:6080 root@<server-ip>
+   ```
+2. Browse to `http://localhost:6080/vnc.html` → **Connect**. You see the server's Chrome.
+3. In that Chrome, open the website and complete the verification/login yourself.
+4. On the server, run the downloader attached to that browser:
+   ```bash
+   cd /opt/nexahub-bot/video-scrapper/video-tools
+   /opt/nexahub-bot/.venv/bin/python pipeline.py "WEBSITE_URL" --cdp-url http://127.0.0.1:9222 --once --workers 2 \
+     --output /var/lib/nexahub/downloader/output --downloads /var/lib/nexahub/downloader/downloads
+   ```
+5. When the site asks again (verification expired), repeat steps 1–3.
+
+Notes: data-center IPs can still be refused by the site regardless of verification; only download content you have the rights to re-publish. Manage the browser with `systemctl restart nexahub-chrome` / `systemctl status nexahub-*`.
+
 ## 5. Run
 
 ```bash
