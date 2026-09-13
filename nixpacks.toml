@@ -1,6 +1,10 @@
 [phases.setup]
 nixPkgs = [
   "...",
+  "python3",
+  "python3Packages.pip",
+  "python3Packages.playwright",
+  "python3Packages.requests",
   "chromium",
   "ffmpeg",
   "glib",
@@ -72,6 +76,13 @@ nixLibs = [
   "expat",
   "fontconfig",
   "freetype"
+]
+
+[phases.install]
+cmds = [
+  "...",
+  "python3 -m pip install --no-cache-dir playwright",
+  "python3 -m playwright install --with-deps chromium || true"
 ]
 
 [variables]

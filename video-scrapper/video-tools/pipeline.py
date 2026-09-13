@@ -276,7 +276,11 @@ class ContinuousPipeline:
                     return
                 context = browser.contexts[0]
             else:
-                browser = p.chromium.launch(headless=self.headless, proxy=self.proxy)
+                launch_kwargs = {'headless': self.headless, 'proxy': self.proxy}
+                exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
+                if exec_path and os.path.exists(exec_path):
+                    launch_kwargs['executable_path'] = exec_path
+                browser = p.chromium.launch(**launch_kwargs)
                 context = browser.new_context()
 
             page = context.new_page()

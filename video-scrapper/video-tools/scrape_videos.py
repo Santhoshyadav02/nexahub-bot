@@ -324,10 +324,18 @@ def main():
                 str(Path(args.profile).resolve()), headless=not args.headed, proxy=proxy
             )
         elif args.headless:
-            browser = p.chromium.launch(headless=True, proxy=proxy)
+            launch_kwargs = {'headless': True, 'proxy': proxy}
+            exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
+            if exec_path and os.path.exists(exec_path):
+                launch_kwargs['executable_path'] = exec_path
+            browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context()
         else:
-            browser = p.chromium.launch(headless=not args.headed, proxy=proxy)
+            launch_kwargs = {'headless': not args.headed, 'proxy': proxy}
+            exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
+            if exec_path and os.path.exists(exec_path):
+                launch_kwargs['executable_path'] = exec_path
+            browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context()
         page = context.new_page() if args.cdp_url else (context.pages[0] if context.pages else context.new_page())
         page.set_default_timeout(args.timeout * 1000)
