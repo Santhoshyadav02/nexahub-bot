@@ -1,10 +1,7 @@
 [phases.setup]
 nixPkgs = [
   "...",
-  "python3",
-  "python3Packages.pip",
-  "python3Packages.playwright",
-  "python3Packages.requests",
+  "(python3.withPackages (ps: with ps; [ playwright requests pip ]))",
   "chromium",
   "ffmpeg",
   "glib",
