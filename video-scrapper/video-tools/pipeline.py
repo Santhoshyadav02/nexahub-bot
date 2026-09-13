@@ -15,7 +15,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 from download_videos import download, is_valid_existing_file
-from proxy_config import load_proxy_config, redacted
+from proxy_config import load_proxy_config, redacted, require_proxy_if_expected
 from scrape_videos import POST_SELECTOR, connect_browser, extract_post_title, verification_visible, video_sources
 
 
@@ -36,6 +36,7 @@ class ContinuousPipeline:
         self.target_links = args.target_links
         self.max_pages = args.max_pages
         self.proxy = load_proxy_config()
+        require_proxy_if_expected(self.proxy)
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.downloads_dir.mkdir(parents=True, exist_ok=True)

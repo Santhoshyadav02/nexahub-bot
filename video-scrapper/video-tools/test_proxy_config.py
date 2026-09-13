@@ -90,6 +90,37 @@ class ProxyConfigTests(unittest.TestCase):
             thread.join(timeout=5)
             server.server_close()
 
+    def test_c_proxy_required_but_missing_fails_loudly(self):
+        """PROXY_REQUIRED=true + no resolvable proxy must raise, never silently
+        proceed as Proxy: none."""
+        os.environ["PROXY_REQUIRED"] = "true"
+        self.addCleanup(os.environ.pop, "PROXY_REQUIRED", None)
+        self.assertIsNone(load_proxy_config())
+        with self.assertRaises(proxy_config.ProxyRequiredError):
+            proxy_config.require_proxy_if_expected(load_proxy_config())
+
+    def test_d_proxy_required_and_present_passes_silently(self):
+        os.environ["PROXY_REQUIRED"] = "true"
+        os.environ["PROXY_SERVER"] = "104.207.58.10:3129"
+        self.addCleanup(os.environ.pop, "PROXY_REQUIRED", None)
+        proxy = load_proxy_config()
+        self.assertIsNotNone(proxy)
+        proxy_config.require_proxy_if_expected(proxy)  # must not raise
+
+    def test_e_proxy_not_required_and_missing_is_fine(self):
+        os.environ.pop("PROXY_REQUIRED", None)
+        self.assertIsNone(load_proxy_config())
+        proxy_config.require_proxy_if_expected(None)  # must not raise
+
+    def test_f_error_message_never_contains_credentials(self):
+        os.environ["PROXY_REQUIRED"] = "true"
+        self.addCleanup(os.environ.pop, "PROXY_REQUIRED", None)
+        try:
+            proxy_config.require_proxy_if_expected(None)
+            self.fail("expected ProxyRequiredError")
+        except proxy_config.ProxyRequiredError as exc:
+            self.assertNotIn("PROXY_PASSWORD", str(exc).lower())
+
 
 if __name__ == "__main__":
     unittest.main()

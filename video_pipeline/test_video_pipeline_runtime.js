@@ -435,15 +435,20 @@ async function runRuntimeTests() {
   console.log('\n============================================================');
   console.log(`RUNTIME SUITE RESULT: ${passed} passed, ${failed} failed`);
   console.log('============================================================\n');
-
-    if (failed > 0) {
-      process.exit(1);
-    }
   } finally {
+    // process.exit() below must never run inside this try block - it
+    // terminates the process immediately and skips any pending `finally`,
+    // which previously left video-tools/.proxy.local.json permanently
+    // renamed aside on any failing run (found while auditing why the real
+    // acquisition flow was proxy-less in production).
     if (hadProxyConfig && fs.existsSync(proxyBackupPath)) {
       fs.renameSync(proxyBackupPath, proxyConfigPath);
       console.log('Restored video-tools/.proxy.local.json.');
     }
+  }
+
+  if (failed > 0) {
+    process.exit(1);
   }
 }
 

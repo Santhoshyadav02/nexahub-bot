@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Error, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
-from proxy_config import load_proxy_config, redacted
+from proxy_config import load_proxy_config, redacted, require_proxy_if_expected
 
 POST_SELECTOR = '#fboardlist .list-row a[href*="wr_id"]'
 VIDEO_SELECTOR = '.jw-media video.jw-video'
@@ -303,6 +303,7 @@ def main():
     folder.mkdir(parents=True, exist_ok=True)
     results = []
     proxy = load_proxy_config()
+    require_proxy_if_expected(proxy)
     print(f'Proxy: {redacted(proxy)}', flush=True)
     if proxy and args.cdp_url:
         print('NOTE: --cdp-url attaches to an already-running browser; its proxy was fixed '

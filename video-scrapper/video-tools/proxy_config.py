@@ -64,3 +64,29 @@ def redacted(proxy):
     server = proxy.get("server", "?")
     has_auth = bool(proxy.get("username") or proxy.get("password"))
     return f"{server} (auth: {'yes' if has_auth else 'no'})"
+
+
+class ProxyRequiredError(RuntimeError):
+    """Raised when PROXY_REQUIRED=true but no proxy could be resolved. Never
+    include credential values in this error - only non-secret configuration
+    facts (env var names, file paths)."""
+
+
+def require_proxy_if_expected(proxy):
+    """Fail loudly, before any browser launches, if a proxy was explicitly
+    marked required (PROXY_REQUIRED=true) but load_proxy_config() came back
+    empty. Without this, a missing/renamed-aside .proxy.local.json (e.g. from
+    an interrupted process) silently downgrades every subsequent run to a
+    direct connection with no proxy - never surfaced as an error, only as a
+    "Proxy: none" line easy to miss in scrollback. A caller that does not set
+    PROXY_REQUIRED is unaffected: proxy stays fully optional, exactly as
+    before this function existed.
+    """
+    if proxy:
+        return
+    if os.environ.get("PROXY_REQUIRED", "").strip().lower() != "true":
+        return
+    raise ProxyRequiredError(
+        "PROXY_REQUIRED=true but no proxy could be resolved (checked PROXY_SERVER "
+        f"and {LOCAL_CONFIG_PATH}). Refusing to proceed with a direct connection."
+    )
