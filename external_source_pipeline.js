@@ -42,6 +42,14 @@ class ExternalSourcePipeline {
    * @param {boolean} [config.mediaPipelineEnabled]
    */
   constructor(config = {}) {
+    // Fail-closed, same convention as VideoPipelineRuntime's own enabled gate:
+    // starting this scheduler (backfill + recurring poll) is real, live network
+    // activity against the external source, so it must be explicitly opted
+    // into - never on by default just because index.js requires this module.
+    this.schedulerEnabled = config.schedulerEnabled !== undefined
+      ? Boolean(config.schedulerEnabled)
+      : (process.env.EXTERNAL_SOURCE_SCHEDULER_ENABLED === "true");
+
     this.pollingIntervalMs = config.pollingIntervalMs || POLLING_INTERVAL_MS;
     this.maxTotalItems = config.maxTotalItems || MAX_GLOBAL_RETENTION;
     this.dryRun = config.dryRun !== undefined ? Boolean(config.dryRun) : (process.env.AVSEE_DRY_RUN !== "false");
@@ -360,6 +368,11 @@ class ExternalSourcePipeline {
    * @param {boolean} [options.runBackfillOnStart=true]
    */
   startScheduler(options = {}) {
+    if (!this.schedulerEnabled) {
+      console.log("[EXTERNAL_SOURCE] Scheduler is DISABLED (EXTERNAL_SOURCE_SCHEDULER_ENABLED !== 'true'). Remaining dormant - no external-source network activity (no backfill, no recurring poll) will occur.");
+      return this;
+    }
+
     if (this.isStarted || this.timerId) {
       console.warn("⚠️ [EXTERNAL_SOURCE] Scheduler is already active. Duplicate start blocked.");
       return this;

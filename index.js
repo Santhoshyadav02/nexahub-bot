@@ -59,7 +59,15 @@ const bot = new TelegramBot(TOKEN, {
 
 
 
+if (enablePolling) {
+  console.log(`[TELEGRAM] Polling: ACTIVE (requesting getUpdates - a 409 below means another instance already holds this BOT_TOKEN's polling slot; outgoing sends are unaffected either way).`);
+}
+
 let pollingConflictRetryTimer = null;
+let pollingConflictAttempts = 0;
+let pollingConflictLastAt = 0;
+const POLLING_CONFLICT_MAX_RETRIES = 5;
+const POLLING_CONFLICT_RESET_WINDOW_MS = 5 * 60 * 1000; // treat a conflict >5 min after the last one as a fresh episode
 
 bot.on("polling_error", async (error) => {
   const errMsg = String(error.message || error);
@@ -67,12 +75,24 @@ bot.on("polling_error", async (error) => {
 
   if (errMsg.includes("409 Conflict") || errMsg.includes("terminated by other getUpdates request")) {
     if (!isShuttingDown) {
-      console.log(`ℹ️ [PID:${APP_PID}] 409 Conflict: Another bot polling instance is currently active. Pausing polling to resolve conflict...`);
+      const now = Date.now();
+      if (now - pollingConflictLastAt > POLLING_CONFLICT_RESET_WINDOW_MS) {
+        pollingConflictAttempts = 0;
+      }
+      pollingConflictLastAt = now;
+      pollingConflictAttempts++;
+
+      console.log(`[TELEGRAM] Polling: CONFLICT (attempt ${pollingConflictAttempts}/${POLLING_CONFLICT_MAX_RETRIES}) - another instance (e.g. the production deployment) already holds this BOT_TOKEN's polling slot. Pausing local polling; outgoing sends (e.g. video publishing) are NOT affected by this.`);
       try {
         if (bot.isPolling && bot.isPolling()) {
           await bot.stopPolling({ cancel: true });
         }
       } catch (e) {}
+
+      if (pollingConflictAttempts >= POLLING_CONFLICT_MAX_RETRIES) {
+        console.error(`[TELEGRAM] Polling: CONFLICT - giving up after ${POLLING_CONFLICT_MAX_RETRIES} attempts. This BOT_TOKEN is already actively polling elsewhere. Polling stays stopped for this process (no further automatic retries); restart with a different/dedicated BOT_TOKEN to receive updates locally. Bot commands will not work locally until then, but video-pipeline publishing is unaffected.`);
+        return;
+      }
 
       if (!pollingConflictRetryTimer) {
         pollingConflictRetryTimer = setTimeout(async () => {
