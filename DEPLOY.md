@@ -88,6 +88,24 @@ It installs Google Chrome, Xvfb, x11vnc and noVNC, creates the unprivileged user
    ```
 5. When the site asks again (verification expired), repeat steps 1–3.
 
+**Automatic (the bot runs it on a schedule):** instead of step 4, let the PM2 bot start video-tools attached to that browser and upload through the MTProto user session. In `.env`:
+
+```bash
+VIDEO_PIPELINE_ENABLED=true
+VIDEO_PIPELINE_SOURCE_MODE=authorized
+VIDEO_PIPELINE_AUTHORIZED_SOURCE_URL=WEBSITE_URL
+VIDEO_PIPELINE_CDP_URL=http://127.0.0.1:9222
+VIDEO_PIPELINE_UPLOAD_MODE=mtproto          # Bot API stops at 50 MB
+VIDEO_PIPELINE_STAGING_CHAT_ID=me           # "me" = the session account's Saved Messages
+VIDEO_PIPELINE_RUN_ON_STARTUP=true
+VIDEO_PIPELINE_WORKERS=2
+VIDEO_PIPELINE_TIMEOUT_MS=36000000          # 10 h: multi-GB downloads + validation + upload
+VIDEO_PIPELINE_VALIDATION_TIMEOUT_MS=3600000
+VIDEO_PIPELINE_DOWNLOAD_MAX_BYTES=107374182400
+```
+
+Then `pm2 restart nexahub-bot --update-env` and watch `pm2 logs nexahub-bot | grep -E "VIDEO_PIPELINE|BATCH_CYCLE|MTPROTO_VIDEO"`. Files land in `/var/lib/nexahub/video_pipeline/downloads`; anything above `VIDEO_PIPELINE_MTPROTO_MAX_PART_BYTES` is split with ffmpeg stream copy (no re-encode) into numbered parts under `/var/lib/nexahub/video_pipeline/upload_parts`, which are deleted after upload. A `BLOCKED: ... bot-verification` line in the log means the verification expired: repeat steps 1–3; the next scheduled cycle picks up again.
+
 Notes: data-center IPs can still be refused by the site regardless of verification; only download content you have the rights to re-publish. Manage the browser with `systemctl restart nexahub-chrome` / `systemctl status nexahub-*`.
 
 ## 5. Run

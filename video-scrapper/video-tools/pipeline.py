@@ -499,18 +499,30 @@ class ContinuousPipeline:
                         time.sleep(0.5)
 
             finally:
-                # Close each separately: a failing context.close() (e.g. the
-                # browser already died) must not skip browser.close().
-                try:
-                    context.close()
-                except Exception:
-                    pass
-                if browser is not None:
+                if self.cdp_url:
+                    # Attached to the operator's verified browser: close only our
+                    # own tab. Closing its default context would take down the
+                    # verified tabs (and Chrome itself once no window is left);
+                    # leaving the Playwright manager just disconnects.
                     try:
-                        browser.close()
+                        if not page.is_closed():
+                            page.close()
                     except Exception:
                         pass
-                print("[Producer] Browser closed cleanly.", flush=True)
+                    print("[Producer] Detached from CDP browser (left running).", flush=True)
+                else:
+                    # Close each separately: a failing context.close() (e.g. the
+                    # browser already died) must not skip browser.close().
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
+                    if browser is not None:
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                    print("[Producer] Browser closed cleanly.", flush=True)
 
         if self.once:
             print("\n[Pipeline] Producer finished. Waiting for worker queue to drain...", flush=True)

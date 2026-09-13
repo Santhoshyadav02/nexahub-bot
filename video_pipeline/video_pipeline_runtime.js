@@ -60,6 +60,12 @@ const SOURCE_MODE_FIXTURE = 'fixture';
 const SOURCE_MODE_AUTHORIZED = 'authorized';
 const VALID_SOURCE_MODES = new Set([SOURCE_MODE_FIXTURE, SOURCE_MODE_AUTHORIZED]);
 
+const UPLOAD_MODE_BOT = 'bot';
+const UPLOAD_MODE_MTPROTO = 'mtproto';
+const VALID_UPLOAD_MODES = new Set([UPLOAD_MODE_BOT, UPLOAD_MODE_MTPROTO]);
+// Total source-file ceiling in mtproto mode (parts are split below 2 GB each).
+const DEFAULT_MTPROTO_MAX_FILE_BYTES = 20 * 1024 * 1024 * 1024;
+
 // Pre-data-dir layout: state lived beside this file, media under the repo root.
 const LEGACY_STATE_FILES = ['batch_state.json', 'media_state.json', 'publish_state.json'];
 
@@ -104,6 +110,10 @@ class VideoPipelineRuntime {
     this.acquisitionUrl = config.acquisitionUrl || process.env.VIDEO_PIPELINE_ACQUISITION_URL || null;
     this.inputLinks = config.inputLinks || process.env.VIDEO_PIPELINE_INPUT_LINKS || null;
     this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
+    // "bot" uploads with the injected Bot API client (50 MB limit); "mtproto"
+    // uploads through the shared MTProto user session (2 GB per message,
+    // larger files split into parts).
+    this.uploadMode = String(config.uploadMode || process.env.VIDEO_PIPELINE_UPLOAD_MODE || UPLOAD_MODE_BOT).trim().toLowerCase();
 
     const envInterval = Number(process.env.VIDEO_PIPELINE_INTERVAL_MS);
     this.intervalMs = (config.intervalMs && !isNaN(config.intervalMs))
@@ -164,6 +174,9 @@ class VideoPipelineRuntime {
     this.downloadsDir = config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR || dataPath('video_pipeline', 'downloads');
     this.outputDir = config.outputDir || process.env.VIDEO_PIPELINE_OUTPUT_DIR || dataPath('video_pipeline', 'output');
     this.stateDir = config.stateDir || process.env.VIDEO_PIPELINE_STATE_DIR || dataPath('video_pipeline', 'state');
+    // Scratch space for split upload parts - deliberately outside downloadsDir,
+    // which the cycle scans for new media.
+    this.uploadPartsDir = config.uploadPartsDir || dataPath('video_pipeline', 'upload_parts');
 
     this.autoPublish = config.autoPublish !== undefined
       ? Boolean(config.autoPublish)
@@ -188,6 +201,13 @@ class VideoPipelineRuntime {
     }
     if (this.inputLinks) {
       this.acquisitionOptions.inputLinks = this.inputLinks;
+    }
+    // Server: attach video-tools to the human-verified Chrome started by
+    // deploy/remote_browser_setup.sh instead of launching headless Chromium,
+    // which site verification blocks.
+    this.cdpUrl = config.cdpUrl || process.env.VIDEO_PIPELINE_CDP_URL || null;
+    if (this.cdpUrl && !this.acquisitionOptions.cdpUrl) {
+      this.acquisitionOptions.cdpUrl = this.cdpUrl;
     }
 
     // Injected dependencies (tests)
@@ -247,6 +267,13 @@ class VideoPipelineRuntime {
     // inputLinks remain supported as explicit overrides for tests that want
     // fixture mode to point at their own local HTTP server instead.
 
+    if (!VALID_UPLOAD_MODES.has(this.uploadMode)) {
+      const err = `VIDEO_PIPELINE_UPLOAD_MODE must be "bot" or "mtproto" (got: "${this.uploadMode}").`;
+      this._configValid = false;
+      this._lastConfigError = err;
+      return { valid: false, reason: err };
+    }
+
     if (this.autoPublish) {
       if (!this.stagingChatId || typeof this.stagingChatId !== 'string' || !this.stagingChatId.trim()) {
         const err = 'VIDEO_PIPELINE_STAGING_CHAT_ID is required when autoPublish is enabled.';
@@ -269,7 +296,15 @@ class VideoPipelineRuntime {
       // publisher, or a fully custom batchCycleManager (whatever publishing
       // setup it has, if any, is that caller's own responsibility - this
       // runtime only guards the paths where IT would build the publisher).
-      if (!this.batchCycleManager && !this.videoBatchPublisher && !this.telegramClient) {
+      const needsOwnPublisher = !this.batchCycleManager && !this.videoBatchPublisher;
+      if (needsOwnPublisher && this.uploadMode === UPLOAD_MODE_MTPROTO) {
+        if (!process.env.TELEGRAM_SESSION_STRING || !process.env.TELEGRAM_API_ID || !process.env.TELEGRAM_API_HASH) {
+          const err = 'VIDEO_PIPELINE_UPLOAD_MODE=mtproto requires TELEGRAM_SESSION_STRING, TELEGRAM_API_ID and TELEGRAM_API_HASH.';
+          this._configValid = false;
+          this._lastConfigError = err;
+          return { valid: false, reason: err };
+        }
+      } else if (needsOwnPublisher && !this.telegramClient) {
         const err = 'A Telegram client is required when autoPublish is enabled (config.telegramClient, or a pre-configured config.videoBatchPublisher/batchCycleManager).';
         this._configValid = false;
         this._lastConfigError = err;
@@ -444,6 +479,20 @@ class VideoPipelineRuntime {
   }
 
   /**
+   * Publisher client for mtproto upload mode: VideoBatchPublisher calls its
+   * publish() hook, which uploads through the shared MTProto user session.
+   * @private
+   */
+  _createMtprotoClient() {
+    const { MtprotoVideoUploader } = require('./mtproto_video_uploader');
+    const uploader = new MtprotoVideoUploader({
+      partsDir: this.uploadPartsDir
+    });
+    console.log(`${LOG_PREFIX} Upload mode: MTPROTO (user session, parts up to ${uploader.maxPartBytes} bytes).`);
+    return { publish: (args) => uploader.publish(args) };
+  }
+
+  /**
    * Initializes and constructs the internal BatchCycleManager if not already created.
    * @private
    */
@@ -489,13 +538,17 @@ class VideoPipelineRuntime {
 
     let publisher = this.videoBatchPublisher;
     if (!publisher && this.autoPublish) {
+      const useMtproto = this.uploadMode === UPLOAD_MODE_MTPROTO;
       publisher = new VideoBatchPublisher({
         stagingChatId: this.stagingChatId,
-        telegramClient: this.telegramClient,
+        telegramClient: useMtproto ? this._createMtprotoClient() : this.telegramClient,
         batchState,
         publishLedger,
         mediaCleaner,
-        enableCleanup: this.enableCleanup
+        enableCleanup: this.enableCleanup,
+        maxUploadBytes: useMtproto
+          ? (Number(process.env.VIDEO_PIPELINE_MTPROTO_MAX_FILE_BYTES) > 0 ? Number(process.env.VIDEO_PIPELINE_MTPROTO_MAX_FILE_BYTES) : DEFAULT_MTPROTO_MAX_FILE_BYTES)
+          : undefined
       });
     }
 
@@ -683,6 +736,7 @@ class VideoPipelineRuntime {
       lastConfigError: this._lastConfigError,
       lastCycleSummary: lastSummary,
       sourceMode: this.sourceMode,
+      uploadMode: this.uploadMode,
       authorizedSourceConfigured: Boolean(this.authorizedSourceUrl)
     };
   }
