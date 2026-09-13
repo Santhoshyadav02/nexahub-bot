@@ -23,13 +23,19 @@ const VALID_SOURCE_MODES = new Set(['fixture', 'authorized']);
 /**
  * @param {object} media Media record (sourceMode, isFixtureMedia,
  *   sourcePageUrl, sourceVideoUrl, contentSha256, filePath)
+ * @param {object} [options]
+ * @param {string} [options.authorizedSourceUrl] The configured authorized
+ *   listing URL. When given for authorized-mode media, the post page must be
+ *   on that source's origin; the video itself may be served from another
+ *   host (sites commonly stream from a CDN), since it was extracted from
+ *   that verified page.
  * @returns {{
  *   valid: boolean,
  *   checks: Record<string, boolean>,
  *   error: string|null
  * }}
  */
-function validateSourceProvenance(media) {
+function validateSourceProvenance(media, options = {}) {
   const checks = {
     sourceModeKnown: false,
     sourcePageUrlPresent: false,
@@ -54,14 +60,19 @@ function validateSourceProvenance(media) {
   // 3. source_video_url is present and well-formed.
   checks.sourceVideoUrlPresent = Boolean(media.sourceVideoUrl) && /^https?:\/\//i.test(media.sourceVideoUrl);
 
-  // 4. source_video_url must belong to the SAME origin as source_page_url -
-  // catches a media record whose video URL was somehow associated with a
-  // different site/post than the one it claims to have been discovered on.
+  // 4. Without a configured authorized source, source_video_url must belong
+  // to the SAME origin as source_page_url - catches a media record whose
+  // video URL was somehow associated with a different site/post than the
+  // one it claims to have been discovered on. With one (authorized mode),
+  // the page must instead come from that configured source's origin.
   if (checks.sourcePageUrlPresent && checks.sourceVideoUrlPresent) {
     try {
       const pageOrigin = new URL(media.sourcePageUrl).origin;
-      const videoOrigin = new URL(media.sourceVideoUrl).origin;
-      checks.sourceVideoUrlConsistentWithPage = pageOrigin === videoOrigin;
+      if (options.authorizedSourceUrl && media.sourceMode === 'authorized') {
+        checks.sourceVideoUrlConsistentWithPage = pageOrigin === new URL(options.authorizedSourceUrl).origin;
+      } else {
+        checks.sourceVideoUrlConsistentWithPage = pageOrigin === new URL(media.sourceVideoUrl).origin;
+      }
     } catch (e) {
       checks.sourceVideoUrlConsistentWithPage = false;
     }

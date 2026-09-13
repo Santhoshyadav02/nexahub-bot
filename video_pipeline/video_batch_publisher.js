@@ -86,6 +86,9 @@ class VideoBatchPublisher {
    * @param {number} [config.maxRetries=1]
    * @param {boolean} [config.enableCleanup=false] Whether to clean media files after confirmed publication
    * @param {number} [config.maxUploadBytes] Upload size ceiling (default VIDEO_PIPELINE_MAX_UPLOAD_BYTES or 50 MB)
+   * @param {string} [config.authorizedSourceUrl] Configured authorized source, used by provenance validation
+   * @param {boolean} [config.reuseIngestDecode=false] Skip the second full FFmpeg decode when the file's SHA256
+   *   still matches the media record (which ingestion only marks READY after a passing full decode)
    */
   constructor(config = {}) {
     this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
@@ -99,6 +102,8 @@ class VideoBatchPublisher {
     this.maxRetries = config.maxRetries !== undefined ? config.maxRetries : 1;
     this.enableCleanup = Boolean(config.enableCleanup);
     this.maxUploadBytes = resolveMaxUploadBytes(config.maxUploadBytes);
+    this.authorizedSourceUrl = config.authorizedSourceUrl || null;
+    this.reuseIngestDecode = Boolean(config.reuseIngestDecode);
 
     this._validateStagingDestination(this.stagingChatId);
   }
@@ -511,9 +516,26 @@ class VideoBatchPublisher {
     // 3. Media Integrity Validation (TECHNICAL_VALIDATION)
     // Answers: "can this file be played? is it a real, undamaged video?"
     // This says NOTHING about where the bytes came from - see step 3a below.
+    // 3-pre. With reuseIngestDecode, hash first: bytes identical to the record
+    // that ingestion fully decoded only need the cheap header/ffprobe re-check.
+    let verifiedSha256 = null;
+    if (this.reuseIngestDecode && media.contentSha256) {
+      try {
+        verifiedSha256 = await this._sha256File(filePath);
+      } catch (hashErr) {
+        const err = `Failed to compute SHA256 before validation: ${hashErr.message}`;
+        const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
+        await this.publishLedger.recordFailure(attempt.publishId, err);
+        return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
+      }
+    }
+    const skipDecode = verifiedSha256 !== null && verifiedSha256 === media.contentSha256;
+
     let freshValidation = null;
     try {
-      freshValidation = await this.mediaValidator(filePath);
+      freshValidation = skipDecode
+        ? await this.mediaValidator(filePath, { skipDecode: true })
+        : await this.mediaValidator(filePath);
       if (!freshValidation || !freshValidation.valid) {
         const err = `Media integrity validation failed: ${freshValidation ? (freshValidation.error || freshValidation.reason) : 'unknown validator error'}`;
         console.error(`${LOG_PREFIX} TECHNICAL_VALIDATION: FAIL - ${err}`);
@@ -521,7 +543,7 @@ class VideoBatchPublisher {
         await this.publishLedger.recordFailure(attempt.publishId, err);
         return { mediaId, canonicalDestination, status: 'FAILED', reason: err };
       }
-      console.log(`${LOG_PREFIX} TECHNICAL_VALIDATION: PASS mediaId=${mediaId}`);
+      console.log(`${LOG_PREFIX} TECHNICAL_VALIDATION: PASS mediaId=${mediaId}${skipDecode ? ' (SHA256 matches ingest-time full decode; decode not repeated)' : ''}`);
     } catch (valErr) {
       const err = `Media validator threw an exception: ${valErr.message}`;
       console.error(`${LOG_PREFIX} TECHNICAL_VALIDATION: FAIL - ${err}`);
@@ -537,7 +559,7 @@ class VideoBatchPublisher {
     // self-consistent?" A tiny fixture clip can pass TECHNICAL_VALIDATION
     // perfectly while still failing this check, and vice versa. Both must
     // PASS before publication - neither substitutes for the other.
-    const provenanceResult = validateSourceProvenance(media);
+    const provenanceResult = validateSourceProvenance(media, { authorizedSourceUrl: this.authorizedSourceUrl });
     if (!provenanceResult.valid) {
       const err = provenanceResult.error || 'Source provenance validation failed.';
       console.error(`${LOG_PREFIX} SOURCE_PROVENANCE_VALIDATION: FAIL - ${err}`);
@@ -556,15 +578,11 @@ class VideoBatchPublisher {
     // filename race, or a transcode that altered the media in place). Any
     // mismatch on ANY field blocks publish.
     if (media.contentSha256) {
-      let actualSha256;
+      let actualSha256 = verifiedSha256;
       try {
-        actualSha256 = await new Promise((resolve, reject) => {
-          const hash = crypto.createHash('sha256');
-          const stream = fs.createReadStream(filePath);
-          stream.on('data', chunk => hash.update(chunk));
-          stream.on('end', () => resolve(hash.digest('hex')));
-          stream.on('error', reject);
-        });
+        if (actualSha256 === null) {
+          actualSha256 = await this._sha256File(filePath);
+        }
       } catch (hashErr) {
         const err = `Failed to recompute SHA256 before publish: ${hashErr.message}`;
         const attempt = await this.publishLedger.recordAttempt({ batchId, media, destinationId });
@@ -789,6 +807,16 @@ class VideoBatchPublisher {
     }
 
     return { verified: true, reason: null, details };
+  }
+
+  _sha256File(filePath) {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('data', chunk => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', reject);
+    });
   }
 
   /**

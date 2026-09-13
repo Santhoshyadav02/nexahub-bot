@@ -410,6 +410,14 @@ async function validateMediaFile(filePath, options = {}) {
     return result;
   }
 
+  // Caller already holds a full-decode verdict for these exact bytes (proven
+  // by SHA256): header + ffprobe checks above are re-run, the decode is not.
+  if (options.skipDecode) {
+    result.valid = true;
+    result.hasVideoTrack = true;
+    return result;
+  }
+
   const decodeRes = await decodeCheck(filePath, options.decodeTimeoutMs ? { timeoutMs: options.decodeTimeoutMs } : undefined);
   if (decodeRes.unavailable) {
     const message = 'ffmpeg is required for media validation but was not found '

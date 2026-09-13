@@ -546,6 +546,10 @@ class VideoPipelineRuntime {
         publishLedger,
         mediaCleaner,
         enableCleanup: this.enableCleanup,
+        authorizedSourceUrl: this.sourceMode === SOURCE_MODE_AUTHORIZED ? this.authorizedSourceUrl : null,
+        // A multi-GB full decode takes 10+ minutes on a small server; set
+        // VIDEO_PIPELINE_PUBLISH_FULL_DECODE=true to repeat it before upload anyway.
+        reuseIngestDecode: process.env.VIDEO_PIPELINE_PUBLISH_FULL_DECODE !== 'true',
         maxUploadBytes: useMtproto
           ? (Number(process.env.VIDEO_PIPELINE_MTPROTO_MAX_FILE_BYTES) > 0 ? Number(process.env.VIDEO_PIPELINE_MTPROTO_MAX_FILE_BYTES) : DEFAULT_MTPROTO_MAX_FILE_BYTES)
           : undefined
