@@ -65,6 +65,37 @@ function buildArgs(runScriptPath, options) {
   return args;
 }
 
+/**
+ * Builds the Python CLI argument list for pipeline.py directly (used on Linux/Railway).
+ * @param {string} pythonScriptPath
+ * @param {object} options
+ * @returns {string[]}
+ */
+function buildPythonArgs(pythonScriptPath, options) {
+  const args = [pythonScriptPath];
+
+  if (options.inputLinks) {
+    args.push("--input-links", options.inputLinks);
+  } else if (options.url) {
+    args.push(options.url);
+  }
+
+  if (options.output) args.push("--output", options.output);
+  if (options.downloads) args.push("--downloads", options.downloads);
+  if (options.workers) args.push("--workers", String(options.workers));
+  if (options.interval) args.push("--interval", String(options.interval));
+  if (options.queueCap) args.push("--queue-cap", String(options.queueCap));
+  if (options.timeoutSec) args.push("--timeout", String(options.timeoutSec));
+  if (options.targetLinks) args.push("--target-links", String(options.targetLinks));
+  if (options.maxPages) args.push("--max-pages", String(options.maxPages));
+  if (options.once) args.push("--once");
+  if (options.noPlay) args.push("--no-play");
+  if (options.headed) args.push("--headed");
+  if (options.cdpUrl) args.push("--cdp-url", options.cdpUrl);
+
+  return args;
+}
+
 class VideoPipelineManager {
   /**
    * @param {object} [config]
@@ -111,10 +142,9 @@ class VideoPipelineManager {
   }
 
   /**
-   * Starts video-tools' own run_pipeline.ps1 as a child process. Refuses to
-   * launch a second copy if one is already running, and refuses new starts
-   * once the manager has begun shutting down.
-   * @param {object} [options] See buildArgs() for the supported fields.
+   * Starts video-tools acquisition pipeline as a child process.
+   * On Windows, uses run_pipeline.ps1; on Linux/Railway, executes pipeline.py via python.
+   * @param {object} [options] See buildArgs() / buildPythonArgs() for supported fields.
    * @returns {{status: string, pid?: number, error?: string}}
    */
   start(options = {}) {
@@ -128,20 +158,30 @@ class VideoPipelineManager {
       return { status: "ALREADY_RUNNING", pid: this._pid };
     }
 
-    if (!fs.existsSync(this.runScriptPath)) {
-      const error = `run_pipeline.ps1 not found at ${this.runScriptPath}`;
-      this._lastError = error;
-      console.error(`${LOG_PREFIX} ${error}`);
-      return { status: "START_FAILED", error };
+    const isWindows = process.platform === "win32";
+    const pythonScriptPath = path.join(this.videoToolsDir, "pipeline.py");
+    let cmd, args;
+
+    if (isWindows && fs.existsSync(this.runScriptPath)) {
+      cmd = "powershell.exe";
+      args = buildArgs(this.runScriptPath, options);
+    } else {
+      if (!fs.existsSync(pythonScriptPath)) {
+        const error = `pipeline.py not found at ${pythonScriptPath}`;
+        this._lastError = error;
+        console.error(`${LOG_PREFIX} ${error}`);
+        return { status: "START_FAILED", error };
+      }
+      cmd = process.env.PYTHON_PATH || (isWindows ? "python" : "python3");
+      args = buildPythonArgs(pythonScriptPath, options);
     }
 
-    const args = buildArgs(this.runScriptPath, options);
     console.log(`${LOG_PREFIX} Starting video-tools pipeline (cwd=${this.videoToolsDir})`);
-    console.log(`${LOG_PREFIX} powershell.exe ${args.join(" ")}`);
+    console.log(`${LOG_PREFIX} ${cmd} ${args.join(" ")}`);
 
     let child;
     try {
-      child = spawn("powershell.exe", args, {
+      child = spawn(cmd, args, {
         cwd: this.videoToolsDir,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"]

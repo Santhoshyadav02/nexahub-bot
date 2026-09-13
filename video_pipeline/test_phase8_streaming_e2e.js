@@ -132,16 +132,15 @@ function createSyntheticMp4WithId(id) {
   const destPath = path.join(fixtureDir, `synthetic_${id}.mp4`);
   if (fs.existsSync(destPath)) return destPath;
 
-  const ffmpeg = getFFmpegPath();
-  const res = spawnSync(ffmpeg, [
-    '-y', '-f', 'lavfi', '-i', `color=c=0x${(id * 123456 % 0xffffff).toString(16).padStart(6, '0')}:s=160x120:d=1`,
-    '-pix_fmt', 'yuv420p', destPath
-  ], { encoding: 'utf8' });
-
-  if (res.status !== 0 || !fs.existsSync(destPath)) {
-    const base = getSyntheticMp4();
-    fs.copyFileSync(base, destPath);
-  }
+  const base = getSyntheticMp4();
+  const baseBuf = fs.readFileSync(base);
+  const payload = Buffer.from(`SYNTHETIC_ID_${id}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`, 'utf8');
+  const boxLength = 8 + payload.length;
+  const freeBox = Buffer.alloc(boxLength);
+  freeBox.writeUInt32BE(boxLength, 0);
+  freeBox.write('free', 4, 4, 'ascii');
+  payload.copy(freeBox, 8);
+  fs.writeFileSync(destPath, Buffer.concat([baseBuf, freeBox]));
   return destPath;
 }
 

@@ -287,9 +287,12 @@ class VideoPipelineRuntime {
 
     try {
       this._ensureManagerInitialized();
-      this.batchCycleManager.startScheduler(this.intervalMs, options);
+      const runImmediately = options.runImmediately !== undefined
+        ? Boolean(options.runImmediately)
+        : (process.env.VIDEO_PIPELINE_RUN_ON_STARTUP === 'true');
+      this.batchCycleManager.startScheduler(this.intervalMs, { runImmediately, ...options });
       this._started = true;
-      console.log(`${LOG_PREFIX} Runtime started successfully (interval=${this.intervalMs}ms, autoPublish=${this.autoPublish}).`);
+      console.log(`${LOG_PREFIX} Runtime started successfully (interval=${this.intervalMs}ms, autoPublish=${this.autoPublish}, runOnStartup=${runImmediately}).`);
       return { status: 'STARTED', started: true, intervalMs: this.intervalMs };
     } catch (err) {
       console.error(`${LOG_PREFIX} Failed to start runtime: ${err.message}`);
