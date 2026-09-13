@@ -609,6 +609,26 @@ let isPublishingCycleActive = false;
  * @returns {object}
  */
 function startPipelineScheduler(options = {}) {
+  // Fail-closed, same convention as VideoPipelineRuntime and
+  // ExternalSourcePipeline's own enabled gates: this scheduler reads real
+  // Telegram source channels via MTProto and publishes to real production
+  // destination channels, so it must be explicitly opted into - never on
+  // by default just because index.js requires this module. This check must
+  // stay ahead of loadPipelineConfig()/pipeline_config.json entirely so a
+  // disabled scheduler never reads config, touches the ledger, or
+  // constructs any reader/publisher.
+  const schedulerEnabled = options.schedulerEnabled !== undefined
+    ? Boolean(options.schedulerEnabled)
+    : (process.env.TELEGRAM_PIPELINE_SCHEDULER_ENABLED === "true");
+
+  if (!schedulerEnabled) {
+    console.log("[TELEGRAM_PIPELINE] Scheduler is DISABLED (TELEGRAM_PIPELINE_SCHEDULER_ENABLED !== 'true'). Remaining dormant - no source reads, no destination publishes, no timers will start.");
+    return {
+      status: "DISABLED",
+      stop: stopPipelineScheduler
+    };
+  }
+
   const config = loadPipelineConfig();
   if (options.enabled !== undefined) {
     config.enabled = options.enabled;
