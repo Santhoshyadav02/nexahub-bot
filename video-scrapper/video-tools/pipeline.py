@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import queue
+import shutil
 import signal
 import sys
 import threading
@@ -278,6 +279,8 @@ class ContinuousPipeline:
             else:
                 launch_kwargs = {'headless': self.headless, 'proxy': self.proxy}
                 exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
+                if not exec_path or not os.path.exists(exec_path):
+                    exec_path = shutil.which('chromium') or shutil.which('google-chrome') or shutil.which('chrome') or shutil.which('chromium-browser')
                 if exec_path and os.path.exists(exec_path):
                     launch_kwargs['executable_path'] = exec_path
                 browser = p.chromium.launch(**launch_kwargs)

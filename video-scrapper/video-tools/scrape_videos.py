@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import os
+import shutil
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -326,6 +328,8 @@ def main():
         elif args.headless:
             launch_kwargs = {'headless': True, 'proxy': proxy}
             exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
+            if not exec_path or not os.path.exists(exec_path):
+                exec_path = shutil.which('chromium') or shutil.which('google-chrome') or shutil.which('chrome') or shutil.which('chromium-browser')
             if exec_path and os.path.exists(exec_path):
                 launch_kwargs['executable_path'] = exec_path
             browser = p.chromium.launch(**launch_kwargs)
@@ -333,6 +337,8 @@ def main():
         else:
             launch_kwargs = {'headless': not args.headed, 'proxy': proxy}
             exec_path = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH') or os.environ.get('CHROME_BIN')
+            if not exec_path or not os.path.exists(exec_path):
+                exec_path = shutil.which('chromium') or shutil.which('google-chrome') or shutil.which('chrome') or shutil.which('chromium-browser')
             if exec_path and os.path.exists(exec_path):
                 launch_kwargs['executable_path'] = exec_path
             browser = p.chromium.launch(**launch_kwargs)
