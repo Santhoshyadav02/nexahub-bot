@@ -143,6 +143,8 @@ class VideoPipelineRuntime {
     this._started = false;
     this._lastConfigError = null;
     this._configValid = false;
+    this._fixtureServer = null;
+    this._fixtureServerUrl = null;
 
     this._validateConfiguration();
   }
@@ -154,7 +156,8 @@ class VideoPipelineRuntime {
       return { valid: true, enabled: false };
     }
 
-    if (!this.acquisitionUrl && !this.inputLinks) {
+    const isFixtureMode = this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal' || process.env.VIDEO_PIPELINE_FIXTURE_ENABLED === 'true';
+    if (!this.acquisitionUrl && !this.inputLinks && !isFixtureMode) {
       const err = 'VIDEO_PIPELINE_ACQUISITION_URL (or inputLinks) is required when video pipeline is enabled.';
       this._configValid = false;
       this._lastConfigError = err;
@@ -196,6 +199,91 @@ class VideoPipelineRuntime {
     return { valid: true, enabled: true };
   }
 
+  _startInternalFixtureServer() {
+    if (this._fixtureServer) return this._fixtureServerUrl;
+    const http = require('http');
+    const crypto = require('crypto');
+    const { getFFmpegPath } = require('./media_validator');
+    const { spawnSync } = require('child_process');
+
+    const fixtureDir = path.join(this.stateDir, 'fixtures');
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    const baseMp4Path = path.join(fixtureDir, 'base.mp4');
+    if (!fs.existsSync(baseMp4Path)) {
+      const ffmpeg = getFFmpegPath();
+      spawnSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=160x120:rate=5', '-pix_fmt', 'yuv420p', baseMp4Path]);
+    }
+    const baseMp4Buffer = fs.existsSync(baseMp4Path) ? fs.readFileSync(baseMp4Path) : Buffer.from('ftypmp42', 'utf8');
+
+    const TITLES = [
+      'Romantic Vibe Sunset Walk with K-Pop Stars',
+      'Dating Special Evergrande Troupe Performance',
+      'Romance and Intimacy First Love Story',
+      'Crotch Fashion Trend and Skirt Style Review',
+      'Mosa Uncensored Streamer Behind the Scenes',
+      'Bunny Girl Cosplay Date Night in Akihabara',
+      'Lustful Hostess Hotel Service Award Story',
+      'Concubine Senior Year Love Story Fantrie Special',
+      'Saki Mizumi Idol Exclusive Highlights Reel',
+      'Shorts Trending Viral Daily Compilation'
+    ];
+
+    const posts = [];
+    const videoBuffers = new Map();
+    for (let i = 1; i <= 25; i++) {
+      const titleCategory = TITLES[(i - 1) % TITLES.length];
+      const title = `${titleCategory} (Part ${i})`;
+      posts.push({ id: i, title, videoUrl: `/media/video_${i}.mp4` });
+
+      const payload = Buffer.from(`FIXTURE_POST_${i}_${title}_${Date.now()}_SALT_${crypto.randomBytes(8).toString('hex')}`, 'utf8');
+      const boxLength = 8 + payload.length;
+      const freeBox = Buffer.alloc(boxLength);
+      freeBox.writeUInt32BE(boxLength, 0);
+      freeBox.write('free', 4, 4, 'ascii');
+      payload.copy(freeBox, 8);
+      videoBuffers.set(i, Buffer.concat([baseMp4Buffer, freeBox]));
+    }
+
+    const server = http.createServer((req, res) => {
+      const rawUrl = req.url.split('?')[0];
+      if (rawUrl === '/' || rawUrl === '/board' || rawUrl === '/index.php') {
+        let itemsHtml = posts.map(p => `
+          <div class="list-row">
+            <a href="/post/${p.id}?wr_id=${p.id}">${p.title}</a>
+          </div>
+        `).join('\n');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<!DOCTYPE html><html><head><title>Authorized Board</title></head><body><form id="fboardlist">${itemsHtml}</form></body></html>`);
+        return;
+      }
+      const postMatch = rawUrl.match(/\/post\/(\d+)/);
+      if (postMatch) {
+        const id = parseInt(postMatch[1], 10);
+        const post = posts.find(p => p.id === id);
+        if (!post) { res.writeHead(404); res.end('Not Found'); return; }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<!DOCTYPE html><html><head><title>${post.title}</title></head><body><h1>${post.title}</h1><video id="player" src="${post.videoUrl}"></video></body></html>`);
+        return;
+      }
+      const mediaMatch = rawUrl.match(/\/media\/video_(\d+)\.mp4/);
+      if (mediaMatch) {
+        const id = parseInt(mediaMatch[1], 10);
+        const buf = videoBuffers.get(id) || baseMp4Buffer;
+        res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': buf.length });
+        res.end(buf);
+        return;
+      }
+      res.writeHead(404); res.end('Not Found');
+    });
+
+    server.listen(0, '127.0.0.1');
+    const port = server.address().port;
+    this._fixtureServer = server;
+    this._fixtureServerUrl = `http://127.0.0.1:${port}/`;
+    console.log(`${LOG_PREFIX} Internal authorized fixture server active at ${this._fixtureServerUrl}`);
+    return this._fixtureServerUrl;
+  }
+
   /**
    * Initializes and constructs the internal BatchCycleManager if not already created.
    * @private
@@ -212,6 +300,11 @@ class VideoPipelineRuntime {
       fs.mkdirSync(this.stateDir, { recursive: true });
     } catch (e) {
       console.warn(`${LOG_PREFIX} Directory ensure warning: ${e.message}`);
+    }
+
+    const isFixtureMode = this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal' || process.env.VIDEO_PIPELINE_FIXTURE_ENABLED === 'true';
+    if (isFixtureMode && (!this.acquisitionUrl || this.acquisitionUrl === 'fixture' || this.acquisitionUrl === 'internal')) {
+      this.acquisitionUrl = this._startInternalFixtureServer();
     }
 
     const batchStatePath = path.join(this.stateDir, 'batch_state.json');
@@ -315,11 +408,21 @@ class VideoPipelineRuntime {
       if (this.batchCycleManager) {
         await this.batchCycleManager.stop();
       }
+      if (this._fixtureServer) {
+        try { this._fixtureServer.close(); } catch (e) {}
+        this._fixtureServer = null;
+        this._fixtureServerUrl = null;
+      }
       this._started = false;
       console.log(`${LOG_PREFIX} Runtime stopped cleanly.`);
       return { status: 'STOPPED', started: false };
     } catch (err) {
       console.error(`${LOG_PREFIX} Error during runtime stop: ${err.message}`);
+      if (this._fixtureServer) {
+        try { this._fixtureServer.close(); } catch (e) {}
+        this._fixtureServer = null;
+        this._fixtureServerUrl = null;
+      }
       this._started = false;
       return { status: 'ERROR', started: false, error: err.message };
     }
