@@ -228,12 +228,14 @@ class VideoPipelineRuntime {
       'Shorts Trending Viral Daily Compilation'
     ];
 
+    const runSalt = Date.now().toString(36);
     const posts = [];
     const videoBuffers = new Map();
     for (let i = 1; i <= 25; i++) {
       const titleCategory = TITLES[(i - 1) % TITLES.length];
       const title = `${titleCategory} (Part ${i})`;
-      posts.push({ id: i, title, videoUrl: `/media/video_${i}.mp4` });
+      const postId = `${i}_${runSalt}`;
+      posts.push({ id: postId, numericId: i, title, videoUrl: `/media/video_${i}_${runSalt}.mp4` });
 
       const payload = Buffer.from(`FIXTURE_POST_${i}_${title}_${Date.now()}_SALT_${crypto.randomBytes(8).toString('hex')}`, 'utf8');
       const boxLength = 8 + payload.length;
@@ -256,16 +258,16 @@ class VideoPipelineRuntime {
         res.end(`<!DOCTYPE html><html><head><title>Authorized Board</title></head><body><form id="fboardlist">${itemsHtml}</form></body></html>`);
         return;
       }
-      const postMatch = rawUrl.match(/\/post\/(\d+)/);
+      const postMatch = rawUrl.match(/\/post\/([^/?#]+)/);
       if (postMatch) {
-        const id = parseInt(postMatch[1], 10);
+        const id = postMatch[1];
         const post = posts.find(p => p.id === id);
         if (!post) { res.writeHead(404); res.end('Not Found'); return; }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`<!DOCTYPE html><html><head><title>${post.title}</title></head><body><h1>${post.title}</h1><video id="player" src="${post.videoUrl}"></video></body></html>`);
         return;
       }
-      const mediaMatch = rawUrl.match(/\/media\/video_(\d+)\.mp4/);
+      const mediaMatch = rawUrl.match(/\/media\/video_(\d+)/);
       if (mediaMatch) {
         const id = parseInt(mediaMatch[1], 10);
         const buf = videoBuffers.get(id) || baseMp4Buffer;
