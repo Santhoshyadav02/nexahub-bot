@@ -165,6 +165,24 @@ class PublishLedger {
     };
   }
 
+  /**
+   * Attempt state for one media item across ALL destinations (round-robin
+   * publishing sends retries of the same item to different chats).
+   * @returns {{exists: boolean, status: string|null, attempts: number, published: boolean, publishedDestinationId: string|null}}
+   */
+  getMediaAttemptState(mediaId) {
+    const records = Object.values(this.data.records).filter(r => r.mediaId === mediaId);
+    const publishedRecord = records.find(r => r.status === 'PUBLISHED') || null;
+    const latest = records.reduce((acc, r) => (!acc || String(r.attemptedAt || '') > String(acc.attemptedAt || '') ? r : acc), null);
+    return {
+      exists: records.length > 0,
+      status: publishedRecord ? 'PUBLISHED' : (latest ? latest.status : null),
+      attempts: records.reduce((sum, r) => sum + (r.attemptsCount || 0), 0),
+      published: Boolean(publishedRecord),
+      publishedDestinationId: publishedRecord ? publishedRecord.destinationId : null
+    };
+  }
+
   listByBatch(batchId) {
     return Object.values(this.data.records).filter(r => r.batchId === batchId);
   }

@@ -52,6 +52,32 @@ function readPositiveIntEnv(name, fallback) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
+/**
+ * @param {object} entity GramJS User/Chat/Channel
+ * @returns {string|null} why the session account cannot post videos there, or null if it can
+ */
+function postingDeniedReason(entity) {
+  if (!entity) return 'chat not found';
+  const kind = entity.className;
+  if (kind === 'User') return null; // "me" / private chats
+  if (kind === 'ChannelForbidden' || kind === 'ChatForbidden') return 'account was removed or banned from this chat';
+  if (entity.left) return 'account is not a member';
+  if (entity.deactivated) return 'chat is deactivated';
+  if (entity.creator) return null;
+
+  const admin = entity.adminRights;
+  if (kind === 'Channel' && entity.broadcast) {
+    return admin && admin.postMessages ? null : 'broadcast channel: account is not an admin with "post messages" right';
+  }
+  if (admin) return null;
+  for (const rights of [entity.bannedRights, entity.defaultBannedRights]) {
+    if (rights && (rights.sendMessages || rights.sendMedia || rights.sendVideos)) {
+      return 'group restricts sending videos for this account';
+    }
+  }
+  return null;
+}
+
 class MtprotoVideoUploader {
   /**
    * @param {object} [config]
@@ -85,7 +111,7 @@ class MtprotoVideoUploader {
       throw new Error(`MTProto user session is not connected${reader.fatalError ? `: ${reader.fatalError}` : ''}`);
     }
 
-    const entity = await reader.getCachedEntity(destinationId);
+    const entity = await this._resolveEntity(reader, destinationId);
     const size = fs.statSync(filePath).size;
 
     let parts = [filePath];
@@ -110,6 +136,52 @@ class MtprotoVideoUploader {
         fs.rmSync(partsWorkDir, { recursive: true, force: true });
       }
     }
+  }
+
+  /**
+   * Resolves "me", @usernames and numeric (-100...) chat ids. Numeric ids are
+   * only resolvable from the session's entity cache, so on a miss the dialog
+   * list is loaded once more (connect() only preloads the first 100).
+   */
+  async _resolveEntity(reader, destinationId) {
+    const id = String(destinationId).trim();
+    const peer = /^-?\d+$/.test(id) ? require('big-integer')(id) : id;
+    try {
+      return await reader.getCachedEntity(peer);
+    } catch (err) {
+      if (!(peer instanceof Object) || this._dialogsReloaded) throw err;
+      this._dialogsReloaded = true;
+      console.warn(`${LOG_PREFIX} ${id} not in entity cache; loading dialogs and retrying.`);
+      await withTimeout(reader.client.getDialogs({ limit: 1000 }), 120000, 'getDialogs(1000)');
+      return reader.getCachedEntity(peer);
+    }
+  }
+
+  /**
+   * Checks, without sending anything, whether the session account can post
+   * videos to each chat.
+   * @param {string[]} ids
+   * @returns {Promise<{ok: string[], denied: {id: string, reason: string}[]}>}
+   */
+  async checkDestinations(ids) {
+    const reader = this.reader;
+    const connected = await reader.connect();
+    if (!connected || !reader.client) {
+      throw new Error(`MTProto user session is not connected${reader.fatalError ? `: ${reader.fatalError}` : ''}`);
+    }
+    const ok = [];
+    const denied = [];
+    for (const id of ids) {
+      try {
+        const entity = await this._resolveEntity(reader, id);
+        const reason = postingDeniedReason(entity);
+        if (reason) denied.push({ id, reason });
+        else ok.push(id);
+      } catch (err) {
+        denied.push({ id, reason: `cannot resolve chat (${err.message})` });
+      }
+    }
+    return { ok, denied };
   }
 
   _makeWorkDir(media, filePath) {
@@ -207,4 +279,4 @@ class MtprotoVideoUploader {
   }
 }
 
-module.exports = { MtprotoVideoUploader, DEFAULT_MAX_PART_BYTES };
+module.exports = { MtprotoVideoUploader, DEFAULT_MAX_PART_BYTES, postingDeniedReason };

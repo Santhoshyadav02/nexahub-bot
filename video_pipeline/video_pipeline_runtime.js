@@ -114,6 +114,15 @@ class VideoPipelineRuntime {
     // uploads through the shared MTProto user session (2 GB per message,
     // larger files split into parts).
     this.uploadMode = String(config.uploadMode || process.env.VIDEO_PIPELINE_UPLOAD_MODE || UPLOAD_MODE_BOT).trim().toLowerCase();
+    // Round-robin publishing across these chats (in order) instead of stagingChatId:
+    // explicit config/env list, else the chatId fields of destination_routing_config.json.
+    const rawDestinations = config.destinationChatIds || process.env.VIDEO_PIPELINE_DESTINATION_CHAT_IDS || '';
+    this.destinationChatIds = (Array.isArray(rawDestinations) ? rawDestinations : String(rawDestinations).split(','))
+      .map(id => String(id).trim())
+      .filter(Boolean);
+    if (!this.destinationChatIds.length && config.useRoutingConfigChatIds !== false) {
+      this.destinationChatIds = new VideoDestinationRouter(config.routingConfigPath ? { configPath: config.routingConfigPath } : {}).getDestinationChatIds();
+    }
 
     const envInterval = Number(process.env.VIDEO_PIPELINE_INTERVAL_MS);
     this.intervalMs = (config.intervalMs && !isNaN(config.intervalMs))
@@ -274,16 +283,26 @@ class VideoPipelineRuntime {
       return { valid: false, reason: err };
     }
 
+    for (const id of this.destinationChatIds) {
+      const clean = id.replace(/^@/, '').toLowerCase();
+      if (!/^(-?\d+|@?[a-z0-9_]{4,})$/i.test(id) || FORBIDDEN_PRODUCTION_DESTINATIONS.has(clean)) {
+        const err = `VIDEO_PIPELINE_DESTINATION_CHAT_IDS contains an invalid or protected destination: "${id}".`;
+        this._configValid = false;
+        this._lastConfigError = err;
+        return { valid: false, reason: err };
+      }
+    }
+
     if (this.autoPublish) {
-      if (!this.stagingChatId || typeof this.stagingChatId !== 'string' || !this.stagingChatId.trim()) {
+      if (!this.destinationChatIds.length && (!this.stagingChatId || typeof this.stagingChatId !== 'string' || !this.stagingChatId.trim())) {
         const err = 'VIDEO_PIPELINE_STAGING_CHAT_ID is required when autoPublish is enabled.';
         this._configValid = false;
         this._lastConfigError = err;
         return { valid: false, reason: err };
       }
 
-      const cleanTarget = this.stagingChatId.trim().replace(/^@/, '').toLowerCase();
-      if (FORBIDDEN_PRODUCTION_DESTINATIONS.has(cleanTarget)) {
+      const cleanTarget = String(this.stagingChatId || '').trim().replace(/^@/, '').toLowerCase();
+      if (cleanTarget && FORBIDDEN_PRODUCTION_DESTINATIONS.has(cleanTarget)) {
         const err = `Target destination "${this.stagingChatId}" is a protected production channel. Staging publisher strictly refuses.`;
         this._configValid = false;
         this._lastConfigError = err;
@@ -488,6 +507,7 @@ class VideoPipelineRuntime {
     const uploader = new MtprotoVideoUploader({
       partsDir: this.uploadPartsDir
     });
+    this._mtprotoUploader = uploader;
     console.log(`${LOG_PREFIX} Upload mode: MTPROTO (user session, parts up to ${uploader.maxPartBytes} bytes).`);
     return { publish: (args) => uploader.publish(args) };
   }
@@ -539,9 +559,15 @@ class VideoPipelineRuntime {
     let publisher = this.videoBatchPublisher;
     if (!publisher && this.autoPublish) {
       const useMtproto = this.uploadMode === UPLOAD_MODE_MTPROTO;
+      const telegramClient = useMtproto ? this._createMtprotoClient() : this.telegramClient;
       publisher = new VideoBatchPublisher({
         stagingChatId: this.stagingChatId,
-        telegramClient: useMtproto ? this._createMtprotoClient() : this.telegramClient,
+        telegramClient,
+        destinationChatIds: this.destinationChatIds,
+        roundRobinStatePath: path.join(this.stateDir, 'round_robin_state.json'),
+        destinationAccessCheck: useMtproto && this.destinationChatIds.length
+          ? (ids) => this._mtprotoUploader.checkDestinations(ids)
+          : null,
         batchState,
         publishLedger,
         mediaCleaner,

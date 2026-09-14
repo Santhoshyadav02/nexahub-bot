@@ -89,6 +89,10 @@ class VideoBatchPublisher {
    * @param {string} [config.authorizedSourceUrl] Configured authorized source, used by provenance validation
    * @param {boolean} [config.reuseIngestDecode=false] Skip the second full FFmpeg decode when the file's SHA256
    *   still matches the media record (which ingestion only marks READY after a passing full decode)
+   * @param {string[]} [config.destinationChatIds] Round-robin publishSingleItem across these chats instead of stagingChatId
+   * @param {string} [config.roundRobinStatePath] JSON file persisting the next round-robin position across restarts
+   * @param {Function} [config.destinationAccessCheck] async (ids) => ({ok: string[], denied: {id, reason}[]});
+   *   chats without posting access are left out of the rotation (re-checked every hour)
    */
   constructor(config = {}) {
     this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
@@ -104,6 +108,13 @@ class VideoBatchPublisher {
     this.maxUploadBytes = resolveMaxUploadBytes(config.maxUploadBytes);
     this.authorizedSourceUrl = config.authorizedSourceUrl || null;
     this.reuseIngestDecode = Boolean(config.reuseIngestDecode);
+    this.destinationChatIds = Array.isArray(config.destinationChatIds)
+      ? config.destinationChatIds.map(id => String(id).trim()).filter(Boolean)
+      : [];
+    this.roundRobinStatePath = config.roundRobinStatePath || null;
+    this.destinationAccessCheck = typeof config.destinationAccessCheck === 'function' ? config.destinationAccessCheck : null;
+    this._accessibleChatIds = null;
+    this._accessCheckedAt = 0;
 
     this._validateStagingDestination(this.stagingChatId);
   }
@@ -186,7 +197,22 @@ class VideoBatchPublisher {
       return { status: 'FAILED', reason: 'Invalid media record: missing mediaId' };
     }
 
-    const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
+    let targetChatId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
+    if (this.usesRoundRobin() && !options.chatIdOverride && !options.stagingChatIdOverride) {
+      const priorPublish = this.publishLedger.getMediaAttemptState(media.mediaId);
+      if (priorPublish.published) {
+        // Already delivered to one chat: route back there so the idempotency
+        // path skips it instead of posting it to the next chat in the rotation.
+        targetChatId = priorPublish.publishedDestinationId;
+      } else {
+        targetChatId = await this._nextRoundRobinChatId();
+        if (!targetChatId) {
+          const reason = 'No round-robin destination is accessible for posting (see destination access check log).';
+          console.error(`${LOG_PREFIX} ${reason}`);
+          return { status: 'FAILED', mediaId: media.mediaId, reason };
+        }
+      }
+    }
     const policyCheck = this._checkSourceModeDestinationPolicy(media, targetChatId);
     if (!policyCheck.allowed) {
       console.error(`${LOG_PREFIX} FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED: ${policyCheck.reason}`);
@@ -807,6 +833,71 @@ class VideoBatchPublisher {
     }
 
     return { verified: true, reason: null, details };
+  }
+
+  usesRoundRobin() {
+    return this.destinationChatIds.length > 0;
+  }
+
+  async _accessibleDestinations() {
+    if (!this.destinationAccessCheck) return this.destinationChatIds;
+    const stale = Date.now() - this._accessCheckedAt > 60 * 60 * 1000;
+    if (this._accessibleChatIds && !stale) return this._accessibleChatIds;
+    try {
+      const { ok = [], denied = [] } = await this.destinationAccessCheck(this.destinationChatIds);
+      for (const d of denied) {
+        console.error(`${LOG_PREFIX} DESTINATION_ACCESS: DENIED ${d.id} - ${d.reason}`);
+      }
+      console.log(`${LOG_PREFIX} DESTINATION_ACCESS: ${ok.length}/${this.destinationChatIds.length} destination(s) accept posts.`);
+      this._accessibleChatIds = this.destinationChatIds.filter(id => ok.includes(id));
+      this._accessCheckedAt = Date.now();
+    } catch (err) {
+      // A failed check (e.g. session briefly offline) must not wipe the rotation;
+      // keep the last known list, or try every chat and let uploads report errors.
+      console.warn(`${LOG_PREFIX} DESTINATION_ACCESS: check failed (${err.message}); ${this._accessibleChatIds ? 'keeping previous result' : 'using all destinations'}.`);
+      if (!this._accessibleChatIds) return this.destinationChatIds;
+    }
+    return this._accessibleChatIds;
+  }
+
+  _readRoundRobinPosition() {
+    if (!this.roundRobinStatePath || !fs.existsSync(this.roundRobinStatePath)) return this._roundRobinPosition || 0;
+    try {
+      const value = Number(JSON.parse(fs.readFileSync(this.roundRobinStatePath, 'utf8')).next);
+      return Number.isInteger(value) && value >= 0 ? value : 0;
+    } catch (e) {
+      return this._roundRobinPosition || 0;
+    }
+  }
+
+  _writeRoundRobinPosition(next) {
+    this._roundRobinPosition = next;
+    if (!this.roundRobinStatePath) return;
+    const tmp = `${this.roundRobinStatePath}.tmp.${process.pid}.${Date.now()}`;
+    fs.mkdirSync(path.dirname(this.roundRobinStatePath), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify({ next, updatedAt: new Date().toISOString() }));
+    fs.renameSync(tmp, this.roundRobinStatePath);
+  }
+
+  /**
+   * Next chat in the configured order, skipping chats without posting access.
+   * The position advances on every pick, so a chat that fails an upload does
+   * not block the rotation; the item is retried in a later cycle elsewhere.
+   * @returns {Promise<string|null>}
+   */
+  async _nextRoundRobinChatId() {
+    const accessible = await this._accessibleDestinations();
+    if (!accessible.length) return null;
+    const total = this.destinationChatIds.length;
+    let position = this._readRoundRobinPosition() % total;
+    for (let i = 0; i < total; i++) {
+      const candidate = this.destinationChatIds[(position + i) % total];
+      if (accessible.includes(candidate)) {
+        this._writeRoundRobinPosition((position + i + 1) % total);
+        return candidate;
+      }
+    }
+    return null;
   }
 
   _sha256File(filePath) {

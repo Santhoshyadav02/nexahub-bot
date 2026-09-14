@@ -680,6 +680,11 @@ class BatchCycleManager {
 
   _getPublishAttemptState(mediaId) {
     const ledger = this.videoBatchPublisher && this.videoBatchPublisher.publishLedger;
+    const roundRobin = this.videoBatchPublisher && typeof this.videoBatchPublisher.usesRoundRobin === 'function'
+      && this.videoBatchPublisher.usesRoundRobin();
+    if (roundRobin && ledger && typeof ledger.getMediaAttemptState === 'function') {
+      return ledger.getMediaAttemptState(mediaId);
+    }
     const destinationId = this._publishDestinationId();
     if (!ledger || !destinationId || typeof ledger.getAttemptState !== 'function') return null;
     return ledger.getAttemptState(mediaId, destinationId);

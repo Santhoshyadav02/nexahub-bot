@@ -88,6 +88,7 @@ class VideoDestinationRouter {
         id: dest.id || key,
         name: dest.name || key,
         username: dest.username || '',
+        chatId: dest.chatId ? String(dest.chatId).trim() : '',
         priority: typeof dest.priority === 'number' ? dest.priority : 99,
         keywords: {
           high: highKeywords,
@@ -110,8 +111,18 @@ class VideoDestinationRouter {
       id: d.id,
       name: d.name,
       username: d.username,
+      chatId: d.chatId,
       priority: d.priority
     }));
+  }
+
+  /**
+   * Chat ids of enabled destinations that have one, in priority order - the
+   * publishing rotation.
+   * @returns {string[]}
+   */
+  getDestinationChatIds() {
+    return this._compiledDestinations.map(d => d.chatId).filter(Boolean);
   }
 
   /**
