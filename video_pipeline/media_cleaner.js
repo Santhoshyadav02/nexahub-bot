@@ -151,6 +151,161 @@ class MediaCleaner {
       items: results
     };
   }
+
+  /**
+   * Sweeps the downloads directory and safely deletes untracked/stale orphan files
+   * older than maxAgeMs (default: 3 hours).
+   *
+   * Safety Invariants:
+   *   - Files younger than maxAgeMs are NEVER deleted.
+   *   - Files in activeFilePaths (currently downloading/in-flight) are NEVER deleted.
+   *   - Files with active pending status (VALIDATING / UPLOADING) in MediaLedger are NEVER deleted.
+   *   - Only files inside the configured/allowed downloads directory are deleted.
+   *   - Idempotent and fails safe on file errors.
+   *
+   * @param {object} [options]
+   * @param {string} [options.downloadsDir] Target directory to sweep
+   * @param {number} [options.maxAgeMs=10800000] Age threshold in milliseconds (default 3 hours)
+   * @param {Set<string>|Array<string>} [options.activeFilePaths] Currently in-flight file paths to guard
+   * @param {object} [options.mediaLedger] Optional MediaLedger override
+   * @returns {Promise<object>} { totalScanned, cleanedCount, freedBytes, skippedCount, cleanedFiles }
+   */
+  async cleanOrphanFiles(options = {}) {
+    const downloadsDir = options.downloadsDir ? path.resolve(options.downloadsDir) : (this.allowedDirectory ? path.resolve(this.allowedDirectory) : null);
+    if (!downloadsDir || !fs.existsSync(downloadsDir)) {
+      return { totalScanned: 0, cleanedCount: 0, freedBytes: 0, skippedCount: 0, cleanedFiles: [] };
+    }
+
+    if (this.allowedDirectory && !downloadsDir.startsWith(this.allowedDirectory)) {
+      console.error(`${LOG_PREFIX} cleanOrphanFiles refused: "${downloadsDir}" is outside allowed boundary "${this.allowedDirectory}".`);
+      return { totalScanned: 0, cleanedCount: 0, freedBytes: 0, skippedCount: 0, cleanedFiles: [], error: 'Path safety violation' };
+    }
+
+    const envMaxAge = Number(process.env.VIDEO_PIPELINE_ORPHAN_CLEANUP_MAX_AGE_MS);
+    const maxAgeMs = (options.maxAgeMs && !isNaN(options.maxAgeMs))
+      ? options.maxAgeMs
+      : (!isNaN(envMaxAge) && envMaxAge > 0 ? envMaxAge : 3 * 60 * 60 * 1000); // 3 hours
+
+    const activeSet = new Set();
+    if (options.activeFilePaths) {
+      const list = Array.isArray(options.activeFilePaths) ? options.activeFilePaths : Array.from(options.activeFilePaths);
+      list.forEach(p => activeSet.add(path.resolve(p)));
+    }
+
+    const mLedger = options.mediaLedger || this.mediaLedger;
+    let ledgerRecordsByPath = new Map();
+    if (mLedger) {
+      try {
+        let recs = [];
+        if (typeof mLedger.listAll === 'function') {
+          recs = mLedger.listAll();
+        } else if (typeof mLedger.listRecords === 'function') {
+          recs = mLedger.listRecords();
+        } else if (mLedger.data && mLedger.data.records) {
+          recs = Object.values(mLedger.data.records);
+        }
+        for (const r of recs) {
+          if (r && r.filePath) {
+            ledgerRecordsByPath.set(path.resolve(r.filePath), r);
+          }
+        }
+      } catch (e) {}
+    }
+
+    const now = Date.now();
+    const cleanedFiles = [];
+    let totalScanned = 0;
+    let cleanedCount = 0;
+    let freedBytes = 0;
+    let skippedCount = 0;
+
+    let entries = [];
+    try {
+      entries = fs.readdirSync(downloadsDir);
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Failed to read directory ${downloadsDir}: ${err.message}`);
+      return { totalScanned: 0, cleanedCount: 0, freedBytes: 0, skippedCount: 0, cleanedFiles: [] };
+    }
+
+    for (const entry of entries) {
+      const isTarget = entry.endsWith('.mp4') || entry.includes('.part.') || entry.includes('.tmp.');
+      if (!isTarget) continue;
+
+      const fullPath = path.join(downloadsDir, entry);
+      const resolved = path.resolve(fullPath);
+
+      // Guard 1: Active in-flight files
+      if (activeSet.has(resolved)) {
+        skippedCount++;
+        continue;
+      }
+
+      let stat;
+      try {
+        stat = fs.statSync(resolved);
+      } catch (e) {
+        continue;
+      }
+
+      if (stat.isDirectory()) continue;
+      totalScanned++;
+
+      const fileAgeMs = now - stat.mtimeMs;
+      // Guard 2: Age threshold (must be older than maxAgeMs, e.g. 3 hours)
+      if (fileAgeMs < maxAgeMs) {
+        skippedCount++;
+        continue;
+      }
+
+      // Guard 3: If tracked in ledger with an active state (VALIDATING or UPLOADING), skip
+      const matchingRecord = ledgerRecordsByPath.get(resolved);
+      if (matchingRecord && (matchingRecord.status === 'VALIDATING' || matchingRecord.status === 'UPLOADING')) {
+        skippedCount++;
+        continue;
+      }
+
+      // Safe to delete: older than maxAgeMs, not active
+      try {
+        const size = stat.size;
+        fs.unlinkSync(resolved);
+        freedBytes += size;
+        cleanedCount++;
+        cleanedFiles.push({
+          file: entry,
+          path: resolved,
+          size,
+          ageHours: Number((fileAgeMs / (3600 * 1000)).toFixed(2))
+        });
+        console.log(`${LOG_PREFIX} Deleted stale orphan download (${(fileAgeMs / (3600 * 1000)).toFixed(1)}h old, ${(size / (1024 * 1024)).toFixed(1)} MB): ${entry}`);
+
+        // Update ledger record to CLEANED if present
+        if (matchingRecord && mLedger && typeof mLedger.upsert === 'function') {
+          try {
+            await mLedger.upsert(matchingRecord.id, {
+              status: 'CLEANED',
+              cleanedAt: new Date().toISOString(),
+              cleanReason: 'ORPHAN_TTL_EXPIRED'
+            });
+          } catch (_) {}
+        }
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Failed to delete orphan file ${entry}: ${err.message}`);
+        skippedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`${LOG_PREFIX} Orphan cleanup complete: removed ${cleanedCount} file(s), freed ${(freedBytes / (1024 * 1024)).toFixed(1)} MB.`);
+    }
+
+    return {
+      totalScanned,
+      cleanedCount,
+      freedBytes,
+      skippedCount,
+      cleanedFiles
+    };
+  }
 }
 
 module.exports = {

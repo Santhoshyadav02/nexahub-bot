@@ -23,6 +23,7 @@ const path = require('path');
 const { VideoPipelineManager } = require('./video_pipeline_manager');
 const { MediaIngestor } = require('./media_ingestor');
 const { BatchState } = require('./batch_state');
+const { MediaCleaner } = require('./media_cleaner');
 
 const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
@@ -119,6 +120,12 @@ class BatchCycleManager {
     });
     this.batchState = config.batchState || new BatchState({ statePath: config.batchStatePath });
     this.videoBatchPublisher = config.videoBatchPublisher || null;
+    this.mediaCleaner = config.mediaCleaner
+      || (this.videoBatchPublisher && this.videoBatchPublisher.mediaCleaner)
+      || new MediaCleaner({
+        mediaLedger: this.mediaIngestor ? this.mediaIngestor.ledger : null,
+        allowedDirectory: this.downloadsDir
+      });
     this.autoPublish = Boolean(config.autoPublish);
     this.publishOptions = config.publishOptions || {};
 
@@ -135,6 +142,17 @@ class BatchCycleManager {
   // ============================================================
 
   _recoverOnStartup() {
+    // 1. Sweep stale orphan downloads (>3h old) from prior abandoned/aborted runs
+    if (this.mediaCleaner && typeof this.mediaCleaner.cleanOrphanFiles === 'function') {
+      try {
+        this.mediaCleaner.cleanOrphanFiles({ downloadsDir: this.downloadsDir }).catch(err => {
+          console.warn(`${LOG_PREFIX} Startup orphan cleanup warning: ${err.message}`);
+        });
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Startup orphan cleanup warning: ${err.message}`);
+      }
+    }
+
     const state = this.batchState.getControllerState();
     const cycleId = this.batchState.getCurrentCycleId();
 
@@ -254,6 +272,15 @@ class BatchCycleManager {
     let hitCeiling = false;
 
     try {
+      // 0. Clean any stale orphan files (>3h old) from prior abandoned/aborted runs before starting new batch
+      if (this.mediaCleaner && typeof this.mediaCleaner.cleanOrphanFiles === 'function') {
+        try {
+          await this.mediaCleaner.cleanOrphanFiles({ downloadsDir: this.downloadsDir });
+        } catch (err) {
+          console.warn(`${LOG_PREFIX} Pre-batch orphan cleanup warning: ${err.message}`);
+        }
+      }
+
       // 1. Start video-tools through VideoPipelineManager.
       const startOptions = {
         targetLinks: this.discoveryTarget,

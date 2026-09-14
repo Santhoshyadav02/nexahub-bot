@@ -196,6 +196,90 @@ async function runMediaCleanerTests() {
   check('File A was deleted', fs.existsSync(fA) === false);
   check('File B was preserved', fs.existsSync(fB) === true);
 
+  // ============================================================
+  // Test 6: Orphan Cleanup (Stale vs Fresh files)
+  // ============================================================
+  section('Test 6: Orphan cleanup sweeps stale files (>3h) and preserves fresh files (<3h)');
+  const env6 = freshWorkspace('orphan_cleanup_age');
+  const staleFile = copyFixture(path.join(env6.mediaDir, 'stale_orphan.mp4'));
+  const freshFile = copyFixture(path.join(env6.mediaDir, 'fresh_download.mp4'));
+  const nonMediaFile = path.join(env6.mediaDir, 'download_report.json');
+  fs.writeFileSync(nonMediaFile, JSON.stringify({ ok: true }));
+
+  // Set stale file mtime to 4 hours ago, and ensure fresh file has current timestamp
+  const fourHoursAgo = new Date(Date.now() - 4 * 3600 * 1000);
+  fs.utimesSync(staleFile, fourHoursAgo, fourHoursAgo);
+  const now = new Date();
+  fs.utimesSync(freshFile, now, now);
+
+  const cleaner6 = new MediaCleaner({ allowedDirectory: env6.dir });
+  const sweepRes6 = await cleaner6.cleanOrphanFiles({
+    downloadsDir: env6.mediaDir,
+    maxAgeMs: 3 * 3600 * 1000
+  });
+
+  check('Cleaned 1 stale orphan file', sweepRes6.cleanedCount === 1);
+  check('Stale file was deleted', fs.existsSync(staleFile) === false);
+  check('Fresh file was preserved', fs.existsSync(freshFile) === true);
+  check('Non-media report file was preserved', fs.existsSync(nonMediaFile) === true);
+
+  // ============================================================
+  // Test 7: Orphan Cleanup Guards Active In-Flight Files
+  // ============================================================
+  section('Test 7: Orphan cleanup guards active in-flight files even if stale');
+  const env7 = freshWorkspace('orphan_active_guard');
+  const activeStaleFile = copyFixture(path.join(env7.mediaDir, 'active_stale.mp4'));
+  fs.utimesSync(activeStaleFile, fourHoursAgo, fourHoursAgo);
+
+  const cleaner7 = new MediaCleaner({ allowedDirectory: env7.dir });
+  const sweepRes7 = await cleaner7.cleanOrphanFiles({
+    downloadsDir: env7.mediaDir,
+    maxAgeMs: 3 * 3600 * 1000,
+    activeFilePaths: [activeStaleFile]
+  });
+
+  check('Skipped active file', sweepRes7.cleanedCount === 0);
+  check('Active stale file was preserved', fs.existsSync(activeStaleFile) === true);
+
+  // ============================================================
+  // Test 8: Orphan Cleanup Updates MediaLedger
+  // ============================================================
+  section('Test 8: Orphan cleanup updates MediaLedger status to CLEANED');
+  const env8 = freshWorkspace('orphan_ledger_update');
+  const staleTrackedFile = copyFixture(path.join(env8.mediaDir, 'stale_tracked.mp4'));
+  fs.utimesSync(staleTrackedFile, fourHoursAgo, fourHoursAgo);
+
+  const mL8 = new MediaLedger({ ledgerPath: env8.mediaLedgerPath });
+  await mL8.upsert('m_tracked', {
+    id: 'm_tracked',
+    filePath: staleTrackedFile,
+    status: 'READY'
+  });
+
+  const cleaner8 = new MediaCleaner({ mediaLedger: mL8, allowedDirectory: env8.dir });
+  const sweepRes8 = await cleaner8.cleanOrphanFiles({
+    downloadsDir: env8.mediaDir,
+    maxAgeMs: 3 * 3600 * 1000
+  });
+
+  check('Stale tracked file deleted', fs.existsSync(staleTrackedFile) === false);
+  const updatedML8 = mL8.getRecord('m_tracked');
+  check('MediaLedger updated to CLEANED', updatedML8.status === 'CLEANED');
+  check('MediaLedger cleanReason is ORPHAN_TTL_EXPIRED', updatedML8.cleanReason === 'ORPHAN_TTL_EXPIRED');
+
+  // ============================================================
+  // Test 9: Orphan Cleanup Path Boundary Safety
+  // ============================================================
+  section('Test 9: Orphan cleanup refuses directory outside allowed boundary');
+  const outsideDir = path.resolve(ROOT_DIR, 'scratch', 'outside_target');
+  fs.mkdirSync(outsideDir, { recursive: true });
+  const cleaner9 = new MediaCleaner({ allowedDirectory: env8.dir });
+  const sweepRes9 = await cleaner9.cleanOrphanFiles({
+    downloadsDir: outsideDir
+  });
+
+  check('Outside directory sweep refused', sweepRes9.error === 'Path safety violation');
+
   console.log('\n============================================================');
   console.log(`RESULT: ${passed} passed, ${failed} failed`);
   console.log('============================================================\n');

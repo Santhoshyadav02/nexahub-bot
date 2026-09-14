@@ -379,6 +379,7 @@ class VideoPipelineRuntime {
         ledger: mediaLedger
       }),
       videoBatchPublisher: publisher,
+      mediaCleaner,
       autoPublish: this.autoPublish,
       acquisitionOptions: this.acquisitionOptions,
       acquisitionTimeoutMs: this.timeoutMs,
