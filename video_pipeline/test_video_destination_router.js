@@ -37,16 +37,16 @@ async function runRouterTests() {
   check('Router loaded exactly 10 destinations', destinations.length === 10);
 
   const expectedDestinations = [
-    { id: 'DESTINATION_1', name: 'Romantic Vibe', username: 'ccsfvk', priority: 1 },
-    { id: 'DESTINATION_2', name: 'Dating', username: 'cccsefk', priority: 2 },
-    { id: 'DESTINATION_3', name: 'Romance', username: 'e5brygh', priority: 3 },
-    { id: 'DESTINATION_4', name: 'Crotch', username: 'ccdjxc', priority: 4 },
-    { id: 'DESTINATION_5', name: 'Mosa', username: 'vsdxda', priority: 5 },
-    { id: 'DESTINATION_6', name: 'Bunny Girl Cosplay Date', username: 'tfccdet', priority: 6 },
-    { id: 'DESTINATION_7', name: 'Lustful Hostess', username: 'sfgfem', priority: 7 },
-    { id: 'DESTINATION_8', name: 'Concubine', username: 'ddkicr', priority: 8 },
-    { id: 'DESTINATION_9', name: 'Saki Mizumi', username: 'cccddghhgf', priority: 9 },
-    { id: 'DESTINATION_10', name: 'A Muse', username: 'bzd4wrf', priority: 10 }
+    { id: 'DESTINATION_1', name: 'Korean Drama', username: 'ccsfvk', priority: 1 },
+    { id: 'DESTINATION_2', name: 'Romance Drama', username: 'cccsefk', priority: 2 },
+    { id: 'DESTINATION_3', name: 'Comedy Drama', username: 'e5brygh', priority: 3 },
+    { id: 'DESTINATION_4', name: 'Action Drama', username: 'ccdjxc', priority: 4 },
+    { id: 'DESTINATION_5', name: 'Thriller Drama', username: 'vsdxda', priority: 5 },
+    { id: 'DESTINATION_6', name: 'Historical Drama', username: 'tfccdet', priority: 6 },
+    { id: 'DESTINATION_7', name: 'Mystery Drama', username: 'sfgfem', priority: 7 },
+    { id: 'DESTINATION_8', name: 'Slice of Life', username: 'ddkicr', priority: 8 },
+    { id: 'DESTINATION_9', name: 'Family Drama', username: 'cccddghhgf', priority: 9 },
+    { id: 'DESTINATION_10', name: 'Youth Drama', username: 'bzd4wrf', priority: 10 }
   ];
 
   for (let i = 0; i < expectedDestinations.length; i++) {
@@ -63,54 +63,54 @@ async function runRouterTests() {
 
   const testCases = [
     {
-      title: 'Romantic Vibe Special Episode',
+      title: 'Korean Drama Special Episode',
       expectedDest: 'DESTINATION_1',
-      desc: 'Destination 1: Romantic Vibe (high keyword)'
+      desc: 'Destination 1: Korean Drama (high keyword)'
     },
     {
-      title: 'Evergrande Troupe Private Meeting Scandal',
+      title: 'A Touching Romance Drama Love Story',
       expectedDest: 'DESTINATION_2',
-      desc: 'Destination 2: Evergrande Troupe / Dating'
+      desc: 'Destination 2: Romance Drama'
     },
     {
-      title: 'Myanmar Women First Love Story',
+      title: 'New Rom-Com Comedy Drama Release',
       expectedDest: 'DESTINATION_3',
-      desc: 'Destination 3: Myanmar Women / Romance'
+      desc: 'Destination 3: Comedy Drama'
     },
     {
-      title: 'Sister Snake Between Her Legs Drunk Video',
+      title: 'High-Octane Action Drama Special',
       expectedDest: 'DESTINATION_4',
-      desc: 'Destination 4: Sister Snake / Crotch'
+      desc: 'Destination 4: Action Drama'
     },
     {
-      title: 'Has Work Tanhua Uncensored Stream',
+      title: 'Gripping Thriller Drama Finale',
       expectedDest: 'DESTINATION_5',
-      desc: 'Destination 5: Has Work / Tanhua / Mosa'
+      desc: 'Destination 5: Thriller Drama'
     },
     {
-      title: 'Bunny Girl Cosplay Date Secret Party',
+      title: 'Royal Historical Drama Premiere',
       expectedDest: 'DESTINATION_6',
-      desc: 'Destination 6: Bunny Girl Cosplay Date'
+      desc: 'Destination 6: Historical Drama'
     },
     {
-      title: 'Award-winning Housekeeper Da Ci Ge Viral Story',
+      title: 'Detective Mystery Drama Case File',
       expectedDest: 'DESTINATION_7',
-      desc: 'Destination 7: Da Ci Ge / Lustful Hostess'
+      desc: 'Destination 7: Mystery Drama'
     },
     {
-      title: 'Senior Year Love Story Delicious Sister Rice Bowl',
+      title: 'Warm Slice of Life Everyday Story',
       expectedDest: 'DESTINATION_8',
-      desc: 'Destination 8: Senior Year Love Story / Concubine'
+      desc: 'Destination 8: Slice of Life'
     },
     {
-      title: 'Sichuan Mother & Son Japanese Exclusive',
+      title: 'Heartwarming Family Drama Reunion',
       expectedDest: 'DESTINATION_9',
-      desc: 'Destination 9: Sichuan Mother & Son / Saki Mizumi'
+      desc: 'Destination 9: Family Drama'
     },
     {
-      title: 'Hu Siyuan 91porn Madou Model Photoshoot',
+      title: 'Campus Romance Youth Drama Debut',
       expectedDest: 'DESTINATION_10',
-      desc: 'Destination 10: Hu Siyuan / A Muse'
+      desc: 'Destination 10: Youth Drama'
     }
   ];
 
@@ -125,21 +125,21 @@ async function runRouterTests() {
   // Test 3: Multilingual & Case-Insensitive Matching (Korean, English)
   // ============================================================
   section('Test 3: Case-insensitive and Multilingual Matching');
-  const koreanCase = router.routeMedia({ mediaId: 'k1', title: '케이팝 열애설 비밀 데이트' });
-  check('Korean text matched Romantic Vibe / Dating keywords',
-    koreanCase.status === 'CLASSIFIED' && (koreanCase.primaryDestination.id === 'DESTINATION_1' || koreanCase.primaryDestination.id === 'DESTINATION_2'));
+  const koreanCase = router.routeMedia({ mediaId: 'k1', title: '로맨스 드라마 첫사랑 이야기' });
+  check('Korean text matched Romance Drama / Youth Drama keywords',
+    koreanCase.status === 'CLASSIFIED' && (koreanCase.primaryDestination.id === 'DESTINATION_2' || koreanCase.primaryDestination.id === 'DESTINATION_10'));
 
-  const upperCase = router.routeMedia({ mediaId: 'u1', title: 'ROMANTIC VIBE HIGHLIGHTS' });
+  const upperCase = router.routeMedia({ mediaId: 'u1', title: 'KOREAN DRAMA HIGHLIGHTS' });
   check('Uppercase string matched correctly', upperCase.primaryDestination.id === 'DESTINATION_1');
 
   // ============================================================
   // Test 4: Multiple Matching Categories (Score & Tie-breaking)
   // ============================================================
   section('Test 4: Multiple matching categories resolved by score/priority');
-  // Title contains low keyword for dest 1 ('mood') and high keyword for dest 6 ('bunny girl')
-  const multiMatch = router.routeMedia({ mediaId: 'm1', title: 'Bunny Girl in a Romantic Mood' });
-  check('Higher weighted keyword wins (Bunny Girl 10pts vs Mood 2pts -> DESTINATION_6)',
-    multiMatch.primaryDestination.id === 'DESTINATION_6');
+  // Title contains low keyword for dest 1 ('episode') and high keyword for dest 4 ('action drama')
+  const multiMatch = router.routeMedia({ mediaId: 'm1', title: 'Action Drama Episode Highlights' });
+  check('Higher weighted keyword wins (Action Drama 10pts vs episode 2pts -> DESTINATION_4)',
+    multiMatch.primaryDestination.id === 'DESTINATION_4');
   check('allMatches contains both matched destinations',
     multiMatch.allMatches.length >= 2);
 
@@ -168,7 +168,7 @@ async function runRouterTests() {
   // Test 7: Determinism Verification
   // ============================================================
   section('Test 7: Determinism (100 iterations on identical input)');
-  const sampleTitle = 'Evergrande Troupe Private Meeting Scandal';
+  const sampleTitle = 'A Touching Romance Drama Love Story';
   let allIdentical = true;
   const firstResult = JSON.stringify(router.routeMedia({ mediaId: 'det1', title: sampleTitle }).primaryDestination);
 
@@ -186,14 +186,14 @@ async function runRouterTests() {
   // ============================================================
   section('Test 8: Batch Routing (routeBatch)');
   const batchList = [
-    { mediaId: 'b1', title: 'Romantic Vibe 1' },
-    { mediaId: 'b2', title: 'Bunny Girl 2' },
+    { mediaId: 'b1', title: 'Korean Drama 1' },
+    { mediaId: 'b2', title: 'Action Drama 2' },
     { mediaId: 'b3', title: 'Generic 3' }
   ];
   const batchResults = router.routeBatch(batchList);
   check('routeBatch returns array of 3 decisions', Array.isArray(batchResults) && batchResults.length === 3);
   check('Item 1 routed to DESTINATION_1', batchResults[0].primaryDestination.id === 'DESTINATION_1');
-  check('Item 2 routed to DESTINATION_6', batchResults[1].primaryDestination.id === 'DESTINATION_6');
+  check('Item 2 routed to DESTINATION_4', batchResults[1].primaryDestination.id === 'DESTINATION_4');
   check('Item 3 routed to fallback DESTINATION_1', batchResults[2].primaryDestination.id === 'DESTINATION_1');
 
   // ============================================================

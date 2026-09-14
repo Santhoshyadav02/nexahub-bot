@@ -102,7 +102,7 @@ async function runLifecycleTests() {
     media: [
       {
         mediaId: 'media_001',
-        title: 'Evergrande Troupe Private Meeting Scandal',
+        title: 'Romance Drama Love Story Special',
         filePath: videoFile1,
         size: size1,
         contentSha256: '08e7ad5e901ecfd886cf5ea9c88557a6fb6a65f9dede5b79065f74c32fe34985'
@@ -134,7 +134,7 @@ async function runLifecycleTests() {
   check('Batch status transitions to COMPLETED', pubResult1.status === 'COMPLETED');
   check('Published count is 1', pubResult1.published === 1);
   check('Cleaned count is 1', pubResult1.cleaned === 1);
-  check('Item canonical destination was DESTINATION_2 (Dating)', pubResult1.items[0].canonicalDestination === 'DESTINATION_2');
+  check('Item canonical destination was DESTINATION_2 (Romance Drama)', pubResult1.items[0].canonicalDestination === 'DESTINATION_2');
   check('Telegram message ID recorded', pubResult1.items[0].telegramMessageId === '110022');
   check('PublishLedger records PUBLISHED', publishLedger1.isPublished('media_001', '-1009990001') === true);
   check('MediaCleaner deleted verified file', fs.existsSync(videoFile1) === false);
@@ -160,8 +160,8 @@ async function runLifecycleTests() {
   batchState2.startCycle(batchId2, {
     status: 'BATCH_READY',
     media: [
-      { mediaId: 'media_A', title: 'Romantic Vibe Love Highlights', filePath: vA, size: fs.statSync(vA).size },
-      { mediaId: 'media_B', title: 'Bunny Girl Cosplay Party', filePath: vB, size: fs.statSync(vB).size }
+      { mediaId: 'media_A', title: 'Korean Drama Highlights Special', filePath: vA, size: fs.statSync(vA).size },
+      { mediaId: 'media_B', title: 'Historical Drama Royal Palace Story', filePath: vB, size: fs.statSync(vB).size }
     ]
   });
   batchState2.updateCycle(batchId2, { status: 'BATCH_READY' });

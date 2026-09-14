@@ -1,8 +1,8 @@
 /**
  * test_telegram_content_classifier.js
- * 
+ *
  * Unit Test Suite for Stage 3 Telegram Content Classifier & 7->10 Router
- * 
+ *
  * Verifies:
  * 1. Exact category match
  * 2. Keyword match (multi-word, single-word)
@@ -49,13 +49,13 @@ console.log("==================================================\n");
 
 // 1. Normalization tests
 runTest("normalizeText: converts uppercase to lowercase and strips punctuation", () => {
-  const norm = normalizeText("【Delicious Sister Rice Bowl】 (HD 1080p) - Watch Now!");
-  assert.strictEqual(norm, "delicious sister rice bowl hd 1080p watch now");
+  const norm = normalizeText("【Heartwarming Family Reunion】 (HD 1080p) - Watch Now!");
+  assert.strictEqual(norm, "heartwarming family reunion hd 1080p watch now");
 });
 
 runTest("normalizeText: preserves Korean, Chinese, and Japanese characters", () => {
-  const norm = normalizeText("【91麻豆】 人妻店长 酒店激战 / 비밀 커플 / 일본 AV");
-  assert.strictEqual(norm, "91麻豆 人妻店长 酒店激战 비밀 커플 일본 av");
+  const norm = normalizeText("【한국 드라마】 가족 이야기 청춘 / 비밀 커플 / 일본 드라마");
+  assert.strictEqual(norm, "한국 드라마 가족 이야기 청춘 비밀 커플 일본 드라마");
 });
 
 runTest("normalizeText: strips URLs and excess whitespace", () => {
@@ -64,63 +64,62 @@ runTest("normalizeText: strips URLs and excess whitespace", () => {
 });
 
 // 2. Classification tests
-runTest("Exact category match: matches 'Romantic Vibe' with HIGH confidence", () => {
+runTest("Exact category match: matches 'Korean Drama' with HIGH confidence", () => {
   const classifier = new TelegramContentClassifier();
   const item = {
     sourceChannelId: "1762071168",
     messageId: "101",
-    title: "Romantic Vibe Special Episode",
-    caption: "Full HD clip featuring romantic vibe"
+    title: "Korean Drama Special Episode",
+    caption: "Full HD clip featuring korean drama"
   };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.confidence, "HIGH");
   assert.strictEqual(decision.destinationChannelId, "DESTINATION_1");
-  assert.strictEqual(decision.matchedCategory, "Romantic Vibe");
-  assert.ok(decision.matchedKeywords.includes("romantic vibe"));
+  assert.strictEqual(decision.matchedCategory, "Korean Drama");
+  assert.ok(decision.matchedKeywords.includes("korean drama"));
 });
 
-runTest("Keyword match: matches 'first love' -> Romance (DESTINATION_3) with HIGH confidence", () => {
+runTest("Keyword match: matches 'love story' -> Romance Drama (DESTINATION_2) with HIGH confidence", () => {
   const classifier = new TelegramContentClassifier();
   const item = {
     sourceChannelId: "1871127271",
     messageId: "102",
-    caption: "Daughter-in-law's First Love WATCH FULL VIDEOS"
+    caption: "A Touching Love Story WATCH FULL VIDEOS"
   };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.confidence, "HIGH");
-  assert.strictEqual(decision.destinationChannelId, "DESTINATION_3");
-  assert.strictEqual(decision.matchedCategory, "Romance");
-  assert.ok(decision.matchedKeywords.includes("first love"));
+  assert.strictEqual(decision.destinationChannelId, "DESTINATION_2");
+  assert.strictEqual(decision.matchedCategory, "Romance Drama");
+  assert.ok(decision.matchedKeywords.includes("love story"));
 });
 
-runTest("Case normalization: matches mixed-case 'bEtWeEn HeR lEgS' -> Crotch (DESTINATION_4)", () => {
+runTest("Case normalization: matches mixed-case 'aCtIoN dRaMa' -> Action Drama (DESTINATION_4)", () => {
   const classifier = new TelegramContentClassifier();
   const item = {
     sourceChannelId: "1871127271",
     messageId: "103",
-    caption: "BETWEEN HER LEGS DRUNK [FULL HD]"
+    caption: "HIGH-OCTANE aCtIoN dRaMa [FULL HD]"
   };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.confidence, "HIGH");
   assert.strictEqual(decision.destinationChannelId, "DESTINATION_4");
-  assert.strictEqual(decision.matchedCategory, "Crotch");
+  assert.strictEqual(decision.matchedCategory, "Action Drama");
 });
 
-runTest("Punctuation normalization: matches punctuated keywords '麻豆/国产/反差' -> Bunny Girl / A Muse", () => {
+runTest("Punctuation normalization: matches punctuated keyword 'Rom-Com' -> Comedy Drama", () => {
   const classifier = new TelegramContentClassifier();
   const item = {
     sourceChannelId: "2604815578",
     messageId: "104",
-    caption: "【91porn】 (原创)美艳店长人妻，酒店里面开门玩 - 91porn"
+    caption: "【New Release】 (Original) Rom-Com Comedy Special - Watch Now"
   };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.confidence, "HIGH");
-  // Matches "91porn" (DESTINATION_10) or "人妻/店长" (DESTINATION_7)
-  assert.ok(decision.destinationChannelId === "DESTINATION_7" || decision.destinationChannelId === "DESTINATION_10");
+  assert.strictEqual(decision.destinationChannelId, "DESTINATION_3");
   assert.ok(decision.matchedKeywords.length > 0);
 });
 
@@ -129,13 +128,13 @@ runTest("Multiple matching categories: prefers HIGH confidence over MEDIUM confi
   const item = {
     sourceChannelId: "1871127271",
     messageId: "105",
-    caption: "Delicious Sister Rice Bowl - Japanese Version" // "delicious sister rice bowl" is HIGH for DESTINATION_8, "japanese" is MEDIUM for DESTINATION_9
+    caption: "Family Drama Reunion - Historical Edition" // "family drama" is HIGH for DESTINATION_9, "historical" is MEDIUM for DESTINATION_6
   };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.confidence, "HIGH");
-  assert.strictEqual(decision.destinationChannelId, "DESTINATION_8");
-  assert.strictEqual(decision.matchedCategory, "Concubine");
+  assert.strictEqual(decision.destinationChannelId, "DESTINATION_9");
+  assert.strictEqual(decision.matchedCategory, "Family Drama");
 });
 
 runTest("Deterministic priority: resolves tied confidence scores deterministically by priority", () => {
@@ -173,15 +172,15 @@ runTest("LOW confidence handling: matches weak keyword and flags as LOW", () => 
     destinations: {
       "DESTINATION_1": {
         id: "DESTINATION_1",
-        name: "Romantic Vibe",
+        name: "Korean Drama",
         enabled: true,
         priority: 1,
-        keywords: { high: [], medium: [], low: ["mood"] }
+        keywords: { high: [], medium: [], low: ["episode"] }
       }
     }
   };
   const classifier = new TelegramContentClassifier(config);
-  const item = { sourceChannelId: "1", messageId: "108", caption: "good mood today" };
+  const item = { sourceChannelId: "1", messageId: "108", caption: "new episode today" };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.confidence, "LOW");
@@ -191,7 +190,7 @@ runTest("LOW confidence handling: matches weak keyword and flags as LOW", () => 
 runTest("Duplicate message handling: marks duplicate: true on repeated evaluation", () => {
   const seen = new Set();
   const classifier = new TelegramContentClassifier(null, seen);
-  const item = { sourceChannelId: "1762071168", messageId: "200", caption: "Romantic Vibe" };
+  const item = { sourceChannelId: "1762071168", messageId: "200", caption: "Korean Drama" };
 
   const dec1 = classifier.classify(item);
   assert.strictEqual(dec1.confidence, "HIGH");
@@ -211,7 +210,7 @@ runTest("Grouped albums: inherits classification across album items", () => {
     sourceChannelId: "1518888395",
     messageId: "501",
     groupedId: albumId,
-    caption: "Her premium Fantrie Nude content is on the Korean VIP channel"
+    caption: "Her new Slice of Life everyday story is out on the channel"
   };
   const dec1 = classifier.classify(item1);
   assert.strictEqual(dec1.confidence, "HIGH");
@@ -227,7 +226,7 @@ runTest("Grouped albums: inherits classification across album items", () => {
   const dec2 = classifier.classify(item2);
   assert.strictEqual(dec2.status, "CLASSIFIED_ALBUM_MEMBER");
   assert.strictEqual(dec2.destinationChannelId, "DESTINATION_8");
-  assert.strictEqual(dec2.matchedCategory, "Concubine");
+  assert.strictEqual(dec2.matchedCategory, "Slice of Life");
 });
 
 runTest("Unknown source handling: handles unconfigured sourceChannelId cleanly", () => {
@@ -235,7 +234,7 @@ runTest("Unknown source handling: handles unconfigured sourceChannelId cleanly",
   const item = {
     sourceChannelId: "9999999999",
     messageId: "301",
-    caption: "Dating with evergrande troupe"
+    caption: "Romance drama love story premiere"
   };
   const decision = classifier.classify(item);
 
@@ -248,15 +247,15 @@ runTest("Disabled destination handling: flags IGNORED_DISABLED_DESTINATION", () 
     destinations: {
       "DESTINATION_2": {
         id: "DESTINATION_2",
-        name: "Dating",
+        name: "Romance Drama",
         enabled: false,
         priority: 2,
-        keywords: { high: ["dating"] }
+        keywords: { high: ["romance drama"] }
       }
     }
   };
   const classifier = new TelegramContentClassifier(config);
-  const item = { sourceChannelId: "1", messageId: "401", caption: "dating tonight" };
+  const item = { sourceChannelId: "1", messageId: "401", caption: "romance drama tonight" };
   const decision = classifier.classify(item);
 
   assert.strictEqual(decision.status, "IGNORED_DISABLED_DESTINATION");
@@ -280,9 +279,9 @@ runTest("Invalid destination handling: catches corrupt destination config gracef
 runTest("Batch processing: aggregates distribution, top keywords, and breakdown accurately", () => {
   const classifier = new TelegramContentClassifier();
   const items = [
-    { sourceChannelId: "1", messageId: "1", caption: "Romantic Vibe" },
-    { sourceChannelId: "2", messageId: "2", caption: "Dating and evergrande troupe" },
-    { sourceChannelId: "3", messageId: "3", caption: "Daughter-in-law's First Love" },
+    { sourceChannelId: "1", messageId: "1", caption: "Korean Drama" },
+    { sourceChannelId: "2", messageId: "2", caption: "Romance drama love story" },
+    { sourceChannelId: "3", messageId: "3", caption: "Comedy drama rom-com special" },
     { sourceChannelId: "4", messageId: "4", caption: "Unmatched random string 999" }
   ];
 

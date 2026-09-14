@@ -260,8 +260,8 @@ async function runMasterE2E() {
     section('STAGE 2: Complete Happy-Path End-to-End Batch Cycle');
     const envHP = freshEnv('stage2_happy_path');
     const fixtureHP = createFixtureServer([
-      { id: 'pA', title: 'Romantic Vibe Master Post A' },
-      { id: 'pB', title: 'Evergrande Troupe Dating Post B' }
+      { id: 'pA', title: 'Korean Drama Master Post A' },
+      { id: 'pB', title: 'Romance Drama Love Story Post B' }
     ]);
     const { url: serverUrlHP } = await fixtureHP.listen();
 
@@ -300,8 +300,8 @@ async function runMasterE2E() {
 
     const hasDest1 = cycleResHP.publishResult.items.some(it => it.canonicalDestination === 'DESTINATION_1');
     const hasDest2 = cycleResHP.publishResult.items.some(it => it.canonicalDestination === 'DESTINATION_2');
-    check('Item routed to DESTINATION_1 (Romantic Vibe)', hasDest1, 'routing');
-    check('Item routed to DESTINATION_2 (Dating)', hasDest2, 'routing');
+    check('Item routed to DESTINATION_1 (Korean Drama)', hasDest1, 'routing');
+    check('Item routed to DESTINATION_2 (Romance Drama)', hasDest2, 'routing');
 
     // Data Integrity & Filesystem Checks
     const remainingFilesHP = fs.readdirSync(envHP.downloadsDir).filter(f => f.endsWith('.mp4'));
@@ -327,8 +327,8 @@ async function runMasterE2E() {
     section('STAGE 3: Multi-Cycle Accelerated Progression (Cycle 1 -> Cycle 2 -> Cycle 3)');
     const envMC = freshEnv('stage3_multi_cycle');
     const fixtureMC = createFixtureServer([
-      { id: 'pA', title: 'Romantic Vibe Master Post A' },
-      { id: 'pB', title: 'Evergrande Troupe Dating Post B' }
+      { id: 'pA', title: 'Korean Drama Master Post A' },
+      { id: 'pB', title: 'Romance Drama Love Story Post B' }
     ]);
     const { url: serverUrlMC } = await fixtureMC.listen();
 
@@ -361,8 +361,8 @@ async function runMasterE2E() {
 
     // Cycle 2: New posts
     fixtureMC.setPosts([
-      { id: 'pC', title: 'Bunny Girl Cosplay Date Special C' },
-      { id: 'pD', title: 'Concubine Sister Rice Bowl Special D' }
+      { id: 'pC', title: 'Historical Drama Royal Palace Special C' },
+      { id: 'pD', title: 'Slice of Life Everyday Story Special D' }
     ]);
     const resMC2 = await runtimeMC.runOnce();
     check('Cycle 2 completed', resMC2.status === 'COMPLETED', 'multiCycle');
@@ -585,7 +585,7 @@ async function runMasterE2E() {
     const runtimeProdGuard = new VideoPipelineRuntime({
       enabled: true,
       acquisitionUrl: 'http://127.0.0.1:8080/',
-      stagingChatId: '@ccsfvk', // Protected Romantic Vibe channel
+      stagingChatId: '@ccsfvk', // Protected production channel username
       autoPublish: true
     });
     const guardRes = runtimeProdGuard.start();

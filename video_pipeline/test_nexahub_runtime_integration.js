@@ -303,7 +303,7 @@ async function runNexaHubIntegrationTests() {
     section('TEST 6: Local runOnce End-to-End Cycle');
     const env6 = freshEnv('test6_local_run_once');
     const fixture6 = createFixtureServer([
-      { id: 'nh_int1', title: 'Romantic Vibe NexaHub Integration Test Video' }
+      { id: 'nh_int1', title: 'Korean Drama NexaHub Integration Test Video' }
     ]);
     const { url: serverUrl6 } = await fixture6.listen();
 
@@ -372,7 +372,7 @@ async function runNexaHubIntegrationTests() {
     section('TEST 9: Shutdown During Active Acquisition Cycle');
     const env9 = freshEnv('test9_shutdown_active');
     const fixture9 = createFixtureServer([
-      { id: 'nh_shut1', title: 'Romantic Vibe Shutdown Video' }
+      { id: 'nh_shut1', title: 'Korean Drama Shutdown Video' }
     ]);
     const { url: serverUrl9 } = await fixture9.listen();
 

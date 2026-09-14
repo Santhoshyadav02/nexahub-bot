@@ -4,312 +4,254 @@
   "destinations": {
     "DESTINATION_1": {
       "id": "DESTINATION_1",
-      "name": "Romantic Vibe",
+      "name": "Korean Drama",
       "username": "ccsfvk",
       "chatId": "-1003780478806",
       "enabled": true,
       "priority": 1,
       "keywords": {
         "high": [
-          "romantic vibe",
-          "k-pop 열애설",
-          "케이팝 열애설",
-          "kept lover",
-          "myanmar"
+          "korean drama",
+          "한국 드라마",
+          "케이드라마",
+          "k-drama"
         ],
         "medium": [
-          "romantic",
-          "vibe",
-          "k-pop",
-          "케이팝",
-          "러브",
-          "로맨틱"
+          "drama",
+          "드라마",
+          "series",
+          "시리즈"
         ],
         "low": [
-          "intimate",
-          "mood"
+          "episode",
+          "회차"
         ]
       }
     },
     "DESTINATION_2": {
       "id": "DESTINATION_2",
-      "name": "Dating",
+      "name": "Romance Drama",
       "username": "cccsefk",
       "chatId": "-1004464504918",
       "enabled": true,
       "priority": 2,
       "keywords": {
         "high": [
-          "dating",
-          "evergrande troupe",
-          "didi proxy operation",
-          "아이돌 열애 루머",
-          "비밀 연애"
+          "romance drama",
+          "로맨스 드라마",
+          "love story",
+          "순애보"
         ],
         "medium": [
-          "date",
-          "date night",
-          "아이돌",
-          "열애",
-          "데이트",
-          "약속"
+          "romance",
+          "로맨스",
+          "love",
+          "사랑"
         ],
         "low": [
-          "meeting",
-          "blind date"
+          "couple",
+          "커플"
         ]
       }
     },
     "DESTINATION_3": {
       "id": "DESTINATION_3",
-      "name": "Romance",
+      "name": "Comedy Drama",
       "username": "e5brygh",
       "chatId": "-1004384169456",
       "enabled": true,
       "priority": 3,
       "keywords": {
         "high": [
-          "romance",
-          "myanmar women",
-          "first love",
-          "mutual relations",
-          "intimacy"
+          "comedy drama",
+          "코미디 드라마",
+          "rom-com",
+          "로맨틱 코미디"
         ],
         "medium": [
-          "love story",
-          "relations",
-          "lover",
-          "love",
-          "순애",
-          "로맨스"
+          "comedy",
+          "코미디",
+          "funny",
+          "웃긴"
         ],
         "low": [
-          "crush",
-          "passion"
+          "laugh",
+          "웃음"
         ]
       }
     },
     "DESTINATION_4": {
       "id": "DESTINATION_4",
-      "name": "Crotch",
+      "name": "Action Drama",
       "username": "ccdjxc",
       "chatId": "-1004419758275",
       "enabled": true,
       "priority": 4,
       "keywords": {
         "high": [
-          "crotch",
-          "sister snake",
-          "between her legs",
-          "between her legs drunk",
-          "eat your sausage",
-          "연예인 결별"
+          "action drama",
+          "액션 드라마",
+          "action thriller",
+          "액션 스릴러"
         ],
         "medium": [
-          "sausage",
-          "legs",
-          "skirt",
-          "body",
-          "thigh",
-          "다리",
-          "스커트"
+          "action",
+          "액션",
+          "fight scene"
         ],
         "low": [
-          "bottom",
-          "hips"
+          "chase",
+          "추격"
         ]
       }
     },
     "DESTINATION_5": {
       "id": "DESTINATION_5",
-      "name": "Mosa",
+      "name": "Thriller Drama",
       "username": "vsdxda",
       "chatId": "-1003725861834",
       "enabled": true,
       "priority": 5,
       "keywords": {
         "high": [
-          "mosa",
-          "has work",
-          "열애 논란",
-          "mosaic",
-          "uncensored",
-          "no mosa",
-          "探花",
-          "tanhua"
+          "thriller drama",
+          "스릴러 드라마",
+          "suspense thriller",
+          "서스펜스"
         ],
         "medium": [
-          "censored",
-          "主播",
-          "streamer",
-          "노모",
-          "모자이크",
-          "대리운영"
+          "thriller",
+          "스릴러",
+          "suspense"
         ],
         "low": [
-          "blur",
-          "pixel"
+          "tense",
+          "긴장"
         ]
       }
     },
     "DESTINATION_6": {
       "id": "DESTINATION_6",
-      "name": "Bunny Girl Cosplay Date",
+      "name": "Historical Drama",
       "username": "tfccdet",
       "chatId": "-1004416217845",
       "enabled": true,
       "priority": 6,
       "keywords": {
         "high": [
-          "bunny girl cosplay date",
-          "bunny girl",
-          "bullying & sex",
-          "비밀 커플",
-          "반차",
-          "反差"
+          "historical drama",
+          "사극",
+          "period drama",
+          "시대극"
         ],
         "medium": [
-          "cosplay",
-          "bunny",
-          "costume",
-          "roleplay",
-          "코스프레",
-          "바니걸",
-          "制服",
-          "uniform"
+          "historical",
+          "역사",
+          "royal court"
         ],
         "low": [
-          "dressup",
-          "outfit"
+          "dynasty",
+          "왕조"
         ]
       }
     },
     "DESTINATION_7": {
       "id": "DESTINATION_7",
-      "name": "Lustful Hostess",
+      "name": "Mystery Drama",
       "username": "sfgfem",
       "chatId": "-1004486764871",
       "enabled": true,
       "priority": 7,
       "keywords": {
         "high": [
-          "lustful hostess",
-          "housekeeper",
-          "award-winning housekeeper",
-          "da ci ge",
-          "바이럴 로맨스",
-          "人妻",
-          "少妇",
-          "店长"
+          "mystery drama",
+          "미스터리 드라마",
+          "detective story",
+          "탐정 이야기"
         ],
         "medium": [
-          "hostess",
-          "hotel",
-          "wife",
-          "housewife",
-          "호스티스",
-          "주부",
-          "호텔"
+          "mystery",
+          "미스터리",
+          "detective"
         ],
         "low": [
-          "maid",
-          "service"
+          "clue",
+          "단서"
         ]
       }
     },
     "DESTINATION_8": {
       "id": "DESTINATION_8",
-      "name": "Concubine",
+      "name": "Slice of Life",
       "username": "ddkicr",
       "chatId": "-1004481385613",
       "enabled": true,
       "priority": 8,
       "keywords": {
         "high": [
-          "concubine",
-          "senior year love story",
-          "sister rice bowl",
-          "delicious sister rice bowl",
-          "delicious sister",
-          "fantrie",
-          "럽스타그램"
+          "slice of life",
+          "일상 드라마",
+          "everyday story",
+          "일상 이야기"
         ],
         "medium": [
-          "vip channel",
-          "nude content",
-          "nude",
-          "fantrie nude",
-          "첩",
-          "비밀 회원"
+          "daily life",
+          "일상",
+          "healing drama"
         ],
         "low": [
-          "exclusive",
-          "premium"
+          "ordinary",
+          "평범한"
         ]
       }
     },
     "DESTINATION_9": {
       "id": "DESTINATION_9",
-      "name": "Saki Mizumi",
+      "name": "Family Drama",
       "username": "cccddghhgf",
       "chatId": "-1004483241550",
       "enabled": true,
       "priority": 9,
       "keywords": {
         "high": [
-          "saki mizumi",
-          "sichuan mother & son",
-          "korean japanese",
-          "japanese 18",
-          "결혼 루머"
+          "family drama",
+          "가족 드라마",
+          "family story",
+          "가족 이야기"
         ],
         "medium": [
-          "japanese",
-          "japan",
-          "saki",
-          "mizumi",
-          "mother & son",
-          "일본",
-          "모자",
-          "jav",
-          "av"
+          "family",
+          "가족",
+          "parents and children"
         ],
         "low": [
-          "tokyo",
-          "asia"
+          "home",
+          "가정"
         ]
       }
     },
     "DESTINATION_10": {
       "id": "DESTINATION_10",
-      "name": "A Muse",
+      "name": "Youth Drama",
       "username": "bzd4wrf",
       "chatId": "-1003786693669",
       "enabled": true,
       "priority": 10,
       "keywords": {
         "high": [
-          "a muse",
-          "hu siyuan",
-          "연예계 스캔들",
-          "91porn",
-          "麻豆",
-          "madou",
-          "onlyfans",
-          "海角"
+          "youth drama",
+          "청춘 드라마",
+          "campus romance",
+          "첫사랑 이야기"
         ],
         "medium": [
-          "muse",
-          "model",
-          "twitter",
-          "91",
-          "onlyfans推特分享",
-          "뮤즈",
-          "모델"
+          "youth",
+          "청춘",
+          "school life"
         ],
         "low": [
-          "gallery",
-          "photoshoot"
+          "classmate",
+          "동창"
         ]
       }
     }

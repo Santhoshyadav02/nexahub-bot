@@ -214,8 +214,8 @@ async function runMasterE2E() {
     section('TEST 1: Complete Cycle End-to-End');
     const env1 = freshEnv('test1_complete_cycle');
     const fixture1 = createFixtureServer([
-      { id: 'p1', title: 'Romantic Vibe Highlight Clip' },
-      { id: 'p2', title: 'Evergrande Troupe Dating Show' }
+      { id: 'p1', title: 'Korean Drama Highlight Clip' },
+      { id: 'p2', title: 'Romance Drama Love Story Show' }
     ]);
     const { url: serverUrl1 } = await fixture1.listen();
 
@@ -282,8 +282,8 @@ async function runMasterE2E() {
     // ============================================================
     section('TEST 2: Second Cycle with New Media');
     const fixture2 = createFixtureServer([
-      { id: 'p3', title: 'Bunny Girl Cosplay Party Clip' },
-      { id: 'p4', title: 'Concubine Sister Rice Bowl Special' }
+      { id: 'p3', title: 'Historical Drama Royal Palace Clip' },
+      { id: 'p4', title: 'Slice of Life Everyday Story Special' }
     ]);
     const { url: serverUrl2 } = await fixture2.listen();
     bcm1.acquisitionUrl = serverUrl2;
@@ -296,8 +296,8 @@ async function runMasterE2E() {
     check('Total Telegram messages sent across both cycles is 4', telegramSent1.length === 4);
     const hasDest6 = res2.publishResult.items.some(it => it.canonicalDestination === 'DESTINATION_6');
     const hasDest8 = res2.publishResult.items.some(it => it.canonicalDestination === 'DESTINATION_8');
-    check('Cycle 2 routed an item to DESTINATION_6 (Bunny Girl)', hasDest6);
-    check('Cycle 2 routed an item to DESTINATION_8 (Concubine)', hasDest8);
+    check('Cycle 2 routed an item to DESTINATION_6 (Historical Drama)', hasDest6);
+    check('Cycle 2 routed an item to DESTINATION_8 (Slice of Life)', hasDest8);
     check('Controller state is IDLE after Cycle 2', batchState1.getControllerState() === 'IDLE');
 
     await fixture2.close();

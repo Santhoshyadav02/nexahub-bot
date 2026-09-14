@@ -299,7 +299,7 @@ async function runRuntimeTests() {
   section('TEST 6: runOnce End-to-End Delegation');
   const env6 = freshEnv('test6_run_once');
   const fixture6 = createFixtureServer([
-    { id: 'rt1', title: 'Romantic Vibe Runtime Test Video' }
+    { id: 'rt1', title: 'Korean Drama Runtime Test Video' }
   ]);
   const { url: serverUrl6 } = await fixture6.listen();
 

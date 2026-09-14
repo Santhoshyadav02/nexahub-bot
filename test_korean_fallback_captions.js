@@ -123,12 +123,12 @@ runTest("Existing-caption video keeps its source caption metadata", () => {
   const result = generateKoreanCaption({
     sourceChannelId: "1",
     messageId: "102",
-    caption: "Delicious Sister Rice Bowl"
-  }, { matchedCategory: "Concubine" }, selector);
+    caption: "Heartwarming Family Reunion"
+  }, { matchedCategory: "Family Drama" }, selector);
 
   assert.strictEqual(result.captionSource, "source_metadata");
-  assert.ok(result.generatedKoreanCaption.includes("Delicious Sister Rice Bowl"));
-  assert.ok(result.generatedKoreanCaption.includes("[Concubine]"));
+  assert.ok(result.generatedKoreanCaption.includes("Heartwarming Family Reunion"));
+  assert.ok(result.generatedKoreanCaption.includes("[Family Drama]"));
 });
 
 // 9. Consecutive fallback selections differ

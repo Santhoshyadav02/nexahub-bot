@@ -32,19 +32,19 @@ console.log("==================================================\n");
 // 1. Direct match priority
 runTest("Direct keyword match takes precedence over source fallback", () => {
   const router = new SourceFallbackRouter();
-  // Source is @korea18movie (fallback DESTINATION_3 Romance), but caption explicitly matches Crotch
+  // Source is @korea18movie (fallback DESTINATION_3 Romance), but caption explicitly matches Action Drama
   const item = {
     sourceChannelId: "1762071168",
     sourceUsername: "korea18movie",
     messageId: "101",
-    caption: "Between Her Legs Drunk [Full HD]"
+    caption: "Action Drama Chase Scene [Full HD]"
   };
   const decision = router.routeItem(item);
 
   assert.strictEqual(decision.routingStage, "DIRECT_KEYWORD_MATCH");
   assert.strictEqual(decision.fallbackApplied, false);
-  assert.strictEqual(decision.destinationChannelId, "DESTINATION_4"); // Crotch
-  assert.strictEqual(decision.matchedCategory, "Crotch");
+  assert.strictEqual(decision.destinationChannelId, "DESTINATION_4"); // Action Drama
+  assert.strictEqual(decision.matchedCategory, "Action Drama");
 });
 
 // 2. Source fallback application
@@ -151,7 +151,7 @@ runTest("Batch processing computes before vs after metrics and delta accurately"
   const router = new SourceFallbackRouter();
   const items = [
     // 1. Direct match
-    { sourceChannelId: "1762071168", sourceUsername: "korea18movie", messageId: "1", caption: "Romantic Vibe Episode" },
+    { sourceChannelId: "1762071168", sourceUsername: "korea18movie", messageId: "1", caption: "Korean Drama Special" },
     // 2. Unclassified before -> Fallback to DESTINATION_10 after
     { sourceChannelId: "1521978999", sourceUsername: "xuexiziliao2", messageId: "2", caption: "" },
     // 3. Unclassified before -> Fallback to DESTINATION_8 after
