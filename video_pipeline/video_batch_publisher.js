@@ -166,6 +166,7 @@ class VideoBatchPublisher {
    * @param {string} batchId Cycle or batch ID
    * @param {object} media Media record { mediaId, title, filePath, contentSha256, ... }
    * @param {object} [options] Options override
+   */
   async publishSingleItem(batchId, media, options = {}) {
     if (!media || !media.mediaId) {
       return { status: 'FAILED', reason: 'Invalid media record: missing mediaId' };
