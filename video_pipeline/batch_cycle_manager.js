@@ -45,6 +45,11 @@ const DEFAULT_MAX_PUBLISH_ATTEMPTS = 3;
 const DEFAULT_DOWNLOAD_RETENTION_HOURS = 48;
 const DEFAULT_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024;
 const DEFAULT_STOP_ACTIVE_RUN_WAIT_MS = 1500;
+// Disk cleanup runs on its own timer so it still happens while a long cycle
+// makes the scheduler skip ticks.
+const DEFAULT_CLEANUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+// Ledger states that mean a file's work is finished (safe to delete mid-cycle).
+const TERMINAL_MEDIA_STATES = new Set(['FAILED', 'DUPLICATE', 'ABANDONED', 'CLEANED']);
 const BOOT_TIME_TOLERANCE_MS = 2 * 60 * 1000;
 const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'PROCESSING', 'STREAMING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
 
@@ -168,6 +173,8 @@ class BatchCycleManager {
    * @param {number} [config.downloadMaxBytes] Downloads dir size cap, 0 disables (default 10 GiB)
    * @param {number} [config.startupDelayMs] Minimum delay before the first scheduled cycle (default 60s)
    * @param {number} [config.stopActiveRunWaitMs] How long stop() waits for an in-flight cycle to settle (default 1.5s)
+   * @param {number} [config.cleanupIntervalMs] Scheduled disk cleanup period, 0 disables (default 3h)
+   * @param {string} [config.uploadPartsDir] Split-upload scratch dir swept by the scheduled cleanup
    */
   constructor(config = {}) {
     const hasInputLinks = !!(config.acquisitionOptions && config.acquisitionOptions.inputLinks);
@@ -219,6 +226,10 @@ class BatchCycleManager {
     this.downloadMaxBytes = pickNumber(config.downloadMaxBytes, 'VIDEO_PIPELINE_DOWNLOAD_MAX_BYTES', DEFAULT_DOWNLOAD_MAX_BYTES, { allowZero: true });
     this.startupDelayMs = pickNumber(config.startupDelayMs, 'VIDEO_PIPELINE_STARTUP_DELAY_MS', DEFAULT_STARTUP_DELAY_MS, { allowZero: true });
     this.stopActiveRunWaitMs = pickNumber(config.stopActiveRunWaitMs, null, DEFAULT_STOP_ACTIVE_RUN_WAIT_MS, { allowZero: true });
+    this.cleanupIntervalMs = pickNumber(config.cleanupIntervalMs, 'VIDEO_PIPELINE_CLEANUP_INTERVAL_MS', DEFAULT_CLEANUP_INTERVAL_MS, { allowZero: true });
+    this.uploadPartsDir = config.uploadPartsDir || null;
+    this._cleanupTimerId = null;
+    this._cleanupRunning = false;
 
     this.videoPipelineManager = config.videoPipelineManager || new VideoPipelineManager();
     this.mediaIngestor = config.mediaIngestor || new MediaIngestor({
@@ -807,9 +818,13 @@ class BatchCycleManager {
    * media still pending publication.
    * @returns {Promise<{deleted: number, freedBytes: number}>}
    */
-  async _sweepDownloadsDir(now = Date.now()) {
+  async _sweepDownloadsDir(now = Date.now(), { cycleActive = false } = {}) {
     const summary = { deleted: 0, freedBytes: 0 };
     if (!this.enableCleanup) return summary;
+    // While a cycle runs, media it may still be ingesting, validating or
+    // uploading (no ledger record yet, VALIDATING, or pending READY) is kept.
+    const keep = (candidate) => candidate.isMedia
+      && (this._isPendingPublish(candidate.abs) || (cycleActive && this._isInUseByActiveCycle(candidate.abs)));
 
     let entries;
     try {
@@ -845,7 +860,7 @@ class BatchCycleManager {
 
     const retentionHours = Math.round((this.downloadRetentionMs / 3600000) * 100) / 100;
     for (const candidate of candidates) {
-      if (now - candidate.mtimeMs > this.downloadRetentionMs && !(candidate.isMedia && this._isPendingPublish(candidate.abs))) {
+      if (now - candidate.mtimeMs > this.downloadRetentionMs && !keep(candidate)) {
         await remove(candidate, `older than ${retentionHours}h retention`);
       }
     }
@@ -854,7 +869,7 @@ class BatchCycleManager {
       let total = candidates.filter(c => !c.removed).reduce((sum, c) => sum + c.size, 0);
       if (total > this.downloadMaxBytes) {
         const evictable = candidates
-          .filter(c => !c.removed && !(c.isMedia && this._isPendingPublish(c.abs)))
+          .filter(c => !c.removed && !keep(c))
           .sort((a, b) => a.mtimeMs - b.mtimeMs);
         for (const candidate of evictable) {
           if (total <= this.downloadMaxBytes) break;
@@ -871,6 +886,89 @@ class BatchCycleManager {
       console.log(`${LOG_PREFIX} Downloads sweep removed ${summary.deleted} file(s), freed ${(summary.freedBytes / (1024 * 1024)).toFixed(1)} MB.`);
     }
     return summary;
+  }
+
+  /**
+   * True if an active cycle may still be working on this downloaded file:
+   * not ingested yet (no ledger record) or not in a finished state.
+   */
+  _isInUseByActiveCycle(absPath) {
+    const ledger = this.mediaIngestor && this.mediaIngestor.ledger;
+    if (!ledger || typeof ledger.getRecord !== 'function') return true;
+    const id = crypto.createHash('sha256').update(path.resolve(absPath)).digest('hex');
+    const record = ledger.getRecord(id);
+    if (!record) return true;
+    if (TERMINAL_MEDIA_STATES.has(record.status)) return false;
+    if (record.status === 'READY') {
+      const attempt = this._getPublishAttemptState(id);
+      return !(attempt && (attempt.published || attempt.status === 'SKIPPED_TOO_LARGE' || attempt.attempts >= this.maxPublishAttempts));
+    }
+    return true;
+  }
+
+  _isCycleActive() {
+    return Boolean(this._activeRunPromise) || ACTIVE_CYCLE_STATES.includes(this.batchState.getControllerState());
+  }
+
+  /**
+   * Removes leftover split-upload part directories older than the retention.
+   * Skipped entirely while a cycle runs, since uploads only happen inside one.
+   * @returns {{deleted: number}}
+   */
+  _sweepUploadPartsDir(now = Date.now()) {
+    const summary = { deleted: 0 };
+    if (!this.enableCleanup || !this.uploadPartsDir || this._isCycleActive()) return summary;
+    let entries;
+    try {
+      entries = fs.readdirSync(this.uploadPartsDir, { withFileTypes: true });
+    } catch (e) {
+      return summary;
+    }
+    for (const entry of entries) {
+      const abs = path.join(this.uploadPartsDir, entry.name);
+      try {
+        if (now - fs.statSync(abs).mtimeMs <= this.downloadRetentionMs) continue;
+        fs.rmSync(abs, { recursive: true, force: true });
+        summary.deleted++;
+      } catch (e) {
+        console.warn(`${LOG_PREFIX} Could not remove upload part leftover ${entry.name}: ${e.message}`);
+      }
+    }
+    return summary;
+  }
+
+  /**
+   * Scheduled disk cleanup, independent of the cycle schedule: sweeps
+   * expired/finished downloads (safely, even mid-cycle) and leftover upload parts.
+   * @returns {Promise<{deleted: number, freedBytes: number, partDirsDeleted: number, skipped?: boolean}>}
+   */
+  async runScheduledCleanup(now = Date.now()) {
+    if (!this.enableCleanup || this._cleanupRunning) {
+      return { deleted: 0, freedBytes: 0, partDirsDeleted: 0, skipped: true };
+    }
+    this._cleanupRunning = true;
+    try {
+      const cycleActive = this._isCycleActive();
+      const downloads = await this._sweepDownloadsDir(now, { cycleActive });
+      const parts = this._sweepUploadPartsDir(now);
+      console.log(`${LOG_PREFIX} Scheduled cleanup${cycleActive ? ' (cycle active - in-use files kept)' : ''}: `
+        + `removed ${downloads.deleted} download file(s), freed ${(downloads.freedBytes / (1024 * 1024)).toFixed(1)} MB, `
+        + `removed ${parts.deleted} upload part dir(s).`);
+      return { deleted: downloads.deleted, freedBytes: downloads.freedBytes, partDirsDeleted: parts.deleted };
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Scheduled cleanup failed: ${err.message}`);
+      return { deleted: 0, freedBytes: 0, partDirsDeleted: 0, error: err.message };
+    } finally {
+      this._cleanupRunning = false;
+    }
+  }
+
+  _startCleanupTimer() {
+    if (this._cleanupTimerId || !this.enableCleanup || !(this.cleanupIntervalMs > 0)) return;
+    this._cleanupTimerId = setInterval(() => {
+      this.runScheduledCleanup().catch(() => {});
+    }, this.cleanupIntervalMs);
+    console.log(`${LOG_PREFIX} Scheduled cleanup every ${Math.round(this.cleanupIntervalMs / 60000)} min (retention ${Math.round(this.downloadRetentionMs / 60000)} min).`);
   }
 
   // ============================================================
@@ -1141,6 +1239,7 @@ class BatchCycleManager {
     }
     this._acceptingRuns = true;
     this._abortRequested = false;
+    this._startCleanupTimer();
 
     if (options.runImmediately) {
       this._scheduledTick();
@@ -1211,6 +1310,10 @@ class BatchCycleManager {
     if (this._timerId) {
       clearInterval(this._timerId);
       this._timerId = null;
+    }
+    if (this._cleanupTimerId) {
+      clearInterval(this._cleanupTimerId);
+      this._cleanupTimerId = null;
     }
     this._nextRunAt = null;
     if (this._activeRunPromise) {

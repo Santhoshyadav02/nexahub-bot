@@ -587,6 +587,7 @@ class VideoPipelineRuntime {
       sourceMode: this.sourceMode,
       outputDir: this.outputDir,
       downloadsDir: this.downloadsDir,
+      uploadPartsDir: this.uploadPartsDir,
       batchState,
       mediaIngestor: new (require('./media_ingestor').MediaIngestor)({
         downloadsDir: this.downloadsDir,
