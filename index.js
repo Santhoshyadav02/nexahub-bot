@@ -1853,23 +1853,10 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const escapedTitle = escapeHTML(displayTitle);
 
-    let directUrl = p.telegram_url || p.url;
-    if (!directUrl || !directUrl.startsWith("http")) {
-      const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
-      if (src && src.username && p.message_id) {
-        directUrl = `https://t.me/${src.username}/${p.message_id}`;
-      } else if (p.username && p.message_id) {
-        directUrl = `https://t.me/${p.username}/${p.message_id}`;
-      } else if (src && src.invite_url) {
-        directUrl = src.invite_url;
-      } else if (p.invite_url) {
-        directUrl = p.invite_url;
-      } else if (p.chat_id && p.message_id) {
-        let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
-        directUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
-      }
-    }
-    const safeUrl = escapeHTML(directUrl || "https://t.me");
+    const rawTarget = `${callbackPrefix}:${startIndex + index}:${currentPage}`;
+    const b64 = Buffer.from(rawTarget).toString("base64url");
+    const itemUrl = `https://t.me/${currentBotUsername}?start=d_${b64}`;
+    const safeUrl = escapeHTML(itemUrl);
 
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
   });
@@ -1881,18 +1868,7 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
   }
 
-  const detailButtons = pageItems.map((p, index) => {
-    const itemNumber = startIndex + index + 1;
-    return {
-      text: `🎬 ${itemNumber}번 미리보기`,
-      callback_data: `det:${callbackPrefix}:${startIndex + index}:${currentPage}`
-    };
-  });
-
   const inline_keyboard = [];
-  for (let i = 0; i < detailButtons.length; i += 2) {
-    inline_keyboard.push(detailButtons.slice(i, i + 2));
-  }
 
   const navRow = [];
   if (currentPage > 1) {
@@ -1935,7 +1911,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     items = category ? category.items : [];
   } else if (callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:")) {
     const topicKey = callbackPrefix.split(":")[1];
-    items = sourceRegistry.getPostsForKeyword(topicKey, true);
+    items = sourceRegistry.getPostsForKeyword(topicKey, false);
     title = TOPIC_NAMES[topicKey] || topicKey;
   }
 
@@ -2800,22 +2776,29 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     const payload = match ? match[1] : null;
 
-    if (payload && (payload.startsWith("det_") || payload.startsWith("det~") || payload.startsWith("video_"))) {
+    if (payload && (payload.startsWith("d_") || payload.startsWith("det_") || payload.startsWith("det~") || payload.startsWith("video_") || payload.startsWith("v_"))) {
       let callbackPrefix = "";
       let itemIdx = 0;
       let page = 1;
 
-      if (payload.startsWith("det~")) {
+      if (payload.startsWith("d_")) {
+        const b64 = payload.slice(2);
+        const raw = Buffer.from(b64, "base64url").toString("utf8");
+        const parts = raw.split(":");
+        page = parseInt(parts.pop(), 10) || 1;
+        itemIdx = parseInt(parts.pop(), 10) || 0;
+        callbackPrefix = parts.join(":");
+      } else if (payload.startsWith("det~")) {
         const parts = payload.split("~");
         callbackPrefix = decodeURIComponent(parts[1] || "");
         itemIdx = parseInt(parts[2], 10) || 0;
         page = parseInt(parts[3], 10) || 1;
-      } else if (payload.startsWith("video_")) {
-        const videoId = payload.replace("video_", "");
+      } else if (payload.startsWith("video_") || payload.startsWith("v_")) {
+        const videoId = payload.startsWith("v_") ? payload.slice(2) : payload.replace("video_", "");
         const post = sourceRegistry.getPostById(videoId);
         if (post) {
           callbackPrefix = `topic_page:${post.keyword}`;
-          const posts = sourceRegistry.getPostsForKeyword(post.keyword, true);
+          const posts = sourceRegistry.getPostsForKeyword(post.keyword, false);
           const foundIdx = posts.findIndex(p => p.id === post.id || p.unique_hash === post.unique_hash);
           itemIdx = foundIdx !== -1 ? foundIdx : 0;
           page = Math.floor(itemIdx / 8) + 1;
@@ -2825,10 +2808,25 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           page = 1;
         }
       } else if (payload.startsWith("det_")) {
-        const parts = payload.split("_");
-        page = parseInt(parts.pop(), 10) || 1;
-        itemIdx = parseInt(parts.pop(), 10) || 0;
-        callbackPrefix = parts.slice(1).join(":");
+        try {
+          const raw = Buffer.from(payload.slice(4), "base64url").toString("utf8");
+          if (raw.includes(":")) {
+            const parts = raw.split(":");
+            page = parseInt(parts.pop(), 10) || 1;
+            itemIdx = parseInt(parts.pop(), 10) || 0;
+            callbackPrefix = parts.join(":");
+          } else {
+            const parts = payload.split("_");
+            page = parseInt(parts.pop(), 10) || 1;
+            itemIdx = parseInt(parts.pop(), 10) || 0;
+            callbackPrefix = parts.slice(1).join(":");
+          }
+        } catch (_) {
+          const parts = payload.split("_");
+          page = parseInt(parts.pop(), 10) || 1;
+          itemIdx = parseInt(parts.pop(), 10) || 0;
+          callbackPrefix = parts.slice(1).join(":");
+        }
       }
 
       await renderItemDetailPage(chatId, callbackPrefix, itemIdx, page, null);
