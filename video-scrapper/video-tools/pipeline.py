@@ -179,7 +179,13 @@ class ContinuousPipeline:
         # (verification block, network blip) or a video that was found but never
         # finished downloading (process killed, connection reset) must stay eligible
         # for retry on the next cycle/run - otherwise it is silently lost forever.
-        resumed = 0
+        # Unfinished videos are NOT re-queued from their stored URLs: players hand
+        # out signed media URLs that expire (HTTP 403 on a later run), and a post
+        # marked seen would never be reopened for a fresh URL. The post is left
+        # unseen instead, so discovery revisits it and queues a current URL.
+        # A reopened post appends a newer record; the latest record that found
+        # videos decides, so a stale URL in an older record can't reopen it forever.
+        page_done = {}
         for item in self.discovered_records:
             if not isinstance(item, dict):
                 continue
@@ -197,19 +203,17 @@ class ContinuousPipeline:
                 if v in successful_urls or v_hash in self.completed_hashes or is_valid_existing_file(self.downloads_dir / filename):
                     self.seen_video_urls.add(v)
                     continue
-                # Discovered earlier but never actually downloaded - resume it now
-                # instead of waiting for the post to be revisited.
-                self.job_counter += 1
-                try:
-                    self.job_queue.put_nowait((self.job_counter, self.job_counter, v, page))
-                    self.seen_video_urls.add(v)
-                    resumed += 1
-                except queue.Full:
-                    post_fully_done = False  # leave it unseen so the post gets revisited later
-            if page and post_fully_done:
+                post_fully_done = False
+            if page and video_urls:
+                page_done[page] = post_fully_done
+        revisit = 0
+        for page, done in page_done.items():
+            if done:
                 self.seen_post_links.add(page)
-        if resumed:
-            print(f"[Startup] Resumed {resumed} previously-discovered video(s) that never finished downloading", flush=True)
+            else:
+                revisit += 1
+        if revisit:
+            print(f"[Startup] {revisit} post(s) with unfinished downloads will be reopened for fresh video URLs", flush=True)
 
     def _save_records(self):
         with self.records_lock:
