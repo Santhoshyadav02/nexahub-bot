@@ -587,7 +587,8 @@ class VideoBatchPublisher {
           filePath,
           caption,
           media,
-          canonicalDestination
+          canonicalDestination,
+          routingDecision: planItem ? planItem.routingDecision : null
         });
 
         const telegramMessageId = uploadResult.messageId || uploadResult.id || uploadResult.message_id;
@@ -731,7 +732,7 @@ class VideoBatchPublisher {
   /**
    * Internal wrapper to call injected Telegram client or MTProto client.
    */
-  async _sendToTelegram({ destinationId, filePath, caption, media, canonicalDestination }) {
+  async _sendToTelegram({ destinationId, filePath, caption, media, canonicalDestination, routingDecision }) {
     const client = this.telegramClient;
 
     // 1. Try MTProto singleton client (supports up to 2GB uploads)
@@ -743,7 +744,17 @@ class VideoBatchPublisher {
         if (typeof dest === 'string' && dest.startsWith('@')) {
           dest = dest.slice(1);
         }
-        const sent = await mtproto.client.sendFile(dest, {
+        let chatEntity = null;
+        try {
+          chatEntity = await mtproto.client.getEntity(dest);
+        } catch (entErr) {
+          try {
+            chatEntity = await mtproto.client.getEntity('@' + dest);
+          } catch (_) {}
+        }
+        const targetPeer = chatEntity || dest;
+        console.log(`${LOG_PREFIX} MTProto sending file to peer "${dest}" (${filePath})`);
+        const sent = await mtproto.client.sendFile(targetPeer, {
           file: filePath,
           caption,
           supportsStreaming: true
@@ -754,7 +765,7 @@ class VideoBatchPublisher {
             if (sourceRegistry && typeof sourceRegistry.processChannelPost === 'function') {
               const chName = (routingDecision && routingDecision.primaryDestination && routingDecision.primaryDestination.name) || '';
               sourceRegistry.processChannelPost({
-                chat: { id: dest, username: String(dest).replace(/^@/, ''), title: chName },
+                chat: { id: String(dest), username: String(dest).replace(/^@/, ''), title: chName },
                 message_id: String(sent.id),
                 caption: caption,
                 text: caption,
