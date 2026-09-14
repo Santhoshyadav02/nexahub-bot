@@ -9,6 +9,7 @@ import signal
 import sys
 import threading
 import time
+import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
@@ -35,6 +36,66 @@ SEEN_HASHES_MAX = _env_int("VIDEO_PIPELINE_SEEN_HASHES_MAX", 50000)
 SEEN_STATE_FILE = "download_seen.json"
 # NexaHub escalates to SIGKILL a few seconds after SIGTERM - never block longer than this.
 STOP_JOIN_BUDGET_SEC = 2.0
+
+
+CDP_TABS_FILE = "cdp_tabs.json"
+
+
+def _cdp_http_base(cdp_url):
+    parts = urlsplit(cdp_url if "://" in cdp_url else f"http://{cdp_url}")
+    return f"http://{parts.netloc}"
+
+
+def close_stale_cdp_tabs(state_path, cdp_url, timeout=5):
+    """Close tabs a previous run opened in the shared browser but never closed.
+
+    A killed run (SIGKILL, or its Playwright driver dying first on a group
+    SIGTERM) leaves its tab open; every restart would otherwise leak one more
+    tab into the long-lived verified Chrome. Tabs are identified only by the
+    target ids this pipeline recorded - never by URL or title.
+    Returns the number of tabs Chrome confirmed closing."""
+    path = Path(state_path)
+    if not path.exists():
+        return 0
+    try:
+        ids = [i for i in json.loads(path.read_text(encoding="utf-8")) if isinstance(i, str) and i]
+    except Exception:
+        ids = []
+    closed = 0
+    base = _cdp_http_base(cdp_url)
+    for target_id in ids:
+        try:
+            with urllib.request.urlopen(f"{base}/json/close/{target_id}", timeout=timeout) as resp:
+                if resp.status == 200:
+                    closed += 1
+        except Exception:
+            pass  # already gone (404) or browser restarted - nothing left to close
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return closed
+
+
+def record_cdp_tab(state_path, target_id, add=True):
+    path = Path(state_path)
+    try:
+        ids = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        if not isinstance(ids, list):
+            ids = []
+    except Exception:
+        ids = []
+    if add and target_id not in ids:
+        ids.append(target_id)
+    elif not add:
+        ids = [i for i in ids if i != target_id]
+    if ids:
+        write_json_atomic(path, ids)
+    else:
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 
 def video_url_hash(video_url):
@@ -345,7 +406,12 @@ class ContinuousPipeline:
         print("\n[Producer] Starting Playwright browser...", flush=True)
         with sync_playwright() as p:
             browser = None
+            cdp_tabs_path = self.output_dir / CDP_TABS_FILE
+            cdp_target_id = None
             if self.cdp_url:
+                stale = close_stale_cdp_tabs(cdp_tabs_path, self.cdp_url)
+                if stale:
+                    print(f"[Producer] Closed {stale} tab(s) left open by an interrupted earlier run.", flush=True)
                 try:
                     browser = connect_browser(p.chromium, self.cdp_url, self.timeout * 1000)
                 except Exception as exc:
@@ -363,6 +429,14 @@ class ContinuousPipeline:
 
             page = context.new_page()
             page.set_default_timeout(self.timeout * 1000)
+            if self.cdp_url:
+                try:
+                    session = context.new_cdp_session(page)
+                    cdp_target_id = session.send("Target.getTargetInfo")["targetInfo"]["targetId"]
+                    session.detach()
+                    record_cdp_tab(cdp_tabs_path, cdp_target_id)
+                except Exception as exc:
+                    print(f"[Producer] Could not record CDP tab id (stale-tab cleanup disabled this run): {exc}", flush=True)
 
             cycle = 1
             try:
@@ -511,6 +585,8 @@ class ContinuousPipeline:
                     try:
                         if not page.is_closed():
                             page.close()
+                        if cdp_target_id:
+                            record_cdp_tab(cdp_tabs_path, cdp_target_id, add=False)
                     except Exception:
                         pass
                     print("[Producer] Detached from CDP browser (left running).", flush=True)
