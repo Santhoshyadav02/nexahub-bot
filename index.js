@@ -59,6 +59,14 @@ const bot = new TelegramBot(TOKEN, {
 
 
 
+let currentBotUsername = process.env.TELEGRAM_BOT_USERNAME || "santhosh_learning_2026_bot";
+bot.getMe().then(me => {
+  if (me && me.username) {
+    currentBotUsername = me.username;
+    console.log(`🤖 Bot username initialized: @${currentBotUsername}`);
+  }
+}).catch(() => {});
+
 if (enablePolling) {
   console.log(`[TELEGRAM] Polling: ACTIVE (requesting getUpdates - a 409 below means another instance already holds this BOT_TOKEN's polling slot; outgoing sends are unaffected either way).`);
 }
@@ -1845,23 +1853,10 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const escapedTitle = escapeHTML(displayTitle);
 
-    let itemUrl = p.telegram_url || p.url;
-    if (!itemUrl || !itemUrl.startsWith("http")) {
-      const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
-      if (src && src.username && p.message_id) {
-        itemUrl = `https://t.me/${src.username}/${p.message_id}`;
-      } else if (p.username && p.message_id) {
-        itemUrl = `https://t.me/${p.username}/${p.message_id}`;
-      } else if (src && src.invite_url) {
-        itemUrl = src.invite_url;
-      } else if (p.invite_url) {
-        itemUrl = p.invite_url;
-      } else if (p.chat_id && p.message_id) {
-        let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
-        itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
-      }
-    }
-    const safeUrl = escapeHTML(itemUrl || "https://t.me");
+    const cleanPrefix = encodeURIComponent(callbackPrefix);
+    const itemIdx = startIndex + index;
+    const itemUrl = `https://t.me/${currentBotUsername}?start=det~${cleanPrefix}~${itemIdx}~${currentPage}`;
+    const safeUrl = escapeHTML(itemUrl);
 
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
   });
@@ -1988,7 +1983,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
   detailText += `<b>유형:</b> ${mediaType}${views}${duration}${caption}`;
 
   const inline_keyboard = [
-    [{ text: "🔗 그룹 가입", url: groupUrl }],
+    [{ text: "🔗 채널 입장", url: groupUrl }],
     [
       { text: "◀️ 뒤로가기", callback_data: `${callbackPrefix}:${page}` },
       { text: "🏠 홈", callback_data: "menu" }
