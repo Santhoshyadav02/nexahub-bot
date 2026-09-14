@@ -617,33 +617,25 @@ function startPipelineScheduler(options = {}) {
   // stay ahead of loadPipelineConfig()/pipeline_config.json entirely so a
   // disabled scheduler never reads config, touches the ledger, or
   // constructs any reader/publisher.
-  const schedulerEnabled = options.schedulerEnabled !== undefined
-    ? Boolean(options.schedulerEnabled)
-    : (process.env.TELEGRAM_PIPELINE_SCHEDULER_ENABLED === "true");
-
-  if (!schedulerEnabled) {
-    console.log("[TELEGRAM_PIPELINE] Scheduler is DISABLED (TELEGRAM_PIPELINE_SCHEDULER_ENABLED !== 'true'). Remaining dormant - no source reads, no destination publishes, no timers will start.");
-    return {
-      status: "DISABLED",
-      stop: stopPipelineScheduler
-    };
-  }
-
   const config = loadPipelineConfig();
   if (options.enabled !== undefined) {
     config.enabled = options.enabled;
   }
 
-  const intervalMs = options.intervalMs || config.schedulerIntervalMs || 600000;
+  const envFlag = process.env.TELEGRAM_PIPELINE_SCHEDULER_ENABLED;
+  const schedulerEnabled = options.schedulerEnabled !== undefined
+    ? Boolean(options.schedulerEnabled)
+    : (envFlag === "true" || (envFlag !== "false" && config.enabled !== false));
 
-  if (config.enabled === false) {
-    console.log("ℹ️ Telegram Video Pipeline scheduler is currently DISABLED (enabled: false in pipeline_config.json).");
+  if (!schedulerEnabled || config.enabled === false) {
+    console.log("[TELEGRAM_PIPELINE] Scheduler is DISABLED. Remaining dormant - no source reads, no destination publishes, no timers will start.");
     return {
       status: "DISABLED",
-      intervalMs,
       stop: stopPipelineScheduler
     };
   }
+
+  const intervalMs = options.intervalMs || config.schedulerIntervalMs || 600000;
 
   console.log(`🚀 Starting Telegram Video Pipeline scheduler (interval: ${intervalMs / 1000}s)...`);
 
