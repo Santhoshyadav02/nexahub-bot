@@ -3286,6 +3286,35 @@ if (isMainModule) {
     console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
   }
 
+  // 🧹 Periodic 1-Hour Media Cleanup Sweeper
+  try {
+    const { MediaCleaner } = require("./video_pipeline/media_cleaner");
+    const sweepDownloads = async () => {
+      try {
+        const candidateDirs = [
+          process.env.VIDEO_PIPELINE_DOWNLOADS_DIR,
+          "/var/lib/nexahub/video_pipeline/downloads",
+          path.join(__dirname, "downloads")
+        ].filter(Boolean);
+
+        for (const dir of candidateDirs) {
+          if (fs.existsSync(dir)) {
+            const cleaner = new MediaCleaner({ allowedDirectory: dir });
+            await cleaner.cleanOrphanFiles({
+              downloadsDir: dir,
+              maxAgeMs: 1 * 60 * 60 * 1000 // 1 hour TTL
+            });
+          }
+        }
+      } catch (cleanErr) {
+        // Non-blocking
+      }
+    };
+    // Run initial sweep on startup and recurringly every 15 minutes
+    sweepDownloads();
+    setInterval(sweepDownloads, 15 * 60 * 1000);
+  } catch (cleanInitErr) {}
+
   console.log("✅ NewsSearch Main Bot is running...");
   console.log("🔗 Channels shown directly in main bot!");
 }

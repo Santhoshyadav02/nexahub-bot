@@ -184,7 +184,7 @@ class MediaCleaner {
     const envMaxAge = Number(process.env.VIDEO_PIPELINE_ORPHAN_CLEANUP_MAX_AGE_MS);
     const maxAgeMs = (options.maxAgeMs && !isNaN(options.maxAgeMs))
       ? options.maxAgeMs
-      : (!isNaN(envMaxAge) && envMaxAge > 0 ? envMaxAge : 3 * 60 * 60 * 1000); // 3 hours
+      : (!isNaN(envMaxAge) && envMaxAge > 0 ? envMaxAge : 1 * 60 * 60 * 1000); // 1 hour (3,600,000 ms)
 
     const activeSet = new Set();
     if (options.activeFilePaths) {
