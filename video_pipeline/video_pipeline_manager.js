@@ -184,7 +184,8 @@ class VideoPipelineManager {
       child = spawn(cmd, args, {
         cwd: this.videoToolsDir,
         windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, PYTHONUNBUFFERED: "1" }
       });
     } catch (spawnErr) {
       this._lastError = spawnErr.message;
