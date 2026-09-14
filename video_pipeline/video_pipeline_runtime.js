@@ -145,8 +145,9 @@ class VideoPipelineRuntime {
     if (!this.acquisitionOptions.maxPages) {
       this.acquisitionOptions.maxPages = this.maxPages;
     }
-    if (this.inputLinks) {
-      this.acquisitionOptions.inputLinks = this.inputLinks;
+    const cdpUrl = config.cdpUrl || process.env.VIDEO_PIPELINE_CDP_URL || null;
+    if (cdpUrl) {
+      this.acquisitionOptions.cdpUrl = cdpUrl;
     }
 
     // Injected dependencies (tests)
