@@ -180,7 +180,9 @@ class VideoBatchPublisher {
       ? `@${routingDecision.primaryDestination.username}`
       : null;
 
-    const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || (media.sourceMode === 'authorized' && routedChannelUsername ? routedChannelUsername : this.stagingChatId);
+    const targetChatId = (media.sourceMode === 'authorized' && routedChannelUsername)
+      ? routedChannelUsername
+      : (options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId);
     const policyCheck = this._checkSourceModeDestinationPolicy(media, targetChatId);
     if (!policyCheck.allowed) {
       console.error(`${LOG_PREFIX} FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED: ${policyCheck.reason}`);
@@ -746,6 +748,23 @@ class VideoBatchPublisher {
           supportsStreaming: true
         });
         if (sent) {
+          try {
+            const sourceRegistry = require('../source_registry');
+            if (sourceRegistry && typeof sourceRegistry.processChannelPost === 'function') {
+              const chName = (routingDecision && routingDecision.primaryDestination && routingDecision.primaryDestination.name) || '';
+              sourceRegistry.processChannelPost({
+                chat: { id: dest, username: String(dest).replace(/^@/, ''), title: chName },
+                message_id: String(sent.id),
+                caption: caption,
+                text: caption,
+                video: { file_id: String(sent.id), duration: (media && media.duration) || 60 },
+                media_type: 'video',
+                title: (media && media.title) || caption,
+                date: Math.floor(Date.now() / 1000)
+              });
+            }
+          } catch (_) {}
+
           return {
             id: sent.id,
             messageId: sent.id,
