@@ -272,13 +272,32 @@ class BatchCycleManager {
     let hitCeiling = false;
 
     try {
-      // 0. Clean any stale orphan files (>3h old) from prior abandoned/aborted runs before starting new batch
+      // 0. Clean any stale orphan files (>1h old) from prior abandoned/aborted runs before starting new batch
       if (this.mediaCleaner && typeof this.mediaCleaner.cleanOrphanFiles === 'function') {
         try {
-          await this.mediaCleaner.cleanOrphanFiles({ downloadsDir: this.downloadsDir });
+          await this.mediaCleaner.cleanOrphanFiles({ downloadsDir: this.downloadsDir, maxAgeMs: 1 * 60 * 60 * 1000 });
         } catch (err) {
           console.warn(`${LOG_PREFIX} Pre-batch orphan cleanup warning: ${err.message}`);
         }
+      }
+
+      // 0.1 Reset stale output JSON files so each 1-hour cycle triggers fresh discovery
+      try {
+        const vJson = path.join(this.outputDir, 'videos.json');
+        if (fs.existsSync(vJson)) {
+          fs.unlinkSync(vJson);
+          console.log(`${LOG_PREFIX} Cleared previous videos.json for fresh 1-hour discovery cycle.`);
+        }
+        const pLinks = path.join(this.outputDir, 'post_links.json');
+        if (fs.existsSync(pLinks)) {
+          fs.unlinkSync(pLinks);
+        }
+        const dReport = path.join(this.downloadsDir, 'download_report.json');
+        if (fs.existsSync(dReport)) {
+          fs.unlinkSync(dReport);
+        }
+      } catch (resetErr) {
+        console.warn(`${LOG_PREFIX} Pre-batch JSON reset warning: ${resetErr.message}`);
       }
 
       // 1. Start video-tools through VideoPipelineManager.
