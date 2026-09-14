@@ -534,7 +534,7 @@ class SourceRegistry {
     }
   }
 
-  getPostsForKeyword(rawKeyword, videoOnly = false, authoritativeOnly = true) {
+  getPostsForKeyword(rawKeyword, videoOnly = false, authoritativeOnly = false) {
     if (!rawKeyword) return [];
     const resolved = this.resolveKeyword(rawKeyword);
     const targetKwLower = resolved.trim().toLowerCase();

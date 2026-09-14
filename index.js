@@ -1736,6 +1736,66 @@ async function localizeDisplayTitleAsync(rawTitle, categoryName = "") {
   return t.length > 80 ? t.substring(0, 77) + "..." : (t || (categoryName ? `${categoryName} 추천 영상` : "신규 영상"));
 }
 
+const POPULAR_TOPIC_CARDS = [
+  { name: "미얀마", topicKey: "Myanmar" },
+  { name: "헝다 가무단", topicKey: "Evergrande Troupe" },
+  { name: "미얀마 여성", topicKey: "Myanmar Women" },
+  { name: "뱀 누나", topicKey: "Sister Snake" },
+  { name: "일거리 있음", topicKey: "Has Work" },
+  { name: "괴롭힘과 성관계", topicKey: "Bullying & Sex" },
+  { name: "다츠거", topicKey: "Da Ci Ge" },
+  { name: "고3 사랑 이야기", topicKey: "Senior Year Love Story" },
+  { name: "쓰촨 모자", topicKey: "Sichuan Mother & Son" },
+  { name: "후쓰위안", topicKey: "Hu Siyuan" },
+  { name: "애인으로 부양", topicKey: "Kept Lover" },
+  { name: "디디 대리운영", topicKey: "Didi Proxy Operation" }
+];
+
+const TOPIC_NAMES = {
+  "Myanmar": "미얀마",
+  "Evergrande Troupe": "헝다 가무단",
+  "Myanmar Women": "미얀마 여성",
+  "Sister Snake": "뱀 누나",
+  "Has Work": "일거리 있음",
+  "Bullying & Sex": "괴롭힘과 성관계",
+  "Da Ci Ge": "다츠거",
+  "Senior Year Love Story": "고3 사랑 이야기",
+  "Sichuan Mother & Son": "쓰촨 모자",
+  "Hu Siyuan": "후쓰위안",
+  "Kept Lover": "애인으로 부양",
+  "Didi Proxy Operation": "디디 대리운영",
+
+  "미얀마": "미얀마",
+  "헝다 가무단": "헝다 가무단",
+  "미얀마 여성": "미얀마 여성",
+  "뱀 누나": "뱀 누나",
+  "일거리 있음": "일거리 있음",
+  "괴롭힘과 성관계": "괴롭힘과 성관계",
+  "다츠거": "다츠거",
+  "고3 사랑 이야기": "고3 사랑 이야기",
+  "쓰촨 모자": "쓰촨 모자",
+  "후쓰위안": "후쓰위안",
+  "애인으로 부양": "애인으로 부양",
+  "디디 대리운영": "디디 대리운영",
+
+  // Legacy/fallback mappings
+  "Romantic Vibe": "미얀마",
+  "Dating": "헝다 가무단",
+  "Romance": "미얀마 여성",
+  "Crotch": "뱀 누나",
+  "Mosa": "일거리 있음",
+  "Bunny Girl Cosplay Date": "괴롭힘과 성관계",
+  "Lustful Hostess": "다츠거",
+  "Concubine": "고3 사랑 이야기",
+  "Saki Mizumi": "쓰촨 모자",
+  "A Muse": "후쓰위안",
+  "ai": "🤖 AI",
+  "games": "🎮 게임 플레이",
+  "stories": "📚 단편 소설",
+  "papers": "🔬 학술 논문",
+  "opening_up": "🔓 콘텐츠"
+};
+
 // ============================================================
 // 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (WITH 2-STEP DETAIL NAVIGATION)
 // ============================================================
@@ -1786,21 +1846,12 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     const escapedTitle = escapeHTML(displayTitle);
 
     let itemUrl = p.telegram_url || p.url;
-    if (isTopicView) {
-      const vidId = p.id || p.unique_hash;
-      if (vidId) {
-        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=video_${vidId}`;
-      } else {
-        const cleanPrefix = encodeURIComponent(callbackPrefix);
-        const itemIdx = startIndex + index;
-        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=det~${cleanPrefix}~${itemIdx}~${currentPage}`;
-      }
-    } else if (!itemUrl) {
+    if (!itemUrl || !itemUrl.startsWith("http")) {
       const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
-      if (src && src.username) {
-        itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
-      } else if (p.username) {
-        itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
+      if (src && src.username && p.message_id) {
+        itemUrl = `https://t.me/${src.username}/${p.message_id}`;
+      } else if (p.username && p.message_id) {
+        itemUrl = `https://t.me/${p.username}/${p.message_id}`;
       } else if (src && src.invite_url) {
         itemUrl = src.invite_url;
       } else if (p.invite_url) {
@@ -1810,7 +1861,7 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
         itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
       }
     }
-    const safeUrl = escapeHTML(itemUrl);
+    const safeUrl = escapeHTML(itemUrl || "https://t.me");
 
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
   });
@@ -2445,21 +2496,6 @@ function smartShortenTitle(str, maxLen = 18) {
   return symbols.slice(0, maxLen - 1).join("") + "…";
 }
 
-const POPULAR_TOPIC_CARDS = [
-  { name: "미얀마", topicKey: "Myanmar" },
-  { name: "헝다 가무단", topicKey: "Evergrande Troupe" },
-  { name: "미얀마 여성", topicKey: "Myanmar Women" },
-  { name: "뱀 누나", topicKey: "Sister Snake" },
-  { name: "일거리 있음", topicKey: "Has Work" },
-  { name: "괴롭힘과 성관계", topicKey: "Bullying & Sex" },
-  { name: "다츠거", topicKey: "Da Ci Ge" },
-  { name: "고3 사랑 이야기", topicKey: "Senior Year Love Story" },
-  { name: "쓰촨 모자", topicKey: "Sichuan Mother & Son" },
-  { name: "후쓰위안", topicKey: "Hu Siyuan" },
-  { name: "애인으로 부양", topicKey: "Kept Lover" },
-  { name: "디디 대리운영", topicKey: "Didi Proxy Operation" }
-];
-
 async function getMainKeyboard() {
   const buttons = POPULAR_TOPIC_CARDS.map(c => ({
     text: c.name,
@@ -2736,54 +2772,6 @@ const CATEGORIES = new Proxy({}, {
     return !!contentHubScraper.getCategoryById(prop);
   }
 });
-
-const TOPIC_NAMES = {
-  "Myanmar": "미얀마",
-  "Evergrande Troupe": "헝다 가무단",
-  "Myanmar Women": "미얀마 여성",
-  "Sister Snake": "뱀 누나",
-  "Has Work": "일거리 있음",
-  "Bullying & Sex": "괴롭힘과 성관계",
-  "Da Ci Ge": "다츠거",
-  "Senior Year Love Story": "고3 사랑 이야기",
-  "Sichuan Mother & Son": "쓰촨 모자",
-  "Hu Siyuan": "후쓰위안",
-  "Kept Lover": "애인으로 부양",
-  "Didi Proxy Operation": "디디 대리운영",
-
-  "미얀마": "미얀마",
-  "헝다 가무단": "헝다 가무단",
-  "미얀마 여성": "미얀마 여성",
-  "뱀 누나": "뱀 누나",
-  "일거리 있음": "일거리 있음",
-  "괴롭힘과 성관계": "괴롭힘과 성관계",
-  "다츠거": "다츠거",
-  "고3 사랑 이야기": "고3 사랑 이야기",
-  "쓰촨 모자": "쓰촨 모자",
-  "후쓰위안": "후쓰위안",
-  "애인으로 부양": "애인으로 부양",
-  "디디 대리운영": "디디 대리운영",
-
-  // Legacy/fallback mappings
-  "Romantic Vibe": "미얀마",
-  "Dating": "헝다 가무단",
-  "Romance": "미얀마 여성",
-  "Crotch": "뱀 누나",
-  "Mosa": "일거리 있음",
-  "Bunny Girl Cosplay Date": "괴롭힘과 성관계",
-  "Lustful Hostess": "다츠거",
-  "Concubine": "고3 사랑 이야기",
-  "Saki Mizumi": "쓰촨 모자",
-  "A Muse": "후쓰위안",
-  "ai": "🤖 AI",
-  "games": "🎮 게임 플레이",
-  "stories": "📚 단편 소설",
-  "papers": "🔬 학술 논문",
-  "opening_up": "🔓 콘텐츠",
-  "food_source": "🍴 미식 레시피",
-  "finance": "💰 재테크 & 투자",
-  "adult": "성인 콘텐츠"
-};
 
 // ============================
 // 🚀 /start COMMAND
