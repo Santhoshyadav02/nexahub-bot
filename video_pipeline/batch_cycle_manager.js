@@ -26,7 +26,7 @@ const { BatchState } = require('./batch_state');
 const { MediaCleaner } = require('./media_cleaner');
 
 const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
-const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
+const DEFAULT_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour - production default, never hardcode a short test value here
 const DEFAULT_ACQUISITION_TIMEOUT_MS = 20 * 60 * 1000;
 const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'PROCESSING', 'STREAMING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
 

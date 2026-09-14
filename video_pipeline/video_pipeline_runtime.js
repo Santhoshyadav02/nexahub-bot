@@ -27,7 +27,7 @@ const { VideoDestinationRouter } = require('./video_destination_router');
 const LOG_PREFIX = '[VIDEO_PIPELINE_RUNTIME]';
 const ROOT_DIR = path.resolve(__dirname, '..');
 
-const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
+const DEFAULT_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;      // 20 minutes
 const DEFAULT_DISCOVERY_TARGET = 100;
 const DEFAULT_DISCOVERY_MAX = 150;
