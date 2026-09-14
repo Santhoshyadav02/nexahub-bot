@@ -87,6 +87,8 @@ function copyFixture(destPath, id = 'p1') {
   const src = getValidFixtureMp4(id);
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   fs.copyFileSync(src, destPath);
+  const now = new Date();
+  try { fs.utimesSync(destPath, now, now); } catch (_) {}
   return destPath;
 }
 
