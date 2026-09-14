@@ -1853,10 +1853,23 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const escapedTitle = escapeHTML(displayTitle);
 
-    const cleanPrefix = encodeURIComponent(callbackPrefix);
-    const itemIdx = startIndex + index;
-    const itemUrl = `https://t.me/${currentBotUsername}?start=det~${cleanPrefix}~${itemIdx}~${currentPage}`;
-    const safeUrl = escapeHTML(itemUrl);
+    let directUrl = p.telegram_url || p.url;
+    if (!directUrl || !directUrl.startsWith("http")) {
+      const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
+      if (src && src.username && p.message_id) {
+        directUrl = `https://t.me/${src.username}/${p.message_id}`;
+      } else if (p.username && p.message_id) {
+        directUrl = `https://t.me/${p.username}/${p.message_id}`;
+      } else if (src && src.invite_url) {
+        directUrl = src.invite_url;
+      } else if (p.invite_url) {
+        directUrl = p.invite_url;
+      } else if (p.chat_id && p.message_id) {
+        let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
+        directUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
+      }
+    }
+    const safeUrl = escapeHTML(directUrl || "https://t.me");
 
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
   });
@@ -1868,6 +1881,19 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
   }
 
+  const detailButtons = pageItems.map((p, index) => {
+    const itemNumber = startIndex + index + 1;
+    return {
+      text: `🎬 ${itemNumber}번 미리보기`,
+      callback_data: `det:${callbackPrefix}:${startIndex + index}:${currentPage}`
+    };
+  });
+
+  const inline_keyboard = [];
+  for (let i = 0; i < detailButtons.length; i += 2) {
+    inline_keyboard.push(detailButtons.slice(i, i + 2));
+  }
+
   const navRow = [];
   if (currentPage > 1) {
     navRow.push({ text: "⬅️ 이전", callback_data: `${callbackPrefix}:${currentPage - 1}` });
@@ -1875,8 +1901,6 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   if (currentPage < totalPages) {
     navRow.push({ text: "다음 ➡️", callback_data: `${callbackPrefix}:${currentPage + 1}` });
   }
-
-  const inline_keyboard = [];
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
