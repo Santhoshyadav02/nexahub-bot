@@ -73,6 +73,14 @@ const bot = new TelegramBot(TOKEN, {
 
 
 
+let currentBotUsername = process.env.TELEGRAM_BOT_USERNAME || "santhosh_learning_2026_bot";
+bot.getMe().then(me => {
+  if (me && me.username) {
+    currentBotUsername = me.username;
+    console.log(`🤖 Bot username initialized: @${currentBotUsername}`);
+  }
+}).catch(() => {});
+
 if (enablePolling) {
   console.log(`[TELEGRAM] Polling: ACTIVE (requesting getUpdates - a 409 below means another instance already holds this BOT_TOKEN's polling slot; outgoing sends are unaffected either way).`);
 }
@@ -1845,6 +1853,66 @@ async function localizeDisplayTitleAsync(rawTitle, categoryName = "") {
   return t.length > 80 ? t.substring(0, 77) + "..." : (t || (categoryName ? `${categoryName} 추천 영상` : "신규 영상"));
 }
 
+const POPULAR_TOPIC_CARDS = [
+  { name: "미얀마", topicKey: "Myanmar" },
+  { name: "헝다 가무단", topicKey: "Evergrande Troupe" },
+  { name: "미얀마 여성", topicKey: "Myanmar Women" },
+  { name: "뱀 누나", topicKey: "Sister Snake" },
+  { name: "일거리 있음", topicKey: "Has Work" },
+  { name: "괴롭힘과 성관계", topicKey: "Bullying & Sex" },
+  { name: "다츠거", topicKey: "Da Ci Ge" },
+  { name: "고3 사랑 이야기", topicKey: "Senior Year Love Story" },
+  { name: "쓰촨 모자", topicKey: "Sichuan Mother & Son" },
+  { name: "후쓰위안", topicKey: "Hu Siyuan" },
+  { name: "애인으로 부양", topicKey: "Kept Lover" },
+  { name: "디디 대리운영", topicKey: "Didi Proxy Operation" }
+];
+
+const TOPIC_NAMES = {
+  "Myanmar": "미얀마",
+  "Evergrande Troupe": "헝다 가무단",
+  "Myanmar Women": "미얀마 여성",
+  "Sister Snake": "뱀 누나",
+  "Has Work": "일거리 있음",
+  "Bullying & Sex": "괴롭힘과 성관계",
+  "Da Ci Ge": "다츠거",
+  "Senior Year Love Story": "고3 사랑 이야기",
+  "Sichuan Mother & Son": "쓰촨 모자",
+  "Hu Siyuan": "후쓰위안",
+  "Kept Lover": "애인으로 부양",
+  "Didi Proxy Operation": "디디 대리운영",
+
+  "미얀마": "미얀마",
+  "헝다 가무단": "헝다 가무단",
+  "미얀마 여성": "미얀마 여성",
+  "뱀 누나": "뱀 누나",
+  "일거리 있음": "일거리 있음",
+  "괴롭힘과 성관계": "괴롭힘과 성관계",
+  "다츠거": "다츠거",
+  "고3 사랑 이야기": "고3 사랑 이야기",
+  "쓰촨 모자": "쓰촨 모자",
+  "후쓰위안": "후쓰위안",
+  "애인으로 부양": "애인으로 부양",
+  "디디 대리운영": "디디 대리운영",
+
+  // Legacy/fallback mappings
+  "Romantic Vibe": "미얀마",
+  "Dating": "헝다 가무단",
+  "Romance": "미얀마 여성",
+  "Crotch": "뱀 누나",
+  "Mosa": "일거리 있음",
+  "Bunny Girl Cosplay Date": "괴롭힘과 성관계",
+  "Lustful Hostess": "다츠거",
+  "Concubine": "고3 사랑 이야기",
+  "Saki Mizumi": "쓰촨 모자",
+  "A Muse": "후쓰위안",
+  "ai": "🤖 AI",
+  "games": "🎮 게임 플레이",
+  "stories": "📚 단편 소설",
+  "papers": "🔬 학술 논문",
+  "opening_up": "🔓 콘텐츠"
+};
+
 // ============================================================
 // 🔗 UNIFIED HYPERLINK LIST VIEW RENDERER (WITH 2-STEP DETAIL NAVIGATION)
 // ============================================================
@@ -1894,31 +1962,9 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
 
     const escapedTitle = escapeHTML(displayTitle);
 
-    let itemUrl = p.telegram_url || p.url;
-    if (isTopicView) {
-      const vidId = p.id || p.unique_hash;
-      if (vidId) {
-        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=video_${vidId}`;
-      } else {
-        const cleanPrefix = encodeURIComponent(callbackPrefix);
-        const itemIdx = startIndex + index;
-        itemUrl = `https://t.me/santhosh_learning_2026_bot?start=det~${cleanPrefix}~${itemIdx}~${currentPage}`;
-      }
-    } else if (!itemUrl) {
-      const src = sourceRegistry.getSourceByKeyword(p.keyword || p.channel_name);
-      if (src && src.username) {
-        itemUrl = `https://t.me/${src.username}/${p.message_id || ""}`;
-      } else if (p.username) {
-        itemUrl = `https://t.me/${p.username}/${p.message_id || ""}`;
-      } else if (src && src.invite_url) {
-        itemUrl = src.invite_url;
-      } else if (p.invite_url) {
-        itemUrl = p.invite_url;
-      } else if (p.chat_id && p.message_id) {
-        let cleanChatId = String(p.chat_id).startsWith("-100") ? String(p.chat_id).substring(4) : String(p.chat_id).replace("-", "");
-        itemUrl = `https://t.me/c/${cleanChatId}/${p.message_id}`;
-      }
-    }
+    const rawTarget = `${callbackPrefix}:${startIndex + index}:${currentPage}`;
+    const b64 = Buffer.from(rawTarget).toString("base64url");
+    const itemUrl = `https://t.me/${currentBotUsername}?start=d_${b64}`;
     const safeUrl = escapeHTML(itemUrl);
 
     itemLines.push(`${itemNumber}. <a href="${safeUrl}">${escapedTitle}</a>`);
@@ -1931,6 +1977,8 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
     messageText += `\n\n<b>페이지 ${currentPage}/${totalPages}</b>`;
   }
 
+  const inline_keyboard = [];
+
   const navRow = [];
   if (currentPage > 1) {
     navRow.push({ text: "⬅️ 이전", callback_data: `${callbackPrefix}:${currentPage - 1}` });
@@ -1938,8 +1986,6 @@ async function renderHyperlinkListPostView(chatId, title, items, page = 1, callb
   if (currentPage < totalPages) {
     navRow.push({ text: "다음 ➡️", callback_data: `${callbackPrefix}:${currentPage + 1}` });
   }
-
-  const inline_keyboard = [];
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
   }
@@ -1974,7 +2020,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
     items = category ? category.items : [];
   } else if (callbackPrefix.startsWith("topic_page:") || callbackPrefix.startsWith("topic:")) {
     const topicKey = callbackPrefix.split(":")[1];
-    items = sourceRegistry.getPostsForKeyword(topicKey, true);
+    items = sourceRegistry.getPostsForKeyword(topicKey, false);
     title = TOPIC_NAMES[topicKey] || topicKey;
   }
 
@@ -2046,7 +2092,7 @@ async function renderItemDetailPage(chatId, callbackPrefix, itemIndex, page = 1,
   detailText += `<b>유형:</b> ${mediaType}${views}${duration}${caption}`;
 
   const inline_keyboard = [
-    [{ text: "🔗 그룹 가입", url: groupUrl }],
+    [{ text: "🔗 채널 입장", url: groupUrl }],
     [
       { text: "◀️ 뒤로가기", callback_data: `${callbackPrefix}:${page}` },
       { text: "🏠 홈", callback_data: "menu" }
@@ -2545,21 +2591,6 @@ function smartShortenTitle(str, maxLen = 18) {
   return symbols.slice(0, maxLen - 1).join("") + "…";
 }
 
-const POPULAR_TOPIC_CARDS = [
-  { name: "미얀마", topicKey: "Myanmar" },
-  { name: "헝다 가무단", topicKey: "Evergrande Troupe" },
-  { name: "미얀마 여성", topicKey: "Myanmar Women" },
-  { name: "뱀 누나", topicKey: "Sister Snake" },
-  { name: "일거리 있음", topicKey: "Has Work" },
-  { name: "괴롭힘과 성관계", topicKey: "Bullying & Sex" },
-  { name: "다츠거", topicKey: "Da Ci Ge" },
-  { name: "고3 사랑 이야기", topicKey: "Senior Year Love Story" },
-  { name: "쓰촨 모자", topicKey: "Sichuan Mother & Son" },
-  { name: "후쓰위안", topicKey: "Hu Siyuan" },
-  { name: "애인으로 부양", topicKey: "Kept Lover" },
-  { name: "디디 대리운영", topicKey: "Didi Proxy Operation" }
-];
-
 async function getMainKeyboard() {
   const buttons = POPULAR_TOPIC_CARDS.map(c => ({
     text: c.name,
@@ -2837,54 +2868,6 @@ const CATEGORIES = new Proxy({}, {
   }
 });
 
-const TOPIC_NAMES = {
-  "Myanmar": "미얀마",
-  "Evergrande Troupe": "헝다 가무단",
-  "Myanmar Women": "미얀마 여성",
-  "Sister Snake": "뱀 누나",
-  "Has Work": "일거리 있음",
-  "Bullying & Sex": "괴롭힘과 성관계",
-  "Da Ci Ge": "다츠거",
-  "Senior Year Love Story": "고3 사랑 이야기",
-  "Sichuan Mother & Son": "쓰촨 모자",
-  "Hu Siyuan": "후쓰위안",
-  "Kept Lover": "애인으로 부양",
-  "Didi Proxy Operation": "디디 대리운영",
-
-  "미얀마": "미얀마",
-  "헝다 가무단": "헝다 가무단",
-  "미얀마 여성": "미얀마 여성",
-  "뱀 누나": "뱀 누나",
-  "일거리 있음": "일거리 있음",
-  "괴롭힘과 성관계": "괴롭힘과 성관계",
-  "다츠거": "다츠거",
-  "고3 사랑 이야기": "고3 사랑 이야기",
-  "쓰촨 모자": "쓰촨 모자",
-  "후쓰위안": "후쓰위안",
-  "애인으로 부양": "애인으로 부양",
-  "디디 대리운영": "디디 대리운영",
-
-  // Legacy/fallback mappings
-  "Romantic Vibe": "미얀마",
-  "Dating": "헝다 가무단",
-  "Romance": "미얀마 여성",
-  "Crotch": "뱀 누나",
-  "Mosa": "일거리 있음",
-  "Bunny Girl Cosplay Date": "괴롭힘과 성관계",
-  "Lustful Hostess": "다츠거",
-  "Concubine": "고3 사랑 이야기",
-  "Saki Mizumi": "쓰촨 모자",
-  "A Muse": "후쓰위안",
-  "ai": "🤖 AI",
-  "games": "🎮 게임 플레이",
-  "stories": "📚 단편 소설",
-  "papers": "🔬 학술 논문",
-  "opening_up": "🔓 콘텐츠",
-  "food_source": "🍴 미식 레시피",
-  "finance": "💰 재테크 & 투자",
-  "adult": "성인 콘텐츠"
-};
-
 // ============================
 // 🚀 /start COMMAND
 // ============================
@@ -2893,22 +2876,29 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     const payload = match ? match[1] : null;
 
-    if (payload && (payload.startsWith("det_") || payload.startsWith("det~") || payload.startsWith("video_"))) {
+    if (payload && (payload.startsWith("d_") || payload.startsWith("det_") || payload.startsWith("det~") || payload.startsWith("video_") || payload.startsWith("v_"))) {
       let callbackPrefix = "";
       let itemIdx = 0;
       let page = 1;
 
-      if (payload.startsWith("det~")) {
+      if (payload.startsWith("d_")) {
+        const b64 = payload.slice(2);
+        const raw = Buffer.from(b64, "base64url").toString("utf8");
+        const parts = raw.split(":");
+        page = parseInt(parts.pop(), 10) || 1;
+        itemIdx = parseInt(parts.pop(), 10) || 0;
+        callbackPrefix = parts.join(":");
+      } else if (payload.startsWith("det~")) {
         const parts = payload.split("~");
         callbackPrefix = decodeURIComponent(parts[1] || "");
         itemIdx = parseInt(parts[2], 10) || 0;
         page = parseInt(parts[3], 10) || 1;
-      } else if (payload.startsWith("video_")) {
-        const videoId = payload.replace("video_", "");
+      } else if (payload.startsWith("video_") || payload.startsWith("v_")) {
+        const videoId = payload.startsWith("v_") ? payload.slice(2) : payload.replace("video_", "");
         const post = sourceRegistry.getPostById(videoId);
         if (post) {
           callbackPrefix = `topic_page:${post.keyword}`;
-          const posts = sourceRegistry.getPostsForKeyword(post.keyword, true);
+          const posts = sourceRegistry.getPostsForKeyword(post.keyword, false);
           const foundIdx = posts.findIndex(p => p.id === post.id || p.unique_hash === post.unique_hash);
           itemIdx = foundIdx !== -1 ? foundIdx : 0;
           page = Math.floor(itemIdx / 8) + 1;
@@ -2918,10 +2908,25 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           page = 1;
         }
       } else if (payload.startsWith("det_")) {
-        const parts = payload.split("_");
-        page = parseInt(parts.pop(), 10) || 1;
-        itemIdx = parseInt(parts.pop(), 10) || 0;
-        callbackPrefix = parts.slice(1).join(":");
+        try {
+          const raw = Buffer.from(payload.slice(4), "base64url").toString("utf8");
+          if (raw.includes(":")) {
+            const parts = raw.split(":");
+            page = parseInt(parts.pop(), 10) || 1;
+            itemIdx = parseInt(parts.pop(), 10) || 0;
+            callbackPrefix = parts.join(":");
+          } else {
+            const parts = payload.split("_");
+            page = parseInt(parts.pop(), 10) || 1;
+            itemIdx = parseInt(parts.pop(), 10) || 0;
+            callbackPrefix = parts.slice(1).join(":");
+          }
+        } catch (_) {
+          const parts = payload.split("_");
+          page = parseInt(parts.pop(), 10) || 1;
+          itemIdx = parseInt(parts.pop(), 10) || 0;
+          callbackPrefix = parts.slice(1).join(":");
+        }
       }
 
       await renderItemDetailPage(chatId, callbackPrefix, itemIdx, page, null);

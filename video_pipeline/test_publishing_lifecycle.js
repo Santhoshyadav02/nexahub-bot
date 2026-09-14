@@ -68,6 +68,8 @@ function freshEnv(name) {
 function copyFixture(destPath) {
   assert.ok(fs.existsSync(FIXTURE_MP4), 'Real fixture must exist');
   fs.copyFileSync(FIXTURE_MP4, destPath);
+  const now = new Date();
+  try { fs.utimesSync(destPath, now, now); } catch (_) {}
   return destPath;
 }
 
