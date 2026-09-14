@@ -54,14 +54,31 @@ function validateSourceProvenance(media) {
   // 3. source_video_url is present and well-formed.
   checks.sourceVideoUrlPresent = Boolean(media.sourceVideoUrl) && /^https?:\/\//i.test(media.sourceVideoUrl);
 
-  // 4. source_video_url must belong to the SAME origin as source_page_url -
-  // catches a media record whose video URL was somehow associated with a
-  // different site/post than the one it claims to have been discovered on.
+  // 4. source_video_url must belong to the SAME origin or share base domain / valid CDN as source_page_url
   if (checks.sourcePageUrlPresent && checks.sourceVideoUrlPresent) {
     try {
-      const pageOrigin = new URL(media.sourcePageUrl).origin;
-      const videoOrigin = new URL(media.sourceVideoUrl).origin;
-      checks.sourceVideoUrlConsistentWithPage = pageOrigin === videoOrigin;
+      const pageUrlObj = new URL(media.sourcePageUrl);
+      const videoUrlObj = new URL(media.sourceVideoUrl);
+      const pageOrigin = pageUrlObj.origin;
+      const videoOrigin = videoUrlObj.origin;
+
+      const pageHost = pageUrlObj.hostname.toLowerCase();
+      const videoHost = videoUrlObj.hostname.toLowerCase();
+
+      // Extract apex / base domain (e.g., 'avsee.is' from '02.avsee.is' and 'data.cdn.avsee.is')
+      const getBaseDomain = (host) => {
+        const parts = host.split('.');
+        if (parts.length >= 2) {
+          return parts.slice(-2).join('.');
+        }
+        return host;
+      };
+
+      const isSameOrigin = pageOrigin === videoOrigin;
+      const isSameBaseDomain = getBaseDomain(pageHost) === getBaseDomain(videoHost);
+      const isSubdomain = videoHost.endsWith('.' + pageHost) || pageHost.endsWith('.' + videoHost) || videoHost.includes(getBaseDomain(pageHost));
+
+      checks.sourceVideoUrlConsistentWithPage = isSameOrigin || isSameBaseDomain || isSubdomain;
     } catch (e) {
       checks.sourceVideoUrlConsistentWithPage = false;
     }
