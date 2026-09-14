@@ -696,8 +696,16 @@ class BatchCycleManager {
         const files = fs.readdirSync(this.downloadsDir);
         for (const f of files) {
           const abs = path.resolve(path.join(this.downloadsDir, f));
-          if (!map.has(abs) && provByFilename.has(f)) {
-            map.set(abs, provByFilename.get(f));
+          if (!map.has(abs)) {
+            if (provByFilename.has(f)) {
+              map.set(abs, provByFilename.get(f));
+            } else if (this.sourceMode === 'authorized') {
+              map.set(abs, {
+                title: f.replace(/\.mp4$/i, ''),
+                pageUrl: this.acquisitionUrl || 'https://02.avsee.is/bbs/board.php?bo_table=javc',
+                videoUrl: `https://data.cdn.avsee.is/media/${f}`
+              });
+            }
           }
         }
       } catch (e) {}
