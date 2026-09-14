@@ -158,7 +158,14 @@ function decodeCheck(filePath) {
   }
   const nullTarget = process.platform === 'win32' ? 'NUL' : '/dev/null';
   try {
-    const res = spawnSync(ffmpegBin, ['-v', 'error', '-i', filePath, '-f', 'null', nullTarget], { encoding: 'utf8' });
+    const res = spawnSync(ffmpegBin, [
+      '-v', 'error',
+      '-xerror',
+      '-i', filePath,
+      '-t', '10',
+      '-f', 'null',
+      nullTarget
+    ], { encoding: 'utf8', timeout: 10000 });
     const stderr = (res.stderr || '').trim();
     const passed = res.status === 0 && stderr.length === 0;
     return { passed, error: passed ? null : (stderr || `FFmpeg exited with code ${res.status}`) };
