@@ -720,16 +720,46 @@ class VideoBatchPublisher {
   }
 
   /**
-   * Internal wrapper to call injected Telegram client.
+   * Internal wrapper to call injected Telegram client or MTProto client.
    */
   async _sendToTelegram({ destinationId, filePath, caption, media, canonicalDestination }) {
     const client = this.telegramClient;
-    if (!client) {
-      throw new Error('Telegram client is not configured.');
+
+    // 1. Try MTProto singleton client (supports up to 2GB uploads)
+    try {
+      const MTProtoChannelReader = require('../mtproto_reader');
+      const mtproto = MTProtoChannelReader.instance;
+      if (mtproto && mtproto.client && mtproto.client.connected) {
+        let dest = destinationId;
+        if (typeof dest === 'string' && dest.startsWith('@')) {
+          dest = dest.slice(1);
+        }
+        const sent = await mtproto.client.sendFile(dest, {
+          file: filePath,
+          caption,
+          supportsStreaming: true
+        });
+        if (sent) {
+          return {
+            id: sent.id,
+            messageId: sent.id,
+            message_id: sent.id,
+            video: {
+              file_id: sent.id ? String(sent.id) : '',
+              file_size: (media && media.size) || (fs.existsSync(filePath) ? fs.statSync(filePath).size : 0),
+              duration: (media && media.duration) || 60,
+              width: (media && media.width) || 1280,
+              height: (media && media.height) || 720
+            }
+          };
+        }
+      }
+    } catch (mtprotoErr) {
+      console.warn(`${LOG_PREFIX} MTProto sendFile fallback notice: ${mtprotoErr.message}`);
     }
 
-    if (typeof client.sendVideo === 'function') {
-      return client.sendVideo(destinationId, filePath, { caption });
+    if (!client) {
+      throw new Error('Telegram client is not configured.');
     }
 
     if (typeof client.sendFile === 'function') {
@@ -737,6 +767,10 @@ class VideoBatchPublisher {
         file: filePath,
         caption
       });
+    }
+
+    if (typeof client.sendVideo === 'function') {
+      return client.sendVideo(destinationId, filePath, { caption });
     }
 
     if (typeof client.publish === 'function') {
