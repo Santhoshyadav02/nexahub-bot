@@ -322,10 +322,11 @@ class BatchCycleManager {
 
       const deadline = Date.now() + this.acquisitionTimeoutMs;
 
+      const inFlightFiles = new Set();
       // Helper to process a single downloaded file immediately
       const processDownloadedFile = async (filePath, videoUrlHint = '') => {
         const absPath = path.resolve(filePath);
-        if (processedFiles.has(absPath)) return;
+        if (processedFiles.has(absPath) || inFlightFiles.has(absPath)) return;
         if (!fs.existsSync(absPath)) return;
 
         try {
@@ -335,75 +336,82 @@ class BatchCycleManager {
           return;
         }
 
-        processedFiles.add(absPath);
-
-        const fileProvenanceMap = this._buildFileProvenanceMap();
-        const prov = fileProvenanceMap.get(absPath) || {};
-        let title = prov.title || '';
-        if (!title && videoUrlHint) {
-          title = this._lookupTitleByUrl(videoUrlHint) || '';
-        }
-
-        const scanResult = await this.mediaIngestor.processSingleFile(absPath, { title });
-        if (scanResult.status === 'READY') {
-          if (scanResult.alreadyProcessed) {
-            return;
+        inFlightFiles.add(absPath);
+        try {
+          const fileProvenanceMap = this._buildFileProvenanceMap();
+          const prov = fileProvenanceMap.get(absPath) || {};
+          let title = prov.title || '';
+          if (!title && videoUrlHint) {
+            title = this._lookupTitleByUrl(videoUrlHint) || '';
           }
-          const record = this.mediaIngestor.ledger.getRecord(scanResult.id);
-          const resolvedTitle = (record && record.title) || title || scanResult.title || '';
-          const validation = record ? record.validation : null;
-          const mediaRecord = {
-            mediaId: scanResult.id,
-            title: resolvedTitle,
-            filePath: absPath,
-            size: record ? record.size : scanResult.size,
-            contentSha256: record ? record.contentSha256 : scanResult.contentSha256,
-            sourceKeyHash: record ? record.sourceKeyHash : scanResult.sourceKeyHash,
-            discoveredAt: record ? record.discoveredAt : new Date().toISOString(),
-            validatedAt: record ? record.validatedAt : new Date().toISOString(),
-            sourceMode: this.sourceMode,
-            isFixtureMedia: this.sourceMode === 'fixture',
-            sourcePageUrl: prov.pageUrl || '',
-            sourceVideoUrl: prov.videoUrl || videoUrlHint || '',
-            mimeType: validation ? validation.mimeType : null,
-            container: validation ? validation.container : null,
-            codec: validation ? validation.codec : null,
-            duration: validation ? validation.duration : null,
-            width: validation ? validation.width : null,
-            height: validation ? validation.height : null,
-            frameRate: validation ? validation.frameRate : null,
-            hasAudio: validation ? validation.hasAudio : null
-          };
-          readyMediaList.push(mediaRecord);
 
-          // Immediate Publishing
-          if (this.autoPublish && this.videoBatchPublisher && !hitCeiling) {
-            this.batchState.setControllerState('PUBLISHING');
-            const pubRes = await this.videoBatchPublisher.publishSingleItem(cycleId, mediaRecord, this.publishOptions);
-            if (pubRes.status === 'PUBLISHED') {
-              successfulCount++;
-              publishedItems.push(pubRes);
-              console.log(`${LOG_PREFIX} Immediate publication ${successfulCount}/${this.maxSuccessfulVideos} complete for ${mediaRecord.mediaId} (msgId: ${pubRes.telegramMessageId})`);
-              if (successfulCount >= this.maxSuccessfulVideos) {
-                console.log(`${LOG_PREFIX} Reached maximum successful target (${this.maxSuccessfulVideos}). Halting cycle.`);
-                hitCeiling = true;
-                if (this.videoPipelineManager.isRunning()) {
-                  await this.videoPipelineManager.stop();
+          const scanResult = await this.mediaIngestor.processSingleFile(absPath, { title });
+          if (scanResult.status === 'READY') {
+            processedFiles.add(absPath);
+            const record = this.mediaIngestor.ledger.getRecord(scanResult.id);
+            const resolvedTitle = (record && record.title) || title || scanResult.title || '';
+            const validation = record ? record.validation : null;
+            const mediaRecord = {
+              mediaId: scanResult.id,
+              title: resolvedTitle,
+              filePath: absPath,
+              size: record ? record.size : scanResult.size,
+              contentSha256: record ? record.contentSha256 : scanResult.contentSha256,
+              sourceKeyHash: record ? record.sourceKeyHash : scanResult.sourceKeyHash,
+              discoveredAt: record ? record.discoveredAt : new Date().toISOString(),
+              validatedAt: record ? record.validatedAt : new Date().toISOString(),
+              sourceMode: this.sourceMode,
+              isFixtureMedia: this.sourceMode === 'fixture',
+              sourcePageUrl: prov.pageUrl || '',
+              sourceVideoUrl: prov.videoUrl || videoUrlHint || '',
+              mimeType: validation ? validation.mimeType : null,
+              container: validation ? validation.container : null,
+              codec: validation ? validation.codec : null,
+              duration: validation ? validation.duration : null,
+              width: validation ? validation.width : null,
+              height: validation ? validation.height : null,
+              frameRate: validation ? validation.frameRate : null,
+              hasAudio: validation ? validation.hasAudio : null
+            };
+            if (!scanResult.alreadyProcessed) {
+              readyMediaList.push(mediaRecord);
+            }
+
+            // Immediate Publishing
+            if (this.autoPublish && this.videoBatchPublisher && !hitCeiling) {
+              this.batchState.setControllerState('PUBLISHING');
+              const pubRes = await this.videoBatchPublisher.publishSingleItem(cycleId, mediaRecord, this.publishOptions);
+              if (pubRes.status === 'PUBLISHED') {
+                successfulCount++;
+                publishedItems.push(pubRes);
+                console.log(`${LOG_PREFIX} Immediate publication ${successfulCount}/${this.maxSuccessfulVideos} complete for ${mediaRecord.mediaId} (msgId: ${pubRes.telegramMessageId})`);
+                if (successfulCount >= this.maxSuccessfulVideos) {
+                  console.log(`${LOG_PREFIX} Reached maximum successful target (${this.maxSuccessfulVideos}). Halting cycle.`);
+                  hitCeiling = true;
+                  if (this.videoPipelineManager.isRunning()) {
+                    await this.videoPipelineManager.stop();
+                  }
                 }
+              } else if (pubRes.status === 'SKIPPED_ALREADY_PUBLISHED') {
+                skippedAlreadyPublishedCount++;
+              } else {
+                failedCount++;
               }
-            } else if (pubRes.status === 'SKIPPED_ALREADY_PUBLISHED') {
-              skippedAlreadyPublishedCount++;
-            } else {
-              failedCount++;
+              if (!hitCeiling) {
+                this.batchState.setControllerState(this.videoPipelineManager.isRunning() ? 'ACQUIRING' : 'PROCESSING');
+              }
             }
-            if (!hitCeiling) {
-              this.batchState.setControllerState(this.videoPipelineManager.isRunning() ? 'ACQUIRING' : 'PROCESSING');
+          } else if (scanResult.status === 'DUPLICATE') {
+            processedFiles.add(absPath);
+            duplicateCount++;
+          } else if (scanResult.status === 'FAILED') {
+            if (scanResult.reason && !scanResult.reason.includes('File disappeared')) {
+              processedFiles.add(absPath);
             }
+            failedCount++;
           }
-        } else if (scanResult.status === 'DUPLICATE') {
-          duplicateCount++;
-        } else if (scanResult.status === 'FAILED') {
-          failedCount++;
+        } finally {
+          inFlightFiles.delete(absPath);
         }
       };
 

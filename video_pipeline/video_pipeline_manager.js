@@ -297,6 +297,14 @@ class VideoPipelineManager {
   }
 
   _runTaskkill(pid, { force }) {
+    if (process.platform !== "win32") {
+      try {
+        process.kill(pid, force ? "SIGKILL" : "SIGINT");
+      } catch (err) {
+        // process may have already exited
+      }
+      return;
+    }
     const args = ["/PID", String(pid), "/T"];
     if (force) args.push("/F");
     try {
