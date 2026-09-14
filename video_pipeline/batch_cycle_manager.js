@@ -28,6 +28,10 @@ const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
 const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
 const DEFAULT_ACQUISITION_TIMEOUT_MS = 20 * 60 * 1000;
 const ACTIVE_CYCLE_STATES = ['ACQUIRING', 'PROCESSING', 'STREAMING', 'INGESTING', 'PUBLISHING', 'STOPPING'];
+// States in which progress depends on the acquisition child process (tracked
+// via acquisitionPid). PUBLISHING and STOPPING are handled separately below
+// since neither has a meaningful acquisition PID to check.
+const ACQUISITION_PHASE_STATES = ['ACQUIRING', 'PROCESSING', 'STREAMING', 'INGESTING'];
 
 function generateCycleId() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -127,24 +131,67 @@ class BatchCycleManager {
     this._activeRunPromise = null;
     this._lastCycleSummary = null;
 
-    this._recoverOnStartup();
+    this._reconcileStaleCycle('startup');
   }
 
   // ============================================================
-  // 🔄 RESTART RECOVERY
+  // 🔄 STALE-CYCLE RECONCILIATION (restart AND long-running self-heal)
   // ============================================================
 
-  _recoverOnStartup() {
+  /**
+   * Reconciles a persisted controller/cycle state that does not match reality
+   * in THIS process. Runs both at construction (covers a full process
+   * restart after a crash) and at the top of every scheduled tick (covers a
+   * long-running process whose acquisition child died without the parent
+   * process ever restarting) - so a stale cycle can never permanently wedge
+   * the scheduler, with or without a restart.
+   *
+   * Safety invariants:
+   * - Never touches a cycle this exact instance is actively driving: if
+   *   `_activeRunPromise` is set, this method is a no-op. That promise is the
+   *   only trustworthy signal that a run is genuinely in flight right here,
+   *   right now - a persisted state string alone is never enough to justify
+   *   finalizing an active cycle out from under it (avoids the race the
+   *   scheduler would otherwise create between acquisition completion,
+   *   publisher completion, and a tick landing mid-cycle).
+   * - Never marks an acquisition-phase cycle FAILED while its acquisitionPid
+   *   is still alive, on ANY trigger. A live process is not "stale" merely
+   *   because progress looks quiet from here - it may still be genuinely
+   *   working, or (if this state file is ever shared) legitimately owned by
+   *   another running instance. Only a confirmed-dead PID is treated as
+   *   proof of abandonment.
+   * - Never touches media, the MediaIngestor ledger, or the PublishLedger -
+   *   only batch_state.json's own status fields are ever changed here.
+   * - PUBLISHING is reset to BATCH_READY, never FAILED: PublishLedger's own
+   *   idempotency (isPublished check per mediaId+destination) already makes
+   *   a re-publish of that batch safe, so no already-PUBLISHED item can ever
+   *   be resent, and no successful publication is ever lost or undone.
+   * @param {string} triggerLabel 'startup' or 'scheduled-tick', for logging only.
+   */
+  _reconcileStaleCycle(triggerLabel) {
+    if (this._activeRunPromise) return;
+
     const state = this.batchState.getControllerState();
     const cycleId = this.batchState.getCurrentCycleId();
 
-    if (state === 'STOPPING' || state === 'STOPPED' || (!cycleId && state !== 'IDLE')) {
-      console.warn(`${LOG_PREFIX} Recovery: controller was in state ${state} on startup. Resetting controller state to IDLE.`);
+    // A real cycle always has startCycle() set currentCycleId and the
+    // ACQUIRING state together, atomically - so "an active-looking state
+    // with no cycleId at all" can only be genuine leftover garbage at
+    // process startup (nothing in a fresh process could have legitimately
+    // started one yet). At tick-time this exact shape only occurs when a
+    // caller pokes the controller state directly with no cycle (as some
+    // overlap-guard tests deliberately do) - treat that as "not our concern"
+    // rather than stale, and let the normal ACTIVE_CYCLE_STATES overlap
+    // check in runOnce()/_scheduledTick() keep guarding it as intended.
+    const noCycleLooksStale = !cycleId && state !== 'IDLE' && triggerLabel === 'startup';
+
+    if (state === 'STOPPING' || state === 'STOPPED' || noCycleLooksStale) {
+      console.warn(`${LOG_PREFIX} Recovery (${triggerLabel}): controller was in state ${state} with no active run in this process. Resetting controller state to IDLE.`);
       if (cycleId) {
         this.batchState.updateCycle(cycleId, {
           status: 'FAILED',
           completedAt: new Date().toISOString(),
-          lastError: `Recovered at startup: process stopped in state ${state}.`
+          lastError: `Recovered (${triggerLabel}): controller stopped in state ${state} with no active run.`
         });
         this.batchState.data.currentCycleId = null;
       }
@@ -154,35 +201,34 @@ class BatchCycleManager {
 
     if (!cycleId) return;
 
-    if (state === 'ACQUIRING' || state === 'PROCESSING' || state === 'STREAMING') {
+    if (ACQUISITION_PHASE_STATES.includes(state)) {
       const cycle = this.batchState.getCycle(cycleId);
       const pid = cycle ? cycle.acquisitionPid : null;
       const stillAlive = isPidAlive(pid);
 
       if (stillAlive) {
-        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was ${state} when this process last stopped, and PID ${pid} `
-          + `still appears to be alive. Not resuming automatically - a stray acquisition process may still be running. `
-          + `Marking the cycle FAILED and returning the controller to IDLE; stop PID ${pid} manually if still active.`);
-      } else {
-        console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted (${state}, no live acquisition process). `
-          + `Marking it FAILED. Any media already downloaded/validated by the Media Ingestor remains intact and untouched.`);
+        console.warn(`${LOG_PREFIX} Recovery (${triggerLabel}): cycle ${cycleId} is ${state} and acquisition PID ${pid} `
+          + `is still alive. Not touching it - it may still be genuinely working, or owned by another running instance. `
+          + `Leaving the cycle as-is; it will be reconciled once PID ${pid} is confirmed dead.`);
+        return;
       }
+
+      console.warn(`${LOG_PREFIX} Recovery (${triggerLabel}): cycle ${cycleId} was interrupted (${state}, no live acquisition process). `
+        + `Marking it FAILED. Any media already downloaded/validated by the Media Ingestor remains intact and untouched.`);
 
       this.batchState.updateCycle(cycleId, {
         status: 'FAILED',
         completedAt: new Date().toISOString(),
-        lastError: stillAlive
-          ? `Recovered at startup: acquisition PID ${pid} may still be running independently; cycle marked FAILED without touching media.`
-          : 'Recovered at startup: process restarted mid-acquisition with no live acquisition process; cycle marked FAILED without touching media.'
+        lastError: `Recovered (${triggerLabel}): no live acquisition process for this cycle; cycle marked FAILED without touching media.`
       });
       this.batchState.data.currentCycleId = null;
       this.batchState.setControllerState('IDLE');
     } else if (state === 'PUBLISHING') {
-      console.warn(`${LOG_PREFIX} Recovery: cycle ${cycleId} was interrupted in state PUBLISHING. `
+      console.warn(`${LOG_PREFIX} Recovery (${triggerLabel}): cycle ${cycleId} was interrupted in state PUBLISHING. `
         + `PublishLedger recovers any stuck UPLOADING items to PENDING safely. Resetting cycle status to BATCH_READY for clean retry.`);
       this.batchState.updateCycle(cycleId, {
         status: 'BATCH_READY',
-        lastError: 'Recovered at startup: publishing was interrupted mid-batch; reset to BATCH_READY without media loss.'
+        lastError: `Recovered (${triggerLabel}): publishing was interrupted mid-batch; reset to BATCH_READY without media loss.`
       });
       this.batchState.setControllerState('IDLE');
     }
@@ -224,6 +270,10 @@ class BatchCycleManager {
     if (this._activeRunPromise) {
       return { status: 'SKIPPED', reason: 'A cycle is already running in this process' };
     }
+    // A manual/admin-triggered runOnce() gets the same self-heal a scheduled
+    // tick gets, so recovery from a stale cycle never has to wait for the
+    // next 3-hour tick.
+    this._reconcileStaleCycle('manual-run');
     const currentState = this.batchState.getControllerState();
     if (ACTIVE_CYCLE_STATES.includes(currentState)) {
       return { status: 'SKIPPED', reason: `Controller state is already ${currentState}` };
@@ -331,25 +381,39 @@ class BatchCycleManager {
           // Immediate Publishing
           if (this.autoPublish && this.videoBatchPublisher && !hitCeiling) {
             this.batchState.setControllerState('PUBLISHING');
-            const pubRes = await this.videoBatchPublisher.publishSingleItem(cycleId, mediaRecord, this.publishOptions);
-            if (pubRes.status === 'PUBLISHED') {
-              successfulCount++;
-              publishedItems.push(pubRes);
-              console.log(`${LOG_PREFIX} Immediate publication ${successfulCount}/${this.maxSuccessfulVideos} complete for ${mediaRecord.mediaId} (msgId: ${pubRes.telegramMessageId})`);
-              if (successfulCount >= this.maxSuccessfulVideos) {
-                console.log(`${LOG_PREFIX} Reached maximum successful target (${this.maxSuccessfulVideos}). Halting cycle.`);
-                hitCeiling = true;
-                if (this.videoPipelineManager.isRunning()) {
-                  await this.videoPipelineManager.stop();
+            // publishSingleItem() is expected to always resolve with a status
+            // object, never throw - but a single unexpected exception here
+            // (e.g. a ledger write failure) must never strand the persisted
+            // controller state at PUBLISHING forever. The try/finally below
+            // guarantees the state is always moved back to an acquisition
+            // state (or IDLE, once the loop is really done) no matter what
+            // happens on this attempt, so a scheduled tick can never see a
+            // stuck PUBLISHING with no cycle actually driving it forward.
+            try {
+              const pubRes = await this.videoBatchPublisher.publishSingleItem(cycleId, mediaRecord, this.publishOptions);
+              if (pubRes.status === 'PUBLISHED') {
+                successfulCount++;
+                publishedItems.push(pubRes);
+                console.log(`${LOG_PREFIX} Immediate publication ${successfulCount}/${this.maxSuccessfulVideos} complete for ${mediaRecord.mediaId} (msgId: ${pubRes.telegramMessageId})`);
+                if (successfulCount >= this.maxSuccessfulVideos) {
+                  console.log(`${LOG_PREFIX} Reached maximum successful target (${this.maxSuccessfulVideos}). Halting cycle.`);
+                  hitCeiling = true;
+                  if (this.videoPipelineManager.isRunning()) {
+                    await this.videoPipelineManager.stop();
+                  }
                 }
+              } else if (pubRes.status === 'SKIPPED_ALREADY_PUBLISHED') {
+                skippedAlreadyPublishedCount++;
+              } else {
+                failedCount++;
               }
-            } else if (pubRes.status === 'SKIPPED_ALREADY_PUBLISHED') {
-              skippedAlreadyPublishedCount++;
-            } else {
+            } catch (publishErr) {
               failedCount++;
-            }
-            if (!hitCeiling) {
-              this.batchState.setControllerState(this.videoPipelineManager.isRunning() ? 'ACQUIRING' : 'PROCESSING');
+              console.error(`${LOG_PREFIX} Unexpected exception publishing ${mediaRecord.mediaId}: ${publishErr.message}`);
+            } finally {
+              if (!hitCeiling) {
+                this.batchState.setControllerState(this.videoPipelineManager.isRunning() ? 'ACQUIRING' : 'PROCESSING');
+              }
             }
           }
         } else if (scanResult.status === 'DUPLICATE') {
@@ -731,6 +795,12 @@ class BatchCycleManager {
 
   _scheduledTick() {
     if (!this._acceptingRuns) return;
+    // Self-heal a cycle abandoned by a dead acquisition process even without
+    // a full restart - this is what lets the very next scheduled tick
+    // recover cleanly instead of skipping forever. A cycle that is still
+    // genuinely active (live PID, or driven by this process's own
+    // _activeRunPromise) is left completely untouched by this call.
+    this._reconcileStaleCycle('scheduled-tick');
     const currentState = this.batchState.getControllerState();
     if (this._activeRunPromise || ACTIVE_CYCLE_STATES.includes(currentState)) {
       const reason = `Previous cycle was still active (state=${currentState}) when the next scheduled time arrived`;
