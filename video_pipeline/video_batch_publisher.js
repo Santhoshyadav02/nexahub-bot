@@ -125,9 +125,12 @@ class VideoBatchPublisher {
    * @returns {{allowed: boolean, reason?: string}}
    */
   _checkSourceModeDestinationPolicy(media, destinationId) {
+    const sourceMode = (media && media.sourceMode) || 'unknown';
+    if (sourceMode === 'authorized') {
+      return { allowed: true };
+    }
     const destCheck = this._validateStagingDestination(destinationId);
     if (!destCheck.valid) {
-      const sourceMode = (media && media.sourceMode) || 'unknown';
       return {
         allowed: false,
         reason: `source_mode="${sourceMode}" media blocked from a protected production destination: ${destCheck.reason}`
@@ -163,14 +166,21 @@ class VideoBatchPublisher {
    * @param {string} batchId Cycle or batch ID
    * @param {object} media Media record { mediaId, title, filePath, contentSha256, ... }
    * @param {object} [options] Options override
-   * @returns {Promise<object>} Item publish result
-   */
   async publishSingleItem(batchId, media, options = {}) {
     if (!media || !media.mediaId) {
       return { status: 'FAILED', reason: 'Invalid media record: missing mediaId' };
     }
 
-    const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
+    const routingDecision = this.destinationRouter.routeMedia(media);
+    const canonicalDest = routingDecision.primaryDestination
+      ? routingDecision.primaryDestination.id
+      : 'DESTINATION_1';
+
+    const routedChannelUsername = routingDecision.primaryDestination && routingDecision.primaryDestination.username
+      ? `@${routingDecision.primaryDestination.username}`
+      : null;
+
+    const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || (media.sourceMode === 'authorized' && routedChannelUsername ? routedChannelUsername : this.stagingChatId);
     const policyCheck = this._checkSourceModeDestinationPolicy(media, targetChatId);
     if (!policyCheck.allowed) {
       console.error(`${LOG_PREFIX} FIXTURE_MEDIA_PRODUCTION_ROUTE_BLOCKED: ${policyCheck.reason}`);
@@ -183,10 +193,6 @@ class VideoBatchPublisher {
     }
 
     const shouldCleanup = options.enableCleanup !== undefined ? Boolean(options.enableCleanup) : this.enableCleanup;
-    const routingDecision = this.destinationRouter.routeMedia(media);
-    const canonicalDest = routingDecision.primaryDestination
-      ? routingDecision.primaryDestination.id
-      : 'DESTINATION_1';
 
     const planItem = {
       planId: `plan_${batchId}_${media.mediaId}`,
