@@ -304,6 +304,7 @@ class BatchCycleManager {
       const startOptions = {
         targetLinks: this.discoveryTarget,
         maxPages: this.maxPages,
+        workers: (this.acquisitionOptions && this.acquisitionOptions.workers) || 4,
         ...this.acquisitionOptions,
         output: this.outputDir,
         downloads: this.downloadsDir,

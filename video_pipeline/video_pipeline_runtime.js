@@ -90,7 +90,7 @@ class VideoPipelineRuntime {
     const envWorkers = Number(process.env.VIDEO_PIPELINE_WORKERS);
     this.workers = (config.workers && !isNaN(config.workers))
       ? config.workers
-      : (!isNaN(envWorkers) && envWorkers > 0 ? envWorkers : 1);
+      : (!isNaN(envWorkers) && envWorkers > 0 ? envWorkers : 4);
 
     const envDiscoveryTarget = Number(process.env.VIDEO_PIPELINE_DISCOVERY_TARGET);
     this.discoveryTarget = (config.discoveryTarget && !isNaN(config.discoveryTarget))
