@@ -88,6 +88,7 @@ class VideoDestinationRouter {
         id: dest.id || key,
         name: dest.name || key,
         username: dest.username || '',
+        chatId: process.env[`VIDEO_PIPELINE_${dest.id || key}_CHAT_ID`] || dest.chatId || '',
         priority: typeof dest.priority === 'number' ? dest.priority : 99,
         keywords: {
           high: highKeywords,
@@ -110,6 +111,7 @@ class VideoDestinationRouter {
       id: d.id,
       name: d.name,
       username: d.username,
+      chatId: d.chatId,
       priority: d.priority
     }));
   }
@@ -215,6 +217,11 @@ class VideoDestinationRouter {
   routeBatch(mediaList) {
     if (!Array.isArray(mediaList)) return [];
     return mediaList.map(m => this.routeMedia(m));
+  }
+
+  getDestination(destinationId) {
+    const destination = this._compiledDestinations.find(d => d.id === destinationId);
+    return destination ? { id: destination.id, name: destination.name, username: destination.username, chatId: destination.chatId, priority: destination.priority } : null;
   }
 
   _textContainsKeyword(normText, normKeyword) {

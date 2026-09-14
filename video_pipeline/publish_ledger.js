@@ -30,7 +30,10 @@ class PublishLedger {
       version: PUBLISH_LEDGER_VERSION,
       updatedAt: null,
       records: {},
-      destinationIndex: {} // key: `${mediaId}:${destinationId}` -> publishId
+      destinationIndex: {}, // key: `${mediaId}:${destinationId}` -> publishId
+      // The next round-robin slot and per-media locks live beside the
+      // publication records so a restart cannot change a failed item's target.
+      roundRobin: { nextDestinationIndex: 0, assignments: {} }
     };
     this._lockChain = Promise.resolve();
     this._recovery = { recoveredCount: 0, notes: [] };
@@ -82,7 +85,13 @@ class PublishLedger {
       version: parsed.version || PUBLISH_LEDGER_VERSION,
       updatedAt: parsed.updatedAt || null,
       records: parsed.records && typeof parsed.records === 'object' ? parsed.records : {},
-      destinationIndex: parsed.destinationIndex && typeof parsed.destinationIndex === 'object' ? parsed.destinationIndex : {}
+      destinationIndex: parsed.destinationIndex && typeof parsed.destinationIndex === 'object' ? parsed.destinationIndex : {},
+      roundRobin: {
+        nextDestinationIndex: Number.isInteger(parsed.roundRobin && parsed.roundRobin.nextDestinationIndex)
+          ? ((parsed.roundRobin.nextDestinationIndex % 10) + 10) % 10 : 0,
+        assignments: parsed.roundRobin && parsed.roundRobin.assignments && typeof parsed.roundRobin.assignments === 'object'
+          ? parsed.roundRobin.assignments : {}
+      }
     };
 
     // Rebuild destinationIndex and recover interrupted UPLOADING state
@@ -169,6 +178,34 @@ class PublishLedger {
 
   listAll() {
     return Object.values(this.data.records);
+  }
+
+  // Compatibility surface for GlobalRoundRobinRouter. These state changes are
+  // synchronously persisted by the ledger's atomic writer.
+  getNextRoundRobinIndex() { return this.data.roundRobin.nextDestinationIndex; }
+  setNextRoundRobinIndex(index) {
+    this.data.roundRobin.nextDestinationIndex = ((Number(index) % 10) + 10) % 10;
+    this._save();
+  }
+  advanceRoundRobinIndex() {
+    this.data.roundRobin.nextDestinationIndex = (this.data.roundRobin.nextDestinationIndex + 1) % 10;
+    this._save();
+  }
+  lockDestination(identity, destinationKey) {
+    this.data.roundRobin.assignments[String(identity)] = String(destinationKey);
+    this._save();
+  }
+  getAssignedDestination(identity) {
+    return this.data.roundRobin.assignments[String(identity)] || null;
+  }
+  isRoundRobinPublished(identity) {
+    // Round-robin stores the canonical key (DESTINATION_N), while the publish
+    // record deliberately stores the actual Telegram chat ID. Match the media
+    // identity across the ledger rather than conflating those two namespaces.
+    const mediaId = String(identity).replace(/^video:/, '');
+    return Object.values(this.data.records).some(record =>
+      record.mediaId === mediaId && record.status === 'PUBLISHED'
+    );
   }
 
   /**

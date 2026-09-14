@@ -437,7 +437,12 @@ class BatchCycleManager {
 
       const publishResult = {
         batchId: cycleId,
-        destinationId: (this.videoBatchPublisher && this.videoBatchPublisher.stagingChatId) || this.publishOptions.stagingChatIdOverride || '-1009990001',
+        // A batch can now span all configured round-robin destinations. This
+        // summary field is descriptive only and must never revive a staging
+        // fallback or imply a single Telegram target.
+        destinationId: this.videoBatchPublisher && this.videoBatchPublisher.useRoundRobin
+          ? 'ROUND_ROBIN'
+          : ((this.videoBatchPublisher && this.videoBatchPublisher.stagingChatId) || this.publishOptions.stagingChatIdOverride || null),
         status: finalStatus,
         totalItems: readyMediaList.length,
         published: successfulCount,

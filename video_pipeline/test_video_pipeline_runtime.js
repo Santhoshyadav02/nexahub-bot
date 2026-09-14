@@ -26,6 +26,7 @@ const { MediaLedger } = require('./media_ledger');
 const { PublishLedger } = require('./publish_ledger');
 const { MediaCleaner } = require('./media_cleaner');
 const { getFFmpegPath } = require('./media_validator');
+const { VideoBatchPublisher } = require('./video_batch_publisher');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const TEST_WORKSPACE = path.join(ROOT_DIR, 'scratch', 'test_video_pipeline_runtime_workspace');
@@ -383,15 +384,15 @@ async function runRuntimeTests() {
   // TEST 10: CONFIG SAFETY (PRODUCTION DESTINATION BLOCK)
   // ============================================================
   section('TEST 10: Config Safety on Forbidden Channels');
+
+  // Runtime-level fail-closed check: autoPublish with no telegramClient and no
+  // pre-built publisher/manager must refuse to start, regardless of destination.
   const runtime10 = new VideoPipelineRuntime({
     enabled: true,
     acquisitionUrl: 'http://127.0.0.1:8080/',
-    stagingChatId: '@ccsfvk', // Protected production channel
     autoPublish: true
   });
-  const val10 = runtime10._validateConfiguration();
-  check('Configuration validator strictly rejects production channel @ccsfvk', val10.valid === false);
-  check('start() refuses to run against production channel', runtime10.start().status === 'CONFIG_ERROR');
+  check('start() refuses with CONFIG_ERROR when autoPublish has no Telegram client', runtime10.start().status === 'CONFIG_ERROR');
 
   // Missing staging with autoPublish=true
   const runtime10B = new VideoPipelineRuntime({
@@ -401,6 +402,45 @@ async function runRuntimeTests() {
     autoPublish: true
   });
   check('Missing staging destination with autoPublish=true is rejected', runtime10B.start().status === 'CONFIG_ERROR');
+
+  // Real forbidden-channel protection: exercise the actual publish boundary in
+  // VideoBatchPublisher (not just a runtime-level config check), with a mocked
+  // Telegram client injected so a real send is structurally impossible. This
+  // proves the rejection is caused by FORBIDDEN_PRODUCTION_DESTINATIONS in
+  // VideoBatchPublisher itself, not by an unrelated missing-client error.
+  const forbiddenWork = path.join(TEST_WORKSPACE, 'test10_forbidden_channel');
+  fs.mkdirSync(forbiddenWork, { recursive: true });
+  const forbiddenMediaPath = path.join(forbiddenWork, 'forbidden.mp4');
+  fs.writeFileSync(forbiddenMediaPath, 'local fixture only - never sent');
+
+  let forbiddenSendAttempted = false;
+  const forbiddenClient = {
+    sendVideo: async () => {
+      forbiddenSendAttempted = true;
+      throw new Error('TEST BUG: sendVideo must never be reached for a forbidden destination');
+    }
+  };
+
+  const forbiddenPublisher = new VideoBatchPublisher({
+    stagingChatId: '@ccsfvk', // Protected production channel username
+    telegramClient: forbiddenClient,
+    batchStatePath: path.join(forbiddenWork, 'batch.json'),
+    publishLedgerPath: path.join(forbiddenWork, 'publish.json'),
+    mediaValidator: async () => ({ valid: true }),
+    rateLimitDelayMs: 0
+  });
+
+  const forbiddenResult = await forbiddenPublisher.publishSingleItem('forbidden-cycle', {
+    mediaId: 'forbidden-item',
+    title: 'Should never publish',
+    filePath: forbiddenMediaPath
+  });
+
+  check('Real VideoBatchPublisher rejects the forbidden channel @ccsfvk', forbiddenResult.status === 'REJECTED');
+  check('Rejection reason names the protected production channel',
+    typeof forbiddenResult.reason === 'string' && /protected production channel/i.test(forbiddenResult.reason));
+  check('sendVideo was never invoked for the forbidden destination', forbiddenSendAttempted === false);
+  check('Local fixture media file was left untouched (no publish occurred)', fs.existsSync(forbiddenMediaPath) === true);
 
   // ============================================================
   // TEST 11: CLEAN RESTART & RE-INSTANTIATION

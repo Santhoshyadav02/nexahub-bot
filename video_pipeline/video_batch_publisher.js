@@ -25,6 +25,7 @@ const { PublishLedger } = require('./publish_ledger');
 const { MediaCleaner } = require('./media_cleaner');
 const { VideoDestinationRouter } = require('./video_destination_router');
 const { validateMediaFile } = require('./media_validator');
+const { GlobalRoundRobinRouter } = require('../global_round_robin_router');
 
 const LOG_PREFIX = '[VIDEO_BATCH_PUBLISHER]';
 const DEFAULT_RATE_LIMIT_DELAY_MS = 1000;
@@ -76,18 +77,27 @@ class VideoBatchPublisher {
    * @param {boolean} [config.enableCleanup=false] Whether to clean media files after confirmed publication
    */
   constructor(config = {}) {
-    this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
+    // The staging target is retained solely for isolated legacy tests. The live
+    // runtime deliberately does not read VIDEO_PIPELINE_STAGING_CHAT_ID: a
+    // configured value such as "me" must never override routed destinations.
+    this.stagingChatId = config.stagingChatId || null;
     this.telegramClient = config.telegramClient || null;
     this.batchState = config.batchState || new BatchState({ statePath: config.batchStatePath });
     this.publishLedger = config.publishLedger || new PublishLedger({ ledgerPath: config.publishLedgerPath });
     this.mediaCleaner = config.mediaCleaner || new MediaCleaner({ publishLedger: this.publishLedger });
     this.destinationRouter = config.destinationRouter || new VideoDestinationRouter();
+    this.useRoundRobin = config.useRoundRobin !== undefined ? Boolean(config.useRoundRobin) : !this.stagingChatId;
+    this.roundRobinRouter = config.roundRobinRouter || (this.useRoundRobin
+      ? new GlobalRoundRobinRouter({
+        destinations: this.destinationRouter.getDestinations().map(destination => destination.id),
+        ledger: this.publishLedger
+      }) : null);
     this.mediaValidator = config.mediaValidator || validateMediaFile;
     this.rateLimitDelayMs = config.rateLimitDelayMs !== undefined ? config.rateLimitDelayMs : DEFAULT_RATE_LIMIT_DELAY_MS;
     this.maxRetries = config.maxRetries !== undefined ? config.maxRetries : 1;
     this.enableCleanup = Boolean(config.enableCleanup);
 
-    this._validateStagingDestination(this.stagingChatId);
+    if (!this.useRoundRobin) this._validateStagingDestination(this.stagingChatId);
   }
 
   _validateStagingDestination(chatId) {
@@ -138,14 +148,13 @@ class VideoBatchPublisher {
       return { status: 'FAILED', reason: 'Invalid media record: missing mediaId' };
     }
 
-    const targetChatId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
-    const destValidation = this._validateStagingDestination(targetChatId);
-    if (!destValidation.valid) {
+    const target = this._selectTarget(media, options);
+    if (!target.valid) {
       return {
         status: 'REJECTED',
         mediaId: media.mediaId,
-        destinationId: targetChatId,
-        reason: destValidation.reason
+        destinationId: target.destinationId,
+        reason: target.reason
       };
     }
 
@@ -162,14 +171,16 @@ class VideoBatchPublisher {
       title: media.title || '',
       filePath: media.filePath,
       contentSha256: media.contentSha256,
-      canonicalDestination: canonicalDest,
-      targetDestinationId: targetChatId,
+      canonicalDestination: target.canonicalDestination || canonicalDest,
+      targetDestinationId: target.destinationId,
       routingDecision,
       status: 'PENDING',
       attempts: 0
     };
 
-    return this._publishMediaItem(batchId, media, targetChatId, planItem, shouldCleanup);
+    const result = await this._publishMediaItem(batchId, media, target.destinationId, planItem, shouldCleanup);
+    this._confirmRoundRobinSuccess(target, result);
+    return result;
   }
 
   /**
@@ -214,15 +225,21 @@ class VideoBatchPublisher {
    * @returns {Promise<object>} Publish summary
    */
   async publishBatch(batchId, options = {}) {
-    const targetChatId = options.stagingChatIdOverride || this.stagingChatId;
-    const destValidation = this._validateStagingDestination(targetChatId);
-    if (!destValidation.valid) {
-      console.error(`${LOG_PREFIX} Refused to run: ${destValidation.reason}`);
+    if (!this.useRoundRobin) {
+      const destValidation = this._validateStagingDestination(options.stagingChatIdOverride || this.stagingChatId);
+      if (!destValidation.valid) {
+        console.error(`${LOG_PREFIX} Refused to run: ${destValidation.reason}`);
+        return { status: 'REJECTED', batchId, destinationId: this.stagingChatId, reason: destValidation.reason };
+      }
+    }
+    const targetChatId = this.useRoundRobin ? null : (options.stagingChatIdOverride || this.stagingChatId);
+    if (this.useRoundRobin && this.destinationRouter.getDestinations().some(destination => !destination.chatId || destination.chatId === 'me')) {
+      const reason = 'Round-robin destination configuration is missing a valid Telegram chat ID.';
+      console.error(`${LOG_PREFIX} Refused to run: ${reason}`);
       return {
         status: 'REJECTED',
         batchId,
-        destinationId: targetChatId,
-        reason: destValidation.reason
+        reason
       };
     }
 
@@ -261,7 +278,7 @@ class VideoBatchPublisher {
     this.batchState.updateCycle(batchId, { status: 'PUBLISHING', publishingStartedAt: new Date().toISOString() });
     this.batchState.setControllerState('PUBLISHING');
 
-    console.log(`${LOG_PREFIX} Publishing batch ${batchId} (${mediaList.length} items) to staging destination ${targetChatId}`);
+    console.log(`${LOG_PREFIX} Publishing batch ${batchId} (${mediaList.length} items) using ${this.useRoundRobin ? 'round-robin destinations' : `staging destination ${targetChatId}`}`);
 
     // Generate deterministic publish plan
     const plan = this.createPublishPlan(batchId, mediaList, targetChatId);
@@ -275,7 +292,16 @@ class VideoBatchPublisher {
     for (let i = 0; i < plan.length; i++) {
       const planItem = plan[i];
       const media = mediaList[i];
-      const itemResult = await this._publishMediaItem(batchId, media, targetChatId, planItem, shouldCleanup);
+      const target = this._selectTarget(media, options);
+      if (!target.valid) {
+        results.push({ mediaId: media.mediaId, status: 'REJECTED', reason: target.reason, destinationId: target.destinationId });
+        failedCount++;
+        continue;
+      }
+      planItem.canonicalDestination = target.canonicalDestination || planItem.canonicalDestination;
+      planItem.targetDestinationId = target.destinationId;
+      const itemResult = await this._publishMediaItem(batchId, media, target.destinationId, planItem, shouldCleanup);
+      this._confirmRoundRobinSuccess(target, itemResult);
       results.push(itemResult);
 
       if (itemResult.status === 'PUBLISHED') {
@@ -332,6 +358,32 @@ class VideoBatchPublisher {
       + `(total=${mediaList.length}, published=${publishedCount}, skipped=${skippedCount}, failed=${failedCount}, cleaned=${cleanedCount})`);
 
     return summary;
+  }
+
+  _selectTarget(media, options = {}) {
+    if (!this.useRoundRobin) {
+      const destinationId = options.chatIdOverride || options.stagingChatIdOverride || this.stagingChatId;
+      const validation = this._validateStagingDestination(destinationId);
+      return { valid: validation.valid, reason: validation.reason, destinationId };
+    }
+    if (!this.roundRobinRouter) return { valid: false, reason: 'Round-robin router is not initialized.' };
+    const identity = `video:${media.mediaId}`;
+    const decision = this.roundRobinRouter.assignDestination({ sourceChannelId: 'video', messageId: media.mediaId, title: media.title || '' });
+    if (decision.alreadyPublished) {
+      const destination = this.destinationRouter.getDestination(decision.destinationChannelId);
+      return { valid: Boolean(destination && destination.chatId), destinationId: destination && destination.chatId, canonicalDestination: decision.destinationChannelId, identity, decision, reason: 'Previously published media has no configured destination.' };
+    }
+    const destination = this.destinationRouter.getDestination(decision.destinationChannelId);
+    if (!destination || !destination.chatId || destination.chatId === 'me') {
+      return { valid: false, reason: `Destination ${decision.destinationChannelId} has no valid chatId.`, canonicalDestination: decision.destinationChannelId, identity, decision };
+    }
+    return { valid: true, destinationId: destination.chatId, canonicalDestination: decision.destinationChannelId, identity, decision };
+  }
+
+  _confirmRoundRobinSuccess(target, result) {
+    if (this.useRoundRobin && target.valid && result && result.status === 'PUBLISHED') {
+      this.roundRobinRouter.confirmSuccess(target.identity, target.canonicalDestination);
+    }
   }
 
   /**

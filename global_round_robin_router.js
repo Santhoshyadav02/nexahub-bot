@@ -137,7 +137,8 @@ class GlobalRoundRobinRouter {
     const sourceIdentity = `${sourceChannelId}:${messageId}`;
 
     // 1. Check if already successfully published in ledger (SUCCESS duplicate)
-    if (this.ledger && this.ledger.isPublished(sourceIdentity)) {
+    if (this.ledger && ((typeof this.ledger.isRoundRobinPublished === "function" && this.ledger.isRoundRobinPublished(sourceIdentity))
+      || (typeof this.ledger.isPublished === "function" && this.ledger.isPublished(sourceIdentity)))) {
       const priorDest = (this.ledger.getAssignedDestination && this.ledger.getAssignedDestination(sourceIdentity))
         || this.assignedDestinations.get(sourceIdentity)
         || "UNKNOWN";

@@ -75,7 +75,6 @@ class VideoPipelineRuntime {
       : (process.env.VIDEO_PIPELINE_FIXTURE_FALLBACK_TO_LIVE === 'true');
     this.acquisitionUrl = config.acquisitionUrl || process.env.VIDEO_PIPELINE_ACQUISITION_URL || null;
     this.inputLinks = config.inputLinks || process.env.VIDEO_PIPELINE_INPUT_LINKS || null;
-    this.stagingChatId = config.stagingChatId || process.env.VIDEO_PIPELINE_STAGING_CHAT_ID || null;
 
     const envInterval = Number(process.env.VIDEO_PIPELINE_INTERVAL_MS);
     this.intervalMs = (config.intervalMs && !isNaN(config.intervalMs))
@@ -193,21 +192,13 @@ class VideoPipelineRuntime {
     // fixture mode to point at their own local HTTP server instead.
 
     if (this.autoPublish) {
-      if (!this.stagingChatId || typeof this.stagingChatId !== 'string' || !this.stagingChatId.trim()) {
-        const err = 'VIDEO_PIPELINE_STAGING_CHAT_ID is required when autoPublish is enabled.';
+      const destinations = new VideoDestinationRouter().getDestinations();
+      if (destinations.length !== 10 || destinations.some(destination => !destination.chatId || destination.chatId === 'me')) {
+        const err = 'Exactly ten configured VIDEO_PIPELINE destinations with valid chat IDs are required when autoPublish is enabled.';
         this._configValid = false;
         this._lastConfigError = err;
         return { valid: false, reason: err };
       }
-
-      const cleanTarget = this.stagingChatId.trim().replace(/^@/, '').toLowerCase();
-      if (FORBIDDEN_PRODUCTION_DESTINATIONS.has(cleanTarget)) {
-        const err = `Target destination "${this.stagingChatId}" is a protected production channel. Staging publisher strictly refuses.`;
-        this._configValid = false;
-        this._lastConfigError = err;
-        return { valid: false, reason: err };
-      }
-
       // Fail closed rather than starting a scheduler that would fail every
       // single publish attempt: require either an injected Telegram client
       // (production: the bot instance from index.js), a fully pre-configured
@@ -244,16 +235,16 @@ class VideoPipelineRuntime {
     const baseMp4Buffer = fs.existsSync(baseMp4Path) ? fs.readFileSync(baseMp4Path) : Buffer.from('ftypmp42', 'utf8');
 
     const TITLES = [
-      'Romantic Vibe Sunset Walk with K-Pop Stars',
-      'Dating Special Evergrande Troupe Performance',
-      'Romance and Intimacy First Love Story',
-      'Crotch Fashion Trend and Skirt Style Review',
-      'Mosa Uncensored Streamer Behind the Scenes',
-      'Bunny Girl Cosplay Date Night in Akihabara',
-      'Lustful Hostess Hotel Service Award Story',
-      'Concubine Senior Year Love Story Fantrie Special',
-      'Saki Mizumi Idol Exclusive Highlights Reel',
-      'Shorts Trending Viral Daily Compilation'
+      '봄날의 약속: 첫 번째 이야기',
+      '별빛 아래 우리: 두 번째 이야기',
+      '한강의 여름: 세 번째 이야기',
+      '청춘의 페이지: 네 번째 이야기',
+      '우리 동네 이야기: 다섯 번째 이야기',
+      '비밀의 정원: 여섯 번째 이야기',
+      '시간을 걷는 마음: 일곱 번째 이야기',
+      '따뜻한 바람: 여덟 번째 이야기',
+      '새벽의 편지: 아홉 번째 이야기',
+      '꿈꾸는 계절: 열 번째 이야기'
     ];
 
     const runSalt = Date.now().toString(36);
@@ -359,7 +350,6 @@ class VideoPipelineRuntime {
     let publisher = this.videoBatchPublisher;
     if (!publisher && this.autoPublish) {
       publisher = new VideoBatchPublisher({
-        stagingChatId: this.stagingChatId,
         telegramClient: this.telegramClient,
         batchState,
         publishLedger,
