@@ -260,6 +260,35 @@ class VipAccessManager {
     };
   }
 
+  approveAllPending(adminUser) {
+    if (!this.isAuthorizedAdmin(adminUser)) {
+      return { success: false, error: "UNAUTHORIZED_ADMIN", count: 0, approvedIds: [] };
+    }
+    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `@CSE_006`;
+    const pendingUsers = this.getUsersByStatus("PENDING");
+    const now = new Date().toISOString();
+    const approvedIds = [];
+
+    for (const u of pendingUsers) {
+      u.status = "APPROVED";
+      u.approvedAt = now;
+      u.approvedBy = adminName;
+      u.approvals[String(adminUser.id || "admin")] = {
+        decision: "APPROVED",
+        adminName: adminName,
+        timestamp: now
+      };
+      this.users.set(u.userId, u);
+      approvedIds.push(u.userId);
+    }
+
+    if (approvedIds.length > 0) {
+      this._save();
+    }
+
+    return { success: true, count: approvedIds.length, approvedIds };
+  }
+
   getUsersByStatus(status = "APPROVED") {
     const list = Array.from(this.users.values());
     if (!status || status === "ALL") return list;
@@ -289,7 +318,7 @@ class VipAccessManager {
 
     const statusTitle =
       statusFilter === "APPROVED" ? "✅ 승인된 사용자 목록" :
-      statusFilter === "PENDING" ? "⏳ 승인 대기 중 목록" :
+      statusFilter === "PENDING" ? "⏳ 승인 대기 중 목록 (Waiting for Approval)" :
       statusFilter === "REJECTED" ? "❌ 거절된 사용자 목록" : "👥 전체 사용자 목록";
 
     let text =
@@ -303,8 +332,14 @@ class VipAccessManager {
       `━━━━━━━━━━━━━━━━\n` +
       `📜 <b>${statusTitle}</b>\n\n`;
 
+    const actionButtons = [];
+
     if (filteredUsers.length === 0) {
-      text += `<i>해당 상태의 사용자가 없습니다.</i>`;
+      if (statusFilter === "PENDING") {
+        text += `<i>현재 승인 대기 중인 사용자가 없습니다. (모두 처리됨)</i>`;
+      } else {
+        text += `<i>해당 상태의 사용자가 없습니다.</i>`;
+      }
     } else {
       const displayUsers = filteredUsers.slice(0, 15);
       displayUsers.forEach((u, i) => {
@@ -318,19 +353,37 @@ class VipAccessManager {
           `   • 일시: ${timeStr}\n` +
           (u.approvedBy ? `   • 처리자: ${escapeHTML(u.approvedBy)}\n` : "") +
           `\n`;
+
+        if (statusFilter === "PENDING" && i < 6) {
+          const rawName = u.displayName || u.username || u.userId;
+          const shortName = rawName.length > 10 ? rawName.slice(0, 9) + "…" : rawName;
+          actionButtons.push([
+            { text: `✅ 승인: ${shortName}`, callback_data: `vip_admin:approve:${u.userId}` },
+            { text: `❌ 거절: ${shortName}`, callback_data: `vip_admin:reject:${u.userId}` }
+          ]);
+        }
       });
       if (filteredUsers.length > 15) {
         text += `<i>... 외 ${filteredUsers.length - 15}명 생략</i>\n`;
       }
+
+      if (statusFilter === "PENDING" && filteredUsers.length > 1) {
+        actionButtons.push([
+          { text: `⚡ 전체 대기자 일괄 승인 (${filteredUsers.length}명)`, callback_data: `vip_admin:approve_all` }
+        ]);
+      }
     }
+
+    const navigationRow = [
+      { text: `✅ 승인 (${stats.approved})`, callback_data: "admin_view:APPROVED" },
+      { text: `⏳ 대기 (${stats.pending})`, callback_data: "admin_view:PENDING" },
+      { text: `❌ 거절 (${stats.rejected})`, callback_data: "admin_view:REJECTED" }
+    ];
 
     const keyboard = {
       inline_keyboard: [
-        [
-          { text: `✅ 승인 (${stats.approved})`, callback_data: "admin_view:APPROVED" },
-          { text: `⏳ 대기 (${stats.pending})`, callback_data: "admin_view:PENDING" },
-          { text: `❌ 거절 (${stats.rejected})`, callback_data: "admin_view:REJECTED" }
-        ],
+        ...actionButtons,
+        navigationRow,
         [
           { text: "🔄 새로고침", callback_data: `admin_view:${statusFilter}` }
         ]

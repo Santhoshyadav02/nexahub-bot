@@ -3257,6 +3257,42 @@ bot.on("callback_query", async (query) => {
           await sendMessageSafe(chatId, pendingText, opts);
         }
       }
+    } else if (data === "vip_admin:approve_all") {
+      if (!vipAccessManager.isAuthorizedAdmin(query.from)) {
+        try {
+          await bot.answerCallbackQuery(query.id, { text: "⛔ 관리자 권한이 없습니다.", show_alert: true });
+        } catch (e) {}
+        return;
+      }
+      const bulkRes = vipAccessManager.approveAllPending(query.from);
+      try {
+        await bot.answerCallbackQuery(query.id, { text: `${bulkRes.count}명 일괄 승인 완료!` });
+      } catch (e) {}
+
+      // Notify approved users
+      for (const targetId of bulkRes.approvedIds) {
+        try {
+          await bot.sendMessage(targetId,
+            `✅ <b>VIP 접근 승인 완료</b>\n\n` +
+            `VIP 그룹에 입장할 수 있습니다. 아래 버튼을 눌러 입장하세요. 👇`,
+            {
+              parse_mode: "HTML",
+              reply_markup: getVipApprovedKeyboard()
+            }
+          );
+          console.log(`✅ [VIP_ACCESS] Sent bulk approval notification to user ${targetId}`);
+        } catch (notifyErr) {
+          console.error(`❌ [VIP_ACCESS] Failed to send bulk approval notification to user ${targetId}:`, notifyErr.message);
+        }
+      }
+
+      const { text: panelText, keyboard: panelKeyboard } = vipAccessManager.formatAdminPanel("PENDING");
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, panelText, {
+          parse_mode: "HTML",
+          reply_markup: panelKeyboard
+        });
+      }
     } else if (data.startsWith("vip_admin:")) {
       const parts = data.split(":");
       const action = parts[1];
@@ -3278,18 +3314,29 @@ bot.on("callback_query", async (query) => {
         });
       } catch (e) {}
 
-      const adminResultText =
-        `🔔 <b>[VIP 접근 요청 처리 완료]</b>\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>이름:</b> ${applicantName}\n` +
-        `🏷️ <b>Username:</b> ${applicantUsername}\n` +
-        `🆔 <b>Telegram ID:</b> <code>${targetUserId}</code>\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `결과: <b>${action === "approve" ? "✅ 승인 완료" : "❌ 거절 완료"}</b>\n` +
-        `처리 관리자: <b>@CSE_006</b>`;
+      const isFromPanel = query.message && query.message.text && query.message.text.includes("VIP 관리자 패널");
+      if (isFromPanel) {
+        const { text: panelText, keyboard: panelKeyboard } = vipAccessManager.formatAdminPanel("PENDING");
+        if (messageId) {
+          await editMessageTextSafe(chatId, messageId, panelText, {
+            parse_mode: "HTML",
+            reply_markup: panelKeyboard
+          });
+        }
+      } else {
+        const adminResultText =
+          `🔔 <b>[VIP 접근 요청 처리 완료]</b>\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `👤 <b>이름:</b> ${applicantName}\n` +
+          `🏷️ <b>Username:</b> ${applicantUsername}\n` +
+          `🆔 <b>Telegram ID:</b> <code>${targetUserId}</code>\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `결과: <b>${action === "approve" ? "✅ 승인 완료" : "❌ 거절 완료"}</b>\n` +
+          `처리 관리자: <b>@CSE_006</b>`;
 
-      if (messageId) {
-        await editMessageTextSafe(chatId, messageId, adminResultText, { parse_mode: "HTML" });
+        if (messageId) {
+          await editMessageTextSafe(chatId, messageId, adminResultText, { parse_mode: "HTML" });
+        }
       }
 
       if (result.newStatus === "APPROVED") {
@@ -3482,6 +3529,19 @@ bot.on("message", async (msg) => {
         });
       } else {
         console.warn(`⚠️ [UNAUTHORIZED_ADMIN_ATTEMPT] User ID: ${msg.from ? msg.from.id : "none"}, Username: @${msg.from ? msg.from.username : "none"}`);
+        return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b> (Username: @${msg.from ? msg.from.username : "none"}, ID: <code>${msg.from ? msg.from.id : ""}</code>)`, { parse_mode: "HTML" });
+      }
+    }
+
+    if (text === "/waiting" || text === "/pending" || text === "/wait" || text === "/승인대기" || text === "/대기") {
+      if (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) {
+        vipAccessManager.registerAdminIfMatched(msg.from);
+        const { text: panelText, keyboard: panelKeyboard } = vipAccessManager.formatAdminPanel("PENDING");
+        return await sendMessageSafe(chatId, panelText, {
+          parse_mode: "HTML",
+          reply_markup: panelKeyboard
+        });
+      } else {
         return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b> (Username: @${msg.from ? msg.from.username : "none"}, ID: <code>${msg.from ? msg.from.id : ""}</code>)`, { parse_mode: "HTML" });
       }
     }
