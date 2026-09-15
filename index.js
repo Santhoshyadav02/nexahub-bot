@@ -3321,6 +3321,27 @@ bot.on("callback_query", async (query) => {
           console.error(`❌ [VIP_ACCESS] Failed to send rejection notification to user ${targetUserId}:`, notifyErr.message);
         }
       }
+    } else if (data.startsWith("admin_view:")) {
+      if (!vipAccessManager.isAuthorizedAdmin(query.from)) {
+        try {
+          await bot.answerCallbackQuery(query.id, { text: "⛔ 관리자 권한이 없습니다.", show_alert: true });
+        } catch (e) {}
+        return;
+      }
+      const statusFilter = data.split(":")[1] || "APPROVED";
+      const { text: panelText, keyboard: panelKeyboard } = vipAccessManager.formatAdminPanel(statusFilter);
+      try {
+        await bot.answerCallbackQuery(query.id);
+      } catch (e) {}
+      const panelOpts = {
+        parse_mode: "HTML",
+        reply_markup: panelKeyboard
+      };
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, panelText, panelOpts);
+      } else {
+        await sendMessageSafe(chatId, panelText, panelOpts);
+      }
     } else if (data.startsWith("cat_page:")) {
       const parts = data.split(":");
       const catKey = parts[1];
@@ -3451,16 +3472,14 @@ bot.on("message", async (msg) => {
       console.log(`💬 [MESSAGE] text="${text}", from=${msg.from.id} (@${msg.from.username || "no_user"})`);
     }
 
-    if (text === "/admin" || text === "/vip_admin" || text === "/register_admin") {
+    if (text === "/admin" || text === "/vip_admin" || text === "/register_admin" || text === "/vip_list" || text === "/list") {
       if (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) {
         vipAccessManager.registerAdminIfMatched(msg.from);
-        return await sendMessageSafe(chatId,
-          `👑 <b>VIP 관리자 계정 연동 완료!</b>\n\n` +
-          `• 관리자: <b>@${msg.from.username || "CSE_006"}</b>\n` +
-          `• Telegram ID: <code>${msg.from.id}</code>\n\n` +
-          `앞으로 새로운 사용자가 VIP 접근을 요청하면 이 채팅방으로 승인/거절 알림이 즉시 전송됩니다.`,
-          { parse_mode: "HTML" }
-        );
+        const { text: panelText, keyboard: panelKeyboard } = vipAccessManager.formatAdminPanel("APPROVED");
+        return await sendMessageSafe(chatId, panelText, {
+          parse_mode: "HTML",
+          reply_markup: panelKeyboard
+        });
       } else {
         console.warn(`⚠️ [UNAUTHORIZED_ADMIN_ATTEMPT] User ID: ${msg.from ? msg.from.id : "none"}, Username: @${msg.from ? msg.from.username : "none"}`);
         return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b> (Username: @${msg.from ? msg.from.username : "none"}, ID: <code>${msg.from ? msg.from.id : ""}</code>)`, { parse_mode: "HTML" });

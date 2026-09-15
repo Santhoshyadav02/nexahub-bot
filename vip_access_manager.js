@@ -16,7 +16,7 @@ const REGISTRY_FILE = dataPath("vip_access_registry.json");
 const AUTHORIZED_ADMIN_USERNAMES = new Set(["cse_006", "cse_06", "cse06", "cse006"]);
 
 // In-memory set of numeric admin IDs
-const authorizedAdminIds = new Set();
+const authorizedAdminIds = new Set(["8781836301"]);
 
 function initAdminIdsFromEnv() {
   const envIds = [
@@ -258,6 +258,86 @@ class VipAccessManager {
       record: record,
       adminName: adminName
     };
+  }
+
+  getUsersByStatus(status = "APPROVED") {
+    const list = Array.from(this.users.values());
+    if (!status || status === "ALL") return list;
+    return list.filter(u => u.status === status);
+  }
+
+  getStats() {
+    const all = Array.from(this.users.values());
+    const approved = all.filter(u => u.status === "APPROVED").length;
+    const pending = all.filter(u => u.status === "PENDING").length;
+    const rejected = all.filter(u => u.status === "REJECTED").length;
+    return {
+      total: all.length,
+      approved,
+      pending,
+      rejected
+    };
+  }
+
+  formatAdminPanel(statusFilter = "APPROVED") {
+    const stats = this.getStats();
+    const filteredUsers = this.getUsersByStatus(statusFilter).sort((a, b) => {
+      const timeA = new Date(a.approvedAt || a.requestedAt || 0).getTime();
+      const timeB = new Date(b.approvedAt || b.requestedAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    const statusTitle =
+      statusFilter === "APPROVED" ? "✅ 승인된 사용자 목록" :
+      statusFilter === "PENDING" ? "⏳ 승인 대기 중 목록" :
+      statusFilter === "REJECTED" ? "❌ 거절된 사용자 목록" : "👥 전체 사용자 목록";
+
+    let text =
+      `👑 <b>VIP 관리자 패널</b>\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `📊 <b>VIP 현황 요약</b>\n` +
+      `• ✅ 승인된 사용자: <b>${stats.approved}</b>명\n` +
+      `• ⏳ 대기 중 사용자: <b>${stats.pending}</b>명\n` +
+      `• ❌ 거절된 사용자: <b>${stats.rejected}</b>명\n` +
+      `• 👥 총 등록자: <b>${stats.total}</b>명\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `📜 <b>${statusTitle}</b>\n\n`;
+
+    if (filteredUsers.length === 0) {
+      text += `<i>해당 상태의 사용자가 없습니다.</i>`;
+    } else {
+      const displayUsers = filteredUsers.slice(0, 15);
+      displayUsers.forEach((u, i) => {
+        const timeStr = u.approvedAt
+          ? new Date(u.approvedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+          : (u.requestedAt ? new Date(u.requestedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "기록 없음");
+        text +=
+          `<b>${i + 1}. ${escapeHTML(u.displayName || "사용자")}</b>\n` +
+          `   • Username: ${u.username ? escapeHTML(u.username) : "없음"}\n` +
+          `   • ID: <code>${u.userId}</code>\n` +
+          `   • 일시: ${timeStr}\n` +
+          (u.approvedBy ? `   • 처리자: ${escapeHTML(u.approvedBy)}\n` : "") +
+          `\n`;
+      });
+      if (filteredUsers.length > 15) {
+        text += `<i>... 외 ${filteredUsers.length - 15}명 생략</i>\n`;
+      }
+    }
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: `✅ 승인 (${stats.approved})`, callback_data: "admin_view:APPROVED" },
+          { text: `⏳ 대기 (${stats.pending})`, callback_data: "admin_view:PENDING" },
+          { text: `❌ 거절 (${stats.rejected})`, callback_data: "admin_view:REJECTED" }
+        ],
+        [
+          { text: "🔄 새로고침", callback_data: `admin_view:${statusFilter}` }
+        ]
+      ]
+    };
+
+    return { text, keyboard };
   }
 
   getVipGroupLink() {
