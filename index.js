@@ -1723,15 +1723,15 @@ function localizeDisplayTitle(rawTitle, categoryName = "") {
     }
   }
 
-  // Final Safety Rule: If result still contains no Hangul, never display raw foreign title
-  if (!/[\uac00-\ud7af]/.test(t)) {
-    t = categoryName ? `${categoryName} 추천 영상` : "인기 추천 영상";
-  }
-
   // Clean trailing punctuation and symbols
   t = t.replace(/^[-\s:]+/, '').replace(/[-\s:]+$/, '').trim();
 
-  return t.length > 80 ? t.substring(0, 77) + "..." : (t || (categoryName ? `${categoryName} 추천 영상` : "신규 영상"));
+  // If no title after cleaning, fallback to category recommendation
+  if (!t || t === "제목 없음") {
+    t = categoryName ? `${categoryName} 추천 영상` : "신규 영상";
+  }
+
+  return t.length > 80 ? t.substring(0, 77) + "..." : t;
 }
 
 /**
@@ -1842,15 +1842,15 @@ async function localizeDisplayTitleAsync(rawTitle, categoryName = "") {
     }
   }
 
-  // Final Safety Rule: If result still contains no Hangul, never display raw foreign title
-  if (!/[\uac00-\ud7af]/.test(t)) {
-    t = categoryName ? `${categoryName} 추천 영상` : "인기 추천 영상";
-  }
-
   // Clean trailing punctuation and symbols
   t = t.replace(/^[-\s:]+/, '').replace(/[-\s:]+$/, '').trim();
 
-  return t.length > 80 ? t.substring(0, 77) + "..." : (t || (categoryName ? `${categoryName} 추천 영상` : "신규 영상"));
+  // If no title after cleaning, fallback to category recommendation
+  if (!t || t === "제목 없음") {
+    t = categoryName ? `${categoryName} 추천 영상` : "신규 영상";
+  }
+
+  return t.length > 80 ? t.substring(0, 77) + "..." : t;
 }
 
 const POPULAR_TOPIC_CARDS = [
