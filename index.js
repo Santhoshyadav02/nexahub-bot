@@ -3175,8 +3175,13 @@ function releaseUserLock(chatId) {
 // ============================
 bot.on("callback_query", async (query) => {
   try {
-    const chatId = query.message.chat.id;
+    const chatId = query.message ? query.message.chat.id : query.from.id;
     const data = query.data;
+
+    if (query.from) {
+      vipAccessManager.registerAdminIfMatched(query.from);
+      console.log(`🔘 [CALLBACK_QUERY] data="${data}", from=${query.from.id} (@${query.from.username || "no_user"})`);
+    }
 
     const isMediaMsg = query.message && (query.message.video || query.message.photo || query.message.document || query.message.animation);
     const messageId = (query.message && !isMediaMsg) ? query.message.message_id : null;
@@ -3459,6 +3464,27 @@ bot.on("message", async (msg) => {
     const text = msg.text;
     if (!text) return;
 
+    if (msg.from) {
+      vipAccessManager.registerAdminIfMatched(msg.from);
+      console.log(`💬 [MESSAGE] text="${text}", from=${msg.from.id} (@${msg.from.username || "no_user"})`);
+    }
+
+    if (text === "/admin" || text === "/vip_admin" || text === "/register_admin") {
+      if (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) {
+        vipAccessManager.registerAdminIfMatched(msg.from);
+        return await sendMessageSafe(chatId,
+          `👑 <b>VIP 관리자 계정 연동 완료!</b>\n\n` +
+          `• 관리자: <b>@${msg.from.username || "CSE_006"}</b>\n` +
+          `• Telegram ID: <code>${msg.from.id}</code>\n\n` +
+          `앞으로 새로운 사용자가 VIP 접근을 요청하면 이 채팅방으로 승인/거절 알림이 즉시 전송됩니다.`,
+          { parse_mode: "HTML" }
+        );
+      } else {
+        console.warn(`⚠️ [UNAUTHORIZED_ADMIN_ATTEMPT] User ID: ${msg.from ? msg.from.id : "none"}, Username: @${msg.from ? msg.from.username : "none"}`);
+        return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b> (Username: @${msg.from ? msg.from.username : "none"}, ID: <code>${msg.from ? msg.from.id : ""}</code>)`, { parse_mode: "HTML" });
+      }
+    }
+
     if (text.startsWith("/inspect_videos")) {
       const adminIdStr = String(process.env.ADMIN_USER_ID || process.env.TELEGRAM_ADMIN_ID || "").trim();
       const senderIdStr = String(msg.from ? msg.from.id : (msg.chat ? msg.chat.id : "")).trim();
@@ -3544,25 +3570,6 @@ bot.on("message", async (msg) => {
         }
       );
       return;
-    }
-
-    if (msg.from) {
-      vipAccessManager.registerAdminIfMatched(msg.from);
-    }
-
-    if (text === "/admin" || text === "/vip_admin") {
-      if (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) {
-        vipAccessManager.registerAdminIfMatched(msg.from);
-        return await sendMessageSafe(chatId,
-          `👑 <b>VIP 관리자 계정 연동 완료!</b>\n\n` +
-          `• 관리자: <b>@CSE_006</b>\n` +
-          `• Telegram ID: <code>${msg.from.id}</code>\n\n` +
-          `앞으로 새로운 사용자가 VIP 접근을 요청하면 이 채팅방으로 승인/거절 알림이 즉시 전송됩니다.`,
-          { parse_mode: "HTML" }
-        );
-      } else {
-        return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b>`, { parse_mode: "HTML" });
-      }
     }
 
     if (text === "🔒 VIP 접근 상태 확인" || text === "VIP 접근 상태 확인") {

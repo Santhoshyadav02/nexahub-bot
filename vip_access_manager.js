@@ -13,7 +13,7 @@ const path = require("path");
 const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require("./runtime_paths");
 
 const REGISTRY_FILE = dataPath("vip_access_registry.json");
-const AUTHORIZED_ADMIN_USERNAMES = new Set(["cse_006"]);
+const AUTHORIZED_ADMIN_USERNAMES = new Set(["cse_006", "cse_06", "cse06", "cse006"]);
 
 // In-memory set of numeric admin IDs
 const authorizedAdminIds = new Set();
