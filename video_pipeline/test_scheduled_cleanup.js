@@ -123,8 +123,20 @@ async function main() {
     mgr.startupDelayMs = 60 * 60 * 1000;
     mgr.start(24 * 60 * 60 * 1000);
     check('start() arms cleanup timer', mgr._cleanupTimerId !== null);
+    check('start() also arms a one-off cleanup soon after start', mgr._cleanupStartupTimerId !== null);
     await mgr.stop();
     check('stop() clears cleanup timer', mgr._cleanupTimerId === null);
+    check('stop() clears the startup cleanup', mgr._cleanupStartupTimerId === null);
+
+    const { mgr: soon } = await setup('timer_soon');
+    soon.startupDelayMs = 60 * 60 * 1000;
+    soon.cleanupInitialDelayMs = 50;
+    let runs = 0;
+    soon.runScheduledCleanup = async () => { runs++; return {}; };
+    soon.start(24 * 60 * 60 * 1000);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    check('startup cleanup runs after the initial delay, not after the full interval', runs === 1, `runs=${runs}`);
+    await soon.stop();
 
     const { mgr: off } = await setup('timer_off');
     off.cleanupIntervalMs = 0;

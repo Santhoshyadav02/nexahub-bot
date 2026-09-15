@@ -48,6 +48,7 @@ const DEFAULT_STOP_ACTIVE_RUN_WAIT_MS = 1500;
 // Disk cleanup runs on its own timer so it still happens while a long cycle
 // makes the scheduler skip ticks.
 const DEFAULT_CLEANUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_CLEANUP_INITIAL_DELAY_MS = 10 * 60 * 1000;
 // Ledger states that mean a file's work is finished (safe to delete mid-cycle).
 const TERMINAL_MEDIA_STATES = new Set(['FAILED', 'DUPLICATE', 'ABANDONED', 'CLEANED']);
 const BOOT_TIME_TOLERANCE_MS = 2 * 60 * 1000;
@@ -228,7 +229,9 @@ class BatchCycleManager {
     this.stopActiveRunWaitMs = pickNumber(config.stopActiveRunWaitMs, null, DEFAULT_STOP_ACTIVE_RUN_WAIT_MS, { allowZero: true });
     this.cleanupIntervalMs = pickNumber(config.cleanupIntervalMs, 'VIDEO_PIPELINE_CLEANUP_INTERVAL_MS', DEFAULT_CLEANUP_INTERVAL_MS, { allowZero: true });
     this.uploadPartsDir = config.uploadPartsDir || null;
+    this.cleanupInitialDelayMs = pickNumber(config.cleanupInitialDelayMs, 'VIDEO_PIPELINE_CLEANUP_INITIAL_DELAY_MS', DEFAULT_CLEANUP_INITIAL_DELAY_MS, { allowZero: true });
     this._cleanupTimerId = null;
+    this._cleanupStartupTimerId = null;
     this._cleanupRunning = false;
 
     this.videoPipelineManager = config.videoPipelineManager || new VideoPipelineManager();
@@ -990,6 +993,13 @@ class BatchCycleManager {
 
   _startCleanupTimer() {
     if (this._cleanupTimerId || !this.enableCleanup || !(this.cleanupIntervalMs > 0)) return;
+    // Also run once shortly after start: frequent redeploys restart the bot
+    // well inside the interval, which would otherwise postpone cleanup forever.
+    const initialDelayMs = Math.min(this.cleanupInitialDelayMs, this.cleanupIntervalMs);
+    this._cleanupStartupTimerId = setTimeout(() => {
+      this._cleanupStartupTimerId = null;
+      this.runScheduledCleanup().catch(() => {});
+    }, initialDelayMs);
     this._cleanupTimerId = setInterval(() => {
       this.runScheduledCleanup().catch(() => {});
     }, this.cleanupIntervalMs);
@@ -1339,6 +1349,10 @@ class BatchCycleManager {
     if (this._cleanupTimerId) {
       clearInterval(this._cleanupTimerId);
       this._cleanupTimerId = null;
+    }
+    if (this._cleanupStartupTimerId) {
+      clearTimeout(this._cleanupStartupTimerId);
+      this._cleanupStartupTimerId = null;
     }
     this._nextRunAt = null;
     if (this._activeRunPromise) {
