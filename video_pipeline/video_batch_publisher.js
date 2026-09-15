@@ -115,6 +115,7 @@ class VideoBatchPublisher {
     this.destinationAccessCheck = typeof config.destinationAccessCheck === 'function' ? config.destinationAccessCheck : null;
     this._accessibleChatIds = null;
     this._accessCheckedAt = 0;
+    this._peerEntityCache = new Map();
 
     this._validateStagingDestination(this.stagingChatId);
   }
@@ -910,6 +911,21 @@ class VideoBatchPublisher {
     });
   }
 
+  async _resolveEntityCached(client, identifier) {
+    if (!client || typeof client.getEntity !== 'function' || !identifier) return identifier;
+    const key = String(identifier).toLowerCase();
+    const cached = this._peerEntityCache.get(key);
+    if (cached && (Date.now() - cached.cachedAt < 3600000)) {
+      return cached.entity;
+    }
+    const entity = await client.getEntity(identifier);
+    if (this._peerEntityCache.size >= 100) {
+      this._peerEntityCache.delete(this._peerEntityCache.keys().next().value);
+    }
+    this._peerEntityCache.set(key, { entity, cachedAt: Date.now() });
+    return entity;
+  }
+
   /**
    * Internal wrapper to call injected Telegram client.
    */
@@ -924,7 +940,15 @@ class VideoBatchPublisher {
     }
 
     if (typeof client.sendFile === 'function') {
-      return client.sendFile(destinationId, {
+      let target = destinationId;
+      if (typeof client.getEntity === 'function' && typeof destinationId === 'string' && (destinationId.startsWith('@') || isNaN(Number(destinationId)))) {
+        try {
+          target = await this._resolveEntityCached(client, destinationId);
+        } catch (e) {
+          target = destinationId;
+        }
+      }
+      return client.sendFile(target, {
         file: filePath,
         caption
       });

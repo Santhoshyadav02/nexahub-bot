@@ -951,6 +951,7 @@ class BatchCycleManager {
       const cycleActive = this._isCycleActive();
       const downloads = await this._sweepDownloadsDir(now, { cycleActive });
       const parts = this._sweepUploadPartsDir(now);
+      this._sweepQuarantineFiles(now);
       console.log(`${LOG_PREFIX} Scheduled cleanup${cycleActive ? ' (cycle active - in-use files kept)' : ''}: `
         + `removed ${downloads.deleted} download file(s), freed ${(downloads.freedBytes / (1024 * 1024)).toFixed(1)} MB, `
         + `removed ${parts.deleted} upload part dir(s).`);
@@ -961,6 +962,30 @@ class BatchCycleManager {
     } finally {
       this._cleanupRunning = false;
     }
+  }
+
+  _sweepQuarantineFiles(now = Date.now()) {
+    const summary = { deleted: 0 };
+    const targets = [this.stateDir, this.outputDir].filter(Boolean);
+    const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
+    for (const dir of targets) {
+      if (!fs.existsSync(dir)) continue;
+      try {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          if (f.includes('.corrupt-')) {
+            const p = path.join(dir, f);
+            try {
+              if (now - fs.statSync(p).mtimeMs > maxAgeMs) {
+                fs.unlinkSync(p);
+                summary.deleted++;
+              }
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+    }
+    return summary;
   }
 
   _startCleanupTimer() {

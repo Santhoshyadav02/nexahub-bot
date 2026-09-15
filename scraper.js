@@ -289,24 +289,30 @@ async function refreshTelegramPosts() {
       totalSkipped += skipped;
       if (r.history_status === "ERROR") totalErrors++;
 
-      console.log(`[${idx + 1}/${results.length}] ${r.channel_name}`);
-      console.log(`Existing before: ${existingBefore}`);
-      console.log(`Fetched: ${fetched}`);
-      console.log(`New: ${newPosts}`);
-      console.log(`Inserted: ${inserted}`);
-      console.log(`Duplicates skipped: ${skipped}`);
-      console.log(`Existing after: ${existingAfter}\n`);
+      if (totalNew > 0 || totalErrors > 0) {
+        console.log(`[${idx + 1}/${results.length}] ${r.channel_name}`);
+        console.log(`Existing before: ${existingBefore}`);
+        console.log(`Fetched: ${fetched}`);
+        console.log(`New: ${newPosts}`);
+        console.log(`Inserted: ${inserted}`);
+        console.log(`Duplicates skipped: ${skipped}`);
+        console.log(`Existing after: ${existingAfter}\n`);
+      }
     });
 
-    console.log("==========================================");
-    console.log("📡 MTProto Periodic Sync: SYNC COMPLETE");
-    console.log(`Channels checked : ${results.length}`);
-    console.log(`Messages fetched : ${totalFetched}`);
-    console.log(`New messages     : ${totalNew}`);
-    console.log(`Inserted         : ${totalInserted}`);
-    console.log(`Duplicates skip  : ${totalSkipped}`);
-    console.log(`Errors           : ${totalErrors}`);
-    console.log("==========================================\n");
+    if (totalNew > 0 || totalErrors > 0) {
+      console.log("==========================================");
+      console.log("📡 MTProto Periodic Sync: SYNC COMPLETE");
+      console.log(`Channels checked : ${results.length}`);
+      console.log(`Messages fetched : ${totalFetched}`);
+      console.log(`New messages     : ${totalNew}`);
+      console.log(`Inserted         : ${totalInserted}`);
+      console.log(`Duplicates skip  : ${totalSkipped}`);
+      console.log(`Errors           : ${totalErrors}`);
+      console.log("==========================================\n");
+    } else {
+      console.log(`📡 MTProto Periodic Sync: ${results.length} channels verified, ${totalFetched} messages scanned, 0 new updates (healthy).`);
+    }
 
     const updateLog = {
       lastChecked: new Date().toISOString(),
