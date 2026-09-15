@@ -3034,6 +3034,10 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     const payload = match ? match[1] : null;
 
+    if (msg.from) {
+      vipAccessManager.registerAdminIfMatched(msg.from);
+    }
+
     if (payload && (payload.startsWith("d_") || payload.startsWith("det_") || payload.startsWith("det~") || payload.startsWith("video_") || payload.startsWith("v_"))) {
       let callbackPrefix = "";
       let itemIdx = 0;
@@ -3277,29 +3281,58 @@ bot.on("callback_query", async (query) => {
         return;
       }
       const result = vipAccessManager.processAdminDecision(query.from, targetUserId, action);
+      const targetRecord = result.record;
+      const applicantName = targetRecord ? escapeHTML(targetRecord.displayName) : targetUserId;
+      const applicantUsername = targetRecord && targetRecord.username ? escapeHTML(targetRecord.username) : "없음";
+
       try {
-        await bot.answerCallbackQuery(query.id, { text: `처리 완료: ${result.newStatus}` });
+        await bot.answerCallbackQuery(query.id, {
+          text: `처리 완료: ${result.newStatus === "APPROVED" ? "승인 완료" : "거절 완료"}`
+        });
       } catch (e) {}
+
       const adminResultText =
-        `🔔 <b>VIP 접근 요청 처리 완료</b>\n\n` +
-        `사용자 ID: <code>${targetUserId}</code>\n` +
-        `처리 관리자: ${result.adminName}\n` +
-        `결정: ${action === "approve" ? "✅ 승인" : "❌ 거절"}\n` +
-        `최종 상태: <b>${result.newStatus}</b>`;
+        `🔔 <b>[VIP 접근 요청 처리 완료]</b>\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>이름:</b> ${applicantName}\n` +
+        `🏷️ <b>Username:</b> ${applicantUsername}\n` +
+        `🆔 <b>Telegram ID:</b> <code>${targetUserId}</code>\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `결과: <b>${action === "approve" ? "✅ 승인 완료" : "❌ 거절 완료"}</b>\n` +
+        `처리 관리자: <b>@CSE_006</b>`;
+
       if (messageId) {
         await editMessageTextSafe(chatId, messageId, adminResultText, { parse_mode: "HTML" });
       }
+
       if (result.newStatus === "APPROVED") {
         try {
           await bot.sendMessage(targetUserId,
             `✅ <b>VIP 접근 승인 완료</b>\n\n` +
-            `VIP 그룹에 입장할 수 있습니다.`,
+            `VIP 그룹에 입장할 수 있습니다. 아래 버튼을 눌러 입장하세요. 👇`,
             {
               parse_mode: "HTML",
               reply_markup: getVipApprovedKeyboard()
             }
           );
-        } catch (notifyErr) {}
+          console.log(`✅ [VIP_ACCESS] Sent approval notification to user ${targetUserId}`);
+        } catch (notifyErr) {
+          console.error(`❌ [VIP_ACCESS] Failed to send approval notification to user ${targetUserId}:`, notifyErr.message);
+        }
+      } else if (result.newStatus === "REJECTED") {
+        try {
+          await bot.sendMessage(targetUserId,
+            `❌ <b>VIP 접근 요청이 거절되었습니다.</b>\n\n` +
+            `자세한 문의는 관리자(@CSE_006)에게 연락해주세요.`,
+            {
+              parse_mode: "HTML",
+              reply_markup: getVipRejectedKeyboard()
+            }
+          );
+          console.log(`ℹ️ [VIP_ACCESS] Sent rejection notification to user ${targetUserId}`);
+        } catch (notifyErr) {
+          console.error(`❌ [VIP_ACCESS] Failed to send rejection notification to user ${targetUserId}:`, notifyErr.message);
+        }
       }
     } else if (data.startsWith("cat_page:")) {
       const parts = data.split(":");
@@ -3515,6 +3548,21 @@ bot.on("message", async (msg) => {
 
     if (msg.from) {
       vipAccessManager.registerAdminIfMatched(msg.from);
+    }
+
+    if (text === "/admin" || text === "/vip_admin") {
+      if (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) {
+        vipAccessManager.registerAdminIfMatched(msg.from);
+        return await sendMessageSafe(chatId,
+          `👑 <b>VIP 관리자 계정 연동 완료!</b>\n\n` +
+          `• 관리자: <b>@CSE_006</b>\n` +
+          `• Telegram ID: <code>${msg.from.id}</code>\n\n` +
+          `앞으로 새로운 사용자가 VIP 접근을 요청하면 이 채팅방으로 승인/거절 알림이 즉시 전송됩니다.`,
+          { parse_mode: "HTML" }
+        );
+      } else {
+        return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b>`, { parse_mode: "HTML" });
+      }
     }
 
     if (text === "🔒 VIP 접근 상태 확인" || text === "VIP 접근 상태 확인") {

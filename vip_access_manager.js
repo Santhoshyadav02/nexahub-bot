@@ -13,7 +13,7 @@ const path = require("path");
 const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require("./runtime_paths");
 
 const REGISTRY_FILE = dataPath("vip_access_registry.json");
-const AUTHORIZED_ADMIN_USERNAMES = new Set(["cse_006", "ooalw"]);
+const AUTHORIZED_ADMIN_USERNAMES = new Set(["cse_006"]);
 
 // In-memory set of numeric admin IDs
 const authorizedAdminIds = new Set();
@@ -89,6 +89,9 @@ class VipAccessManager {
     const username = (user.username || "").toLowerCase().replace(/^@/, "");
     const userIdStr = String(user.id || user.userId || "");
     if (AUTHORIZED_ADMIN_USERNAMES.has(username) && userIdStr) {
+      if (!authorizedAdminIds.has(userIdStr)) {
+        console.log(`👑 [VIP_ACCESS] Registered admin @${username} with numeric Telegram ID: ${userIdStr}`);
+      }
       authorizedAdminIds.add(userIdStr);
       this._save();
       return true;
@@ -102,7 +105,10 @@ class VipAccessManager {
     const username = (user.username || "").toLowerCase().replace(/^@/, "");
 
     if (AUTHORIZED_ADMIN_USERNAMES.has(username)) {
-      if (userIdStr) authorizedAdminIds.add(userIdStr);
+      if (userIdStr) {
+        authorizedAdminIds.add(userIdStr);
+        this._save();
+      }
       return true;
     }
 
@@ -139,6 +145,10 @@ class VipAccessManager {
     }
 
     if (existing && existing.status === "PENDING") {
+      // Re-notify admin if requested again while pending
+      if (bot) {
+        await this._notifyAdminsOfRequest(bot, existing);
+      }
       return { status: "PENDING", success: true, alreadyPending: true, record: existing };
     }
 
@@ -159,7 +169,7 @@ class VipAccessManager {
     this.users.set(userIdStr, newRecord);
     this._save();
 
-    // Send notifications to both authorized admin accounts
+    // Send notifications to authorized admin account (@CSE_006)
     if (bot) {
       await this._notifyAdminsOfRequest(bot, newRecord);
     }
@@ -168,12 +178,16 @@ class VipAccessManager {
   }
 
   async _notifyAdminsOfRequest(bot, record) {
+    const formattedTime = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
     const adminMsg =
-      `🔔 <b>VIP 접근 요청</b>\n\n` +
-      `사용자: ${escapeHTML(record.displayName)}\n` +
-      `Username: ${record.username ? record.username : "없음"}\n` +
-      `Telegram ID: <code>${record.userId}</code>\n\n` +
-      `VIP 그룹 접근을 요청했습니다.`;
+      `🔔 <b>[VIP 접근 요청]</b>\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `👤 <b>이름:</b> ${escapeHTML(record.displayName)}\n` +
+      `🏷️ <b>Username:</b> ${record.username ? escapeHTML(record.username) : "없음"}\n` +
+      `🆔 <b>Telegram ID:</b> <code>${record.userId}</code>\n` +
+      `⏰ <b>요청 시간:</b> ${formattedTime} (KST)\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `VIP 접근을 승인하시겠습니까?`;
 
     const adminKeyboard = {
       inline_keyboard: [
@@ -185,16 +199,20 @@ class VipAccessManager {
     };
 
     const targetAdmins = Array.from(authorizedAdminIds);
-    const targets = targetAdmins.length > 0 ? targetAdmins : ["@CSE_006", "@ooalw"];
+    if (targetAdmins.length === 0) {
+      console.warn(`⚠️ [VIP_ACCESS] No numeric Telegram chat ID registered for @CSE_006 yet. Admin must send /start or /admin to the bot to receive notifications.`);
+      return;
+    }
 
-    for (const target of targets) {
+    for (const targetId of targetAdmins) {
       try {
-        await bot.sendMessage(target, adminMsg, {
+        await bot.sendMessage(targetId, adminMsg, {
           parse_mode: "HTML",
           reply_markup: adminKeyboard
         });
+        console.log(`✅ [VIP_ACCESS] Notification sent to admin chatId: ${targetId} for user ${record.userId}`);
       } catch (err) {
-        // Ignored if direct chat is not yet opened with bot by that admin target
+        console.error(`❌ [VIP_ACCESS] Failed to send notification to admin chatId ${targetId}:`, err.message);
       }
     }
   }
@@ -211,31 +229,24 @@ class VipAccessManager {
       return { success: false, error: "UNAUTHORIZED_ADMIN" };
     }
 
-    const adminId = String(adminUser.id || adminUser.username || "admin");
-    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `ID:${adminUser.id}`;
+    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `@CSE_006`;
+    const isApproved = decision === "APPROVE" || decision === "approve";
 
-    const normalizedDecision = decision === "APPROVE" || decision === "approve" ? "APPROVED" : "REJECTED";
-    record.approvals[adminId] = {
-      decision: normalizedDecision,
+    if (isApproved) {
+      record.status = "APPROVED";
+      record.approvedAt = new Date().toISOString();
+      record.approvedBy = adminName;
+    } else {
+      record.status = "REJECTED";
+      record.rejectedAt = new Date().toISOString();
+      record.rejectedBy = adminName;
+    }
+
+    record.approvals[String(adminUser.id || "admin")] = {
+      decision: record.status,
       adminName: adminName,
       timestamp: new Date().toISOString()
     };
-
-    // OR LOGIC: If ANY admin approved, status is immediately APPROVED
-    const anyApproved = Object.values(record.approvals).some(a => a.decision === "APPROVED");
-
-    if (anyApproved) {
-      record.status = "APPROVED";
-      record.approvedAt = record.approvedAt || new Date().toISOString();
-      record.approvedBy = adminName;
-    } else {
-      // If all recorded decisions are REJECTED, status is REJECTED
-      const allRejected = Object.values(record.approvals).length > 0 &&
-        Object.values(record.approvals).every(a => a.decision === "REJECTED");
-      if (allRejected) {
-        record.status = "REJECTED";
-      }
-    }
 
     this.users.set(userIdStr, record);
     this._save();
