@@ -1345,7 +1345,7 @@ function getPersistentNavigationKeyboard() {
     keyboard: [
       [
         { text: "🏠 홈" },
-        { text: "ℹ️ 정보" },
+        { text: "🔒 VIP 접근 상태 확인" },
         { text: "🗑️ 기록" }
       ]
     ],
@@ -2667,13 +2667,18 @@ async function getCategoryHubKeyboard() {
 function getVipCardText() {
   return (
     `🔐 <b>VIP 그룹입장</b>\n\n` +
-    `VIP 그룹 이용을 위해 아래 절차를 진행해주세요.\n` +
-    `1️⃣ 오리온 회원가입 🔗 <a href="https://orion5555.com">https://orion5555.com</a>\n` +
-    `2️⃣ 추천인 red\n` +
-    `3️⃣ 1만원 이상 플레이 후 인증\n` +
-    `📸 인증샷을 @ooalw 로 보내주세요.\n` +
-    `✅ 확인이 완료되면 VIP 그룹 초대 링크를 보내드립니다.\n` +
-    `━━━━━━━━━━━━━━`
+    `VIP 그룹 이용을 위해 아래 절차를 진행해주세요.\n\n` +
+    `① 오리온 회원가입\n` +
+    `   <a href="https://orion5555.com">https://orion5555.com</a>\n\n` +
+    `② 추천인\n` +
+    `   red\n\n` +
+    `③ 1만원 이상 플레이 후 인증\n\n` +
+    `📸 인증샷을 @ooalw 로 보내주세요.\n\n` +
+    `━━━━━━━━━━━━━━━━\n\n` +
+    `✅ 확인이 완료되면\n` +
+    `VIP 그룹 초대 링크를 보내드립니다.\n\n` +
+    `🔒 승인된 사용자만 VIP 그룹에\n` +
+    `접근할 수 있습니다.`
   );
 }
 
@@ -3346,18 +3351,8 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "ℹ️ About" || text === "ℹ️ 정보") {
-      const aboutText =
-        `ℹ️ <b>NexaHub 정보</b>\n\n` +
-        `NexaHub는 빠르고 지능적인 텔레그램 리소스 검색 엔진입니다.\n\n` +
-        `• 키워드를 전송하여 그룹, 채널, 동영상을 검색할 수 있습니다.\n` +
-        `• 핫 토픽, 실시간 검색어, 속보를 탐색할 수 있습니다.\n` +
-        `• 추천 미디어 및 채널 링크를 즉시 이용할 수 있습니다.`;
-
-      await sendMessageSafe(chatId, aboutText, {
-        parse_mode: "HTML",
-        reply_markup: getPersistentNavigationKeyboard()
-      });
+    if (text === "🔒 VIP 접근 상태 확인" || text === "VIP 접근 상태 확인" || text === "ℹ️ About" || text === "ℹ️ 정보") {
+      await renderVipScreen(chatId);
       return;
     }
 
