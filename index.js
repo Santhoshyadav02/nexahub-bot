@@ -2665,6 +2665,27 @@ async function getCategoryHubKeyboard() {
   return { inline_keyboard: rows };
 }
 
+function getVipLockedText() {
+  return (
+    `🔒 <b>VIP 접근 승인이 필요합니다.</b>\n\n` +
+    `VIP 카드 상세 안내 및 전용 그룹에 접근하려면 관리자(@CSE_006)의 승인이 필요합니다.\n\n` +
+    `아래 버튼을 눌러 승인을 요청하세요. 👇`
+  );
+}
+
+function getVipLockedKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "📩 VIP 접근 요청", callback_data: "vip_request_access" }
+      ],
+      [
+        { text: "🏠 메인 메뉴", callback_data: "menu" }
+      ]
+    ]
+  };
+}
+
 function getVipInstructionText() {
   return (
     `🔐 <b>VIP 그룹입장</b>\n\n` +
@@ -2676,10 +2697,8 @@ function getVipInstructionText() {
     `③ 1만원 이상 플레이 후 인증\n\n` +
     `📸 인증샷을 @ooalw 로 보내주세요.\n\n` +
     `━━━━━━━━━━━━━━━━\n\n` +
-    `✅ 확인이 완료되면\n` +
-    `VIP 그룹 초대 링크를 보내드립니다.\n\n` +
-    `🔒 승인된 사용자만 VIP 그룹에\n` +
-    `접근할 수 있습니다.`
+    `✅ 관리자 승인이 완료되었습니다!\n` +
+    `아래 버튼을 눌러 VIP 그룹에 입장하세요. 👇`
   );
 }
 
@@ -2689,7 +2708,7 @@ function getVipInstructionKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "📩 VIP 접근 요청", callback_data: "vip_request_access" }
+        { text: "🔐 VIP 그룹 입장", url: vipAccessManager.getVipGroupLink() }
       ],
       [
         { text: "🔗 오리온 바로가기", url: "https://orion5555.com" },
@@ -2703,31 +2722,13 @@ function getVipInstructionKeyboard() {
 }
 
 const getVipCardKeyboard = getVipInstructionKeyboard;
-
-function getVipApprovedText() {
-  return (
-    `✅ <b>VIP 접근 승인 완료</b>\n\n` +
-    `VIP 그룹에 입장할 수 있습니다.`
-  );
-}
-
-function getVipApprovedKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: "🔐 VIP 그룹 입장", url: vipAccessManager.getVipGroupLink() }
-      ],
-      [
-        { text: "🏠 메인 메뉴", callback_data: "menu" }
-      ]
-    ]
-  };
-}
+const getVipApprovedText = getVipInstructionText;
+const getVipApprovedKeyboard = getVipInstructionKeyboard;
 
 function getVipPendingText() {
   return (
     `⏳ <b>VIP 접근 승인 대기 중입니다.</b>\n\n` +
-    `관리자 확인 후 이용할 수 있습니다.`
+    `관리자(@CSE_006) 확인 후 승인되면 VIP 카드 상세 정보 및 그룹 링크가 잠금 해제됩니다.`
   );
 }
 
@@ -2735,7 +2736,7 @@ function getVipPendingKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "🔄 다시 확인", callback_data: "screen:vip_status" }
+        { text: "🔄 다시 확인", callback_data: "screen:vip" }
       ],
       [
         { text: "🏠 메인 메뉴", callback_data: "menu" }
@@ -2746,7 +2747,9 @@ function getVipPendingKeyboard() {
 
 function getVipRejectedText() {
   return (
-    `❌ <b>VIP 접근 권한이 없습니다.</b>`
+    `❌ <b>VIP 접근 권한이 거절되었습니다.</b>\n\n` +
+    `관리자의 확인 결과 승인되지 않았습니다.\n` +
+    `문의 사항은 관리자(@CSE_006)에게 연락해주세요.`
   );
 }
 
@@ -2754,7 +2757,7 @@ function getVipRejectedKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "📩 VIP 접근 요청", callback_data: "vip_request_access" }
+        { text: "📩 VIP 재요청", callback_data: "vip_request_access" }
       ],
       [
         { text: "🏠 메인 메뉴", callback_data: "menu" }
@@ -2776,9 +2779,12 @@ async function renderVipScreen(chatId, messageId = null, user = null) {
     if (status === "PENDING") {
       text = getVipPendingText();
       keyboard = getVipPendingKeyboard();
+    } else if (status === "REJECTED") {
+      text = getVipRejectedText();
+      keyboard = getVipRejectedKeyboard();
     } else {
-      text = getVipInstructionText();
-      keyboard = getVipInstructionKeyboard();
+      text = getVipLockedText();
+      keyboard = getVipLockedKeyboard();
     }
   }
 
@@ -2795,31 +2801,7 @@ async function renderVipScreen(chatId, messageId = null, user = null) {
 }
 
 async function renderVipStatusScreen(chatId, messageId = null, user = null) {
-  const userId = user ? (user.id || user.userId) : chatId;
-  const status = vipAccessManager.getVipStatus(userId);
-
-  let text, keyboard;
-  if (status === "APPROVED") {
-    text = getVipApprovedText();
-    keyboard = getVipApprovedKeyboard();
-  } else if (status === "PENDING") {
-    text = getVipPendingText();
-    keyboard = getVipPendingKeyboard();
-  } else {
-    text = getVipRejectedText();
-    keyboard = getVipRejectedKeyboard();
-  }
-
-  const opts = {
-    parse_mode: "HTML",
-    disable_web_page_preview: false,
-    reply_markup: keyboard
-  };
-
-  if (messageId) {
-    return await editMessageTextSafe(chatId, messageId, text, opts);
-  }
-  return await sendMessageSafe(chatId, text, opts);
+  return await renderVipScreen(chatId, messageId, user);
 }
 
 async function getTrendingKeyboard() {
@@ -3702,6 +3684,8 @@ module.exports = {
   getVipPendingKeyboard,
   getVipRejectedText,
   getVipRejectedKeyboard,
+  getVipLockedText,
+  getVipLockedKeyboard,
   renderVipScreen,
   renderVipStatusScreen,
   vipAccessManager,
