@@ -106,6 +106,12 @@ VIDEO_PIPELINE_DOWNLOAD_MAX_BYTES=107374182400
 
 Then `pm2 restart nexahub-bot --update-env` and watch `pm2 logs nexahub-bot | grep -E "VIDEO_PIPELINE|BATCH_CYCLE|MTPROTO_VIDEO"`. Files land in `/var/lib/nexahub/video_pipeline/downloads`; anything above `VIDEO_PIPELINE_MTPROTO_MAX_PART_BYTES` is split with ffmpeg stream copy (no re-encode) into numbered parts under `/var/lib/nexahub/video_pipeline/upload_parts`, which are deleted after upload. A `BLOCKED: ... bot-verification` line in the log means the verification expired: repeat steps 1–3; the next scheduled cycle picks up again.
 
+**Health check and SSH protection:**
+
+- `deploy/healthcheck.sh` runs from root's crontab every 5 minutes (`*/5 * * * * /bin/bash /opt/nexahub-bot/deploy/healthcheck.sh`). It only reports: bot not online, less than 400 MB available memory, the verified Chrome above 40 processes (leaked tabs), `nexahub-chrome` inactive, disk ≥ 85 %, or load above 4× CPUs. Alerts go to `HEALTHCHECK_CHAT_ID` (else `ADMIN_USER_ID`) through `BOT_TOKEN`, at most once per hour per incident, plus a recovery message; history in `/var/lib/nexahub/healthcheck/alerts.log`. That chat must have started the bot once.
+- `fail2ban` (`/etc/fail2ban/jail.d/nexahub-sshd.local`) bans an IP for 1 h after 5 failed SSH logins in 10 min; add team IPs to `ignoreip`. `/etc/ssh/sshd_config.d/99-nexahub.conf` raises `MaxStartups` so brute-force bursts don't lock out real logins.
+- Deploy with `git pull --ff-only` (never `git reset --hard` or force-push) and keep `VIDEO_PIPELINE_WORKERS=2` on the 2 vCPU / 4 GB server.
+
 Notes: data-center IPs can still be refused by the site regardless of verification; only download content you have the rights to re-publish. Manage the browser with `systemctl restart nexahub-chrome` / `systemctl status nexahub-*`.
 
 ## 5. Run
