@@ -2724,8 +2724,8 @@ async function getTrendingKeyboard() {
   }
   rows.push([{ text: "🔄 새로고침", callback_data: "refresh_trending" }]);
 
-  // 4. 🌐 콘텐츠 허브 Header & 8 Category Cards (4 rows x 2 columns)
-  rows.push([{ text: "🌐 콘텐츠 허브", callback_data: "none" }]);
+  // 4. VIP 그룹입장 Header & 8 Category Cards (4 rows x 2 columns)
+  rows.push([{ text: "VIP 그룹입장", callback_data: "none" }]);
   const cats = getContentHubCategories();
   const catButtons = cats.map(c => ({
     text: (c.icon && c.icon.trim().length > 0) ? `${c.icon} ${c.title}` : c.title,
@@ -3337,7 +3337,7 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "📁 콘텐츠 허브" || text === "📂 콘텐츠 허브" || text === "콘텐츠 허브" || text === "🌐 콘텐츠 허브") {
+    if (text === "📁 콘텐츠 허브" || text === "📂 콘텐츠 허브" || text === "콘텐츠 허브" || text === "🌐 콘텐츠 허브" || text === "VIP 그룹입장") {
       const keyboard = await getCategoryHubKeyboard();
       const hubText = `🌐 <b>콘텐츠 허브</b>\n\n원하시는 카테고리를 선택하세요. 👇`;
       await sendMessageSafe(chatId, hubText, {
