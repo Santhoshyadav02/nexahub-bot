@@ -17,6 +17,7 @@ const sourceRegistry = require("./source_registry");
 const contentHubScraper = require("./content_hub_scraper");
 const { translateToKorean, detectSourceLanguage, captionTranslationCache } = require("./korean_caption_generator");
 const { getPipelineInstance } = require("./external_source_pipeline");
+const { vipAccessManager } = require("./vip_access_manager");
 
 
 
@@ -2664,7 +2665,7 @@ async function getCategoryHubKeyboard() {
   return { inline_keyboard: rows };
 }
 
-function getVipCardText() {
+function getVipInstructionText() {
   return (
     `🔐 <b>VIP 그룹입장</b>\n\n` +
     `VIP 그룹 이용을 위해 아래 절차를 진행해주세요.\n\n` +
@@ -2682,9 +2683,14 @@ function getVipCardText() {
   );
 }
 
-function getVipCardKeyboard() {
+const getVipCardText = getVipInstructionText;
+
+function getVipInstructionKeyboard() {
   return {
     inline_keyboard: [
+      [
+        { text: "📩 VIP 접근 요청", callback_data: "vip_request_access" }
+      ],
       [
         { text: "🔗 오리온 바로가기", url: "https://orion5555.com" },
         { text: "📸 인증샷 보내기 (@ooalw)", url: "https://t.me/ooalw" }
@@ -2696,9 +2702,114 @@ function getVipCardKeyboard() {
   };
 }
 
-async function renderVipScreen(chatId, messageId = null) {
-  const text = getVipCardText();
-  const keyboard = getVipCardKeyboard();
+const getVipCardKeyboard = getVipInstructionKeyboard;
+
+function getVipApprovedText() {
+  return (
+    `✅ <b>VIP 접근 승인 완료</b>\n\n` +
+    `VIP 그룹에 입장할 수 있습니다.`
+  );
+}
+
+function getVipApprovedKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🔐 VIP 그룹 입장", url: vipAccessManager.getVipGroupLink() }
+      ],
+      [
+        { text: "🏠 메인 메뉴", callback_data: "menu" }
+      ]
+    ]
+  };
+}
+
+function getVipPendingText() {
+  return (
+    `⏳ <b>VIP 접근 승인 대기 중입니다.</b>\n\n` +
+    `관리자 확인 후 이용할 수 있습니다.`
+  );
+}
+
+function getVipPendingKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🔄 다시 확인", callback_data: "screen:vip_status" }
+      ],
+      [
+        { text: "🏠 메인 메뉴", callback_data: "menu" }
+      ]
+    ]
+  };
+}
+
+function getVipRejectedText() {
+  return (
+    `❌ <b>VIP 접근 권한이 없습니다.</b>`
+  );
+}
+
+function getVipRejectedKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "📩 VIP 접근 요청", callback_data: "vip_request_access" }
+      ],
+      [
+        { text: "🏠 메인 메뉴", callback_data: "menu" }
+      ]
+    ]
+  };
+}
+
+async function renderVipScreen(chatId, messageId = null, user = null) {
+  const userId = user ? (user.id || user.userId) : chatId;
+  const isApproved = vipAccessManager.isVipApproved(userId);
+
+  let text, keyboard;
+  if (isApproved) {
+    text = getVipApprovedText();
+    keyboard = getVipApprovedKeyboard();
+  } else {
+    const status = vipAccessManager.getVipStatus(userId);
+    if (status === "PENDING") {
+      text = getVipPendingText();
+      keyboard = getVipPendingKeyboard();
+    } else {
+      text = getVipInstructionText();
+      keyboard = getVipInstructionKeyboard();
+    }
+  }
+
+  const opts = {
+    parse_mode: "HTML",
+    disable_web_page_preview: false,
+    reply_markup: keyboard
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, text, opts);
+  }
+  return await sendMessageSafe(chatId, text, opts);
+}
+
+async function renderVipStatusScreen(chatId, messageId = null, user = null) {
+  const userId = user ? (user.id || user.userId) : chatId;
+  const status = vipAccessManager.getVipStatus(userId);
+
+  let text, keyboard;
+  if (status === "APPROVED") {
+    text = getVipApprovedText();
+    keyboard = getVipApprovedKeyboard();
+  } else if (status === "PENDING") {
+    text = getVipPendingText();
+    keyboard = getVipPendingKeyboard();
+  } else {
+    text = getVipRejectedText();
+    keyboard = getVipRejectedKeyboard();
+  }
+
   const opts = {
     parse_mode: "HTML",
     disable_web_page_preview: false,
@@ -3132,13 +3243,64 @@ bot.on("callback_query", async (query) => {
         parse_mode: "HTML",
         reply_markup: keyboard,
       };
-      if (messageId) {
-        await editMessageTextSafe(chatId, messageId, text, opts);
-      } else {
-        await sendMessageSafe(chatId, text, opts);
-      }
     } else if (data === "screen:vip" || data === "vip_group" || data === "vip") {
-      await renderVipScreen(chatId, messageId);
+      await renderVipScreen(chatId, messageId, query.from);
+    } else if (data === "screen:vip_status" || data === "vip_status") {
+      await renderVipStatusScreen(chatId, messageId, query.from);
+    } else if (data === "vip_request_access") {
+      const res = await vipAccessManager.requestVipAccess(query.from, bot);
+      if (res.alreadyApproved) {
+        await renderVipScreen(chatId, messageId, query.from);
+      } else {
+        const pendingText =
+          `⏳ <b>VIP 접근 승인 대기 중입니다.</b>\n\n` +
+          `관리자 확인 후 이용할 수 있습니다.`;
+        const pendingKeyboard = getVipPendingKeyboard();
+        const opts = {
+          parse_mode: "HTML",
+          reply_markup: pendingKeyboard
+        };
+        if (messageId) {
+          await editMessageTextSafe(chatId, messageId, pendingText, opts);
+        } else {
+          await sendMessageSafe(chatId, pendingText, opts);
+        }
+      }
+    } else if (data.startsWith("vip_admin:")) {
+      const parts = data.split(":");
+      const action = parts[1];
+      const targetUserId = parts[2];
+      if (!vipAccessManager.isAuthorizedAdmin(query.from)) {
+        try {
+          await bot.answerCallbackQuery(query.id, { text: "⛔ 관리자 권한이 없습니다.", show_alert: true });
+        } catch (e) {}
+        return;
+      }
+      const result = vipAccessManager.processAdminDecision(query.from, targetUserId, action);
+      try {
+        await bot.answerCallbackQuery(query.id, { text: `처리 완료: ${result.newStatus}` });
+      } catch (e) {}
+      const adminResultText =
+        `🔔 <b>VIP 접근 요청 처리 완료</b>\n\n` +
+        `사용자 ID: <code>${targetUserId}</code>\n` +
+        `처리 관리자: ${result.adminName}\n` +
+        `결정: ${action === "approve" ? "✅ 승인" : "❌ 거절"}\n` +
+        `최종 상태: <b>${result.newStatus}</b>`;
+      if (messageId) {
+        await editMessageTextSafe(chatId, messageId, adminResultText, { parse_mode: "HTML" });
+      }
+      if (result.newStatus === "APPROVED") {
+        try {
+          await bot.sendMessage(targetUserId,
+            `✅ <b>VIP 접근 승인 완료</b>\n\n` +
+            `VIP 그룹에 입장할 수 있습니다.`,
+            {
+              parse_mode: "HTML",
+              reply_markup: getVipApprovedKeyboard()
+            }
+          );
+        } catch (notifyErr) {}
+      }
     } else if (data.startsWith("cat_page:")) {
       const parts = data.split(":");
       const catKey = parts[1];
@@ -3351,8 +3513,17 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "🔒 VIP 접근 상태 확인" || text === "VIP 접근 상태 확인" || text === "ℹ️ About" || text === "ℹ️ 정보") {
-      await renderVipScreen(chatId);
+    if (msg.from) {
+      vipAccessManager.registerAdminIfMatched(msg.from);
+    }
+
+    if (text === "🔒 VIP 접근 상태 확인" || text === "VIP 접근 상태 확인") {
+      await renderVipStatusScreen(chatId, null, msg.from);
+      return;
+    }
+
+    if (text === "ℹ️ About" || text === "ℹ️ 정보") {
+      await renderVipStatusScreen(chatId, null, msg.from);
       return;
     }
 
@@ -3377,7 +3548,7 @@ bot.on("message", async (msg) => {
     }
 
     if (text === "/vip" || text === "VIP 그룹입장" || text === "vip" || text === "VIP" || text === "🔐 VIP 그룹입장") {
-      await renderVipScreen(chatId);
+      await renderVipScreen(chatId, null, msg.from);
       return;
     }
 
@@ -3468,7 +3639,17 @@ module.exports = {
   getCategoryHubKeyboard,
   getVipCardText,
   getVipCardKeyboard,
+  getVipInstructionText,
+  getVipInstructionKeyboard,
+  getVipApprovedText,
+  getVipApprovedKeyboard,
+  getVipPendingText,
+  getVipPendingKeyboard,
+  getVipRejectedText,
+  getVipRejectedKeyboard,
   renderVipScreen,
+  renderVipStatusScreen,
+  vipAccessManager,
   getPersistentKeyboard,
   getPersistentNavigationKeyboard,
   clearUserHistory,
