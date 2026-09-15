@@ -108,7 +108,7 @@ Then `pm2 restart nexahub-bot --update-env` and watch `pm2 logs nexahub-bot | gr
 
 **Health check and SSH protection:**
 
-- `deploy/healthcheck.sh` runs from root's crontab every 5 minutes (`*/5 * * * * /bin/bash /opt/nexahub-bot/deploy/healthcheck.sh`). It only reports: bot not online, less than 400 MB available memory, the verified Chrome above 40 processes (leaked tabs), `nexahub-chrome` inactive, disk ≥ 85 %, or load above 4× CPUs. Alerts go to `HEALTHCHECK_CHAT_ID` (else `ADMIN_USER_ID`) through `BOT_TOKEN`, at most once per hour per incident, plus a recovery message; history in `/var/lib/nexahub/healthcheck/alerts.log`. That chat must have started the bot once.
+- `deploy/healthcheck.sh` runs from root's crontab every 5 minutes (`*/5 * * * * /bin/bash /opt/nexahub-bot/deploy/healthcheck.sh`). It only reports: bot not online, less than 400 MB available memory, the verified Chrome above 40 processes (leaked tabs), `nexahub-chrome` inactive, disk ≥ 85 %, or load above 4× CPUs. Alerts go to `HEALTHCHECK_CHAT_ID` through a separate alert bot (`HEALTHCHECK_BOT_TOKEN`, created with @BotFather) — never the production bot — at most once per hour per incident, plus a recovery message. Without both values the check only writes `/var/lib/nexahub/healthcheck/alerts.log`. The alert chat must have started the alert bot once.
 - `fail2ban` (`/etc/fail2ban/jail.d/nexahub-sshd.local`) bans an IP for 1 h after 5 failed SSH logins in 10 min; add team IPs to `ignoreip`. `/etc/ssh/sshd_config.d/99-nexahub.conf` raises `MaxStartups` so brute-force bursts don't lock out real logins.
 - Deploy with `git pull --ff-only` (never `git reset --hard` or force-push) and keep `VIDEO_PIPELINE_WORKERS=2` on the 2 vCPU / 4 GB server.
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # NexaHub VPS health check (run every 5 minutes from cron).
-# Alerts HEALTHCHECK_CHAT_ID (else ADMIN_USER_ID) via the bot's own BOT_TOKEN when the bot is down, memory
+# Alerts HEALTHCHECK_CHAT_ID through a separate alert bot (HEALTHCHECK_BOT_TOKEN) when the bot is down, memory
 # is nearly exhausted, the verified Chrome is leaking tabs, or the disk is
 # filling up. It never restarts anything itself - it only reports, and repeats
 # the same alert at most once per hour so a lasting problem doesn't spam.
@@ -15,10 +15,10 @@ REPEAT_SECONDS="${REPEAT_SECONDS:-3600}"
 
 mkdir -p "$STATE_DIR"
 env_value() { grep -E "^$1=" "$APP_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'"'\r'; }
-BOT_TOKEN="$(env_value BOT_TOKEN)"
-# A dedicated chat for alerts, so alerting doesn't require granting bot admin rights.
+# Alerts use a separate alert bot, never the production bot (BOT_TOKEN).
+# Without both values the check still runs and only writes alerts.log.
+BOT_TOKEN="$(env_value HEALTHCHECK_BOT_TOKEN)"
 ADMIN_ID="$(env_value HEALTHCHECK_CHAT_ID)"
-[ -n "$ADMIN_ID" ] || ADMIN_ID="$(env_value ADMIN_USER_ID)"
 
 problems=()
 
