@@ -2664,6 +2664,48 @@ async function getCategoryHubKeyboard() {
   return { inline_keyboard: rows };
 }
 
+function getVipCardText() {
+  return (
+    `🔐 <b>VIP 그룹입장</b>\n\n` +
+    `VIP 그룹 이용을 위해 아래 절차를 진행해주세요.\n` +
+    `1️⃣ 오리온 회원가입 🔗 <a href="https://orion5555.com">https://orion5555.com</a>\n` +
+    `2️⃣ 추천인 red\n` +
+    `3️⃣ 1만원 이상 플레이 후 인증\n` +
+    `📸 인증샷을 @ooalw 로 보내주세요.\n` +
+    `✅ 확인이 완료되면 VIP 그룹 초대 링크를 보내드립니다.\n` +
+    `━━━━━━━━━━━━━━`
+  );
+}
+
+function getVipCardKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🔗 오리온 바로가기", url: "https://orion5555.com" },
+        { text: "📸 인증샷 보내기 (@ooalw)", url: "https://t.me/ooalw" }
+      ],
+      [
+        { text: "🏠 메인 메뉴", callback_data: "menu" }
+      ]
+    ]
+  };
+}
+
+async function renderVipScreen(chatId, messageId = null) {
+  const text = getVipCardText();
+  const keyboard = getVipCardKeyboard();
+  const opts = {
+    parse_mode: "HTML",
+    disable_web_page_preview: false,
+    reply_markup: keyboard
+  };
+
+  if (messageId) {
+    return await editMessageTextSafe(chatId, messageId, text, opts);
+  }
+  return await sendMessageSafe(chatId, text, opts);
+}
+
 async function getTrendingKeyboard() {
   const rows = [];
 
@@ -2725,7 +2767,7 @@ async function getTrendingKeyboard() {
   rows.push([{ text: "🔄 새로고침", callback_data: "refresh_trending" }]);
 
   // 4. VIP 그룹입장 Header & 8 Category Cards (4 rows x 2 columns)
-  rows.push([{ text: "VIP 그룹입장", callback_data: "none" }]);
+  rows.push([{ text: "VIP 그룹입장", callback_data: "screen:vip" }]);
   const cats = getContentHubCategories();
   const catButtons = cats.map(c => ({
     text: (c.icon && c.icon.trim().length > 0) ? `${c.icon} ${c.title}` : c.title,
@@ -3090,6 +3132,8 @@ bot.on("callback_query", async (query) => {
       } else {
         await sendMessageSafe(chatId, text, opts);
       }
+    } else if (data === "screen:vip" || data === "vip_group" || data === "vip") {
+      await renderVipScreen(chatId, messageId);
     } else if (data.startsWith("cat_page:")) {
       const parts = data.split(":");
       const catKey = parts[1];
@@ -3337,7 +3381,12 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "📁 콘텐츠 허브" || text === "📂 콘텐츠 허브" || text === "콘텐츠 허브" || text === "🌐 콘텐츠 허브" || text === "VIP 그룹입장") {
+    if (text === "/vip" || text === "VIP 그룹입장" || text === "vip" || text === "VIP" || text === "🔐 VIP 그룹입장") {
+      await renderVipScreen(chatId);
+      return;
+    }
+
+    if (text === "📁 콘텐츠 허브" || text === "📂 콘텐츠 허브" || text === "콘텐츠 허브" || text === "🌐 콘텐츠 허브") {
       const keyboard = await getCategoryHubKeyboard();
       const hubText = `🌐 <b>콘텐츠 허브</b>\n\n원하시는 카테고리를 선택하세요. 👇`;
       await sendMessageSafe(chatId, hubText, {
@@ -3422,6 +3471,9 @@ module.exports = {
   getTrendingKeyboard,
   getBreakingNewsKeyboard,
   getCategoryHubKeyboard,
+  getVipCardText,
+  getVipCardKeyboard,
+  renderVipScreen,
   getPersistentKeyboard,
   getPersistentNavigationKeyboard,
   clearUserHistory,
