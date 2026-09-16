@@ -18,6 +18,7 @@ const contentHubScraper = require("./content_hub_scraper");
 const { translateToKorean, detectSourceLanguage, captionTranslationCache } = require("./korean_caption_generator");
 const { getPipelineInstance } = require("./external_source_pipeline");
 const { vipAccessManager } = require("./vip_access_manager");
+const { dailyAdminReporter } = require("./video_pipeline/daily_admin_reporter");
 
 
 
@@ -3389,6 +3390,21 @@ bot.on("callback_query", async (query) => {
       } else {
         await sendMessageSafe(chatId, panelText, panelOpts);
       }
+    } else if (data === "admin_daily_report") {
+      const isAuth = vipAccessManager.isAuthorizedAdmin(query.from) ||
+        (query.from && String(query.from.id) === "8781836301") ||
+        (query.from && String(query.from.id) === String(process.env.ADMIN_USER_ID));
+      if (!isAuth) {
+        try {
+          await bot.answerCallbackQuery(query.id, { text: "⛔ 관리자 권한이 없습니다.", show_alert: true });
+        } catch (e) {}
+        return;
+      }
+      try {
+        await bot.answerCallbackQuery(query.id, { text: "📊 24시간 보고서 생성 중..." });
+      } catch (e) {}
+      const report = dailyAdminReporter.generateReport(24);
+      await sendMessageSafe(chatId, report.htmlText, { parse_mode: "HTML" });
     } else if (data.startsWith("cat_page:")) {
       const parts = data.split(":");
       const catKey = parts[1];
@@ -3541,6 +3557,21 @@ bot.on("message", async (msg) => {
           parse_mode: "HTML",
           reply_markup: panelKeyboard
         });
+      } else {
+        return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b> (Username: @${msg.from ? msg.from.username : "none"}, ID: <code>${msg.from ? msg.from.id : ""}</code>)`, { parse_mode: "HTML" });
+      }
+    }
+
+    if (text === "/report" || text === "/daily_report" || text === "/pipeline_stats" || text === "/stats" || text === "/pipeline" || text === "/보고서" || text === "/일일보고서") {
+      const isAuth = (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) ||
+        (msg.from && String(msg.from.id) === "8781836301") ||
+        (msg.from && String(msg.from.id) === String(process.env.ADMIN_USER_ID)) ||
+        (msg.from && String(msg.from.id) === String(process.env.TELEGRAM_ADMIN_ID));
+
+      if (isAuth) {
+        if (msg.from) vipAccessManager.registerAdminIfMatched(msg.from);
+        const report = dailyAdminReporter.generateReport(24);
+        return await sendMessageSafe(chatId, report.htmlText, { parse_mode: "HTML" });
       } else {
         return await sendMessageSafe(chatId, `⛔ <b>관리자 권한이 없습니다.</b> (Username: @${msg.from ? msg.from.username : "none"}, ID: <code>${msg.from ? msg.from.id : ""}</code>)`, { parse_mode: "HTML" });
       }
@@ -3715,6 +3746,13 @@ if (isMainModule) {
     videoRuntime.start();
   } catch (videoErr) {
     console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
+  }
+
+  // 📊 Daily Admin Reporter (24-Hour Automated Report to @CSE_006)
+  try {
+    dailyAdminReporter.startDailyReportScheduler(bot, 24 * 60 * 60 * 1000);
+  } catch (repErr) {
+    console.error("❌ [DAILY_REPORTER] Scheduler startup failed:", repErr.message);
   }
 
   console.log("✅ NewsSearch Main Bot is running...");

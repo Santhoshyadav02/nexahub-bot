@@ -385,6 +385,7 @@ class VipAccessManager {
         ...actionButtons,
         navigationRow,
         [
+          { text: "📊 24h 파이프라인 보고서", callback_data: "admin_daily_report" },
           { text: "🔄 새로고침", callback_data: `admin_view:${statusFilter}` }
         ]
       ]
