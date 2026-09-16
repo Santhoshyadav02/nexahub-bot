@@ -123,10 +123,16 @@ function getSystemMetrics() {
 
 class DailyAdminReporter {
   constructor(config = {}) {
-    this.publishLedgerPath = config.publishLedgerPath || dataPath('video_pipeline', 'state', 'publish_state.json');
-    this.mediaLedgerPath = config.mediaLedgerPath || dataPath('video_pipeline', 'state', 'media_state.json');
-    this.batchStatePath = config.batchStatePath || dataPath('video_pipeline', 'state', 'batch_state.json');
-    this.downloadsDir = config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR || dataPath('video_pipeline', 'downloads');
+    const defaultStateDir = process.env.VIDEO_PIPELINE_STATE_DIR ||
+      (fs.existsSync('/var/lib/nexahub/video_pipeline/state') ? '/var/lib/nexahub/video_pipeline/state' : dataPath('video_pipeline', 'state'));
+
+    const defaultDownloadsDir = config.downloadsDir || process.env.VIDEO_PIPELINE_DOWNLOADS_DIR ||
+      (fs.existsSync('/var/lib/nexahub/video_pipeline/downloads') ? '/var/lib/nexahub/video_pipeline/downloads' : dataPath('video_pipeline', 'downloads'));
+
+    this.publishLedgerPath = config.publishLedgerPath || path.join(defaultStateDir, 'publish_state.json');
+    this.mediaLedgerPath = config.mediaLedgerPath || path.join(defaultStateDir, 'media_state.json');
+    this.batchStatePath = config.batchStatePath || path.join(defaultStateDir, 'batch_state.json');
+    this.downloadsDir = defaultDownloadsDir;
     this.downloadReportPath = config.downloadReportPath || path.join(this.downloadsDir, 'download_report.json');
     this.downloadSeenPath = config.downloadSeenPath || path.join(this.downloadsDir, 'download_seen.json');
 
