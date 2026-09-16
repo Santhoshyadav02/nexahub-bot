@@ -33,14 +33,14 @@ const { dataPath } = require('../runtime_paths');
 const LOG_PREFIX = '[VIDEO_PIPELINE_RUNTIME]';
 const ROOT_DIR = path.resolve(__dirname, '..');
 
-const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
+const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour (scaled for 70+ videos/day)
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;      // 20 minutes (whole acquisition)
 const DEFAULT_PAGE_TIMEOUT_SEC = 60;            // per page/download inside video-tools
 const DEFAULT_DISCOVERY_TARGET = 100;
 const DEFAULT_DISCOVERY_MAX = 150;
 const DEFAULT_MAX_PAGES = 50;
-const DEFAULT_MIN_SUCCESSFUL_VIDEOS = 15;
-const DEFAULT_MAX_SUCCESSFUL_VIDEOS = 25;
+const DEFAULT_MIN_SUCCESSFUL_VIDEOS = 3;
+const DEFAULT_MAX_SUCCESSFUL_VIDEOS = 10;
 // Hard ceiling on stop(): index.js force-exits after its own shutdown budget,
 // so the runtime must always hand control back well before that.
 const STOP_DEADLINE_MS = 7500;
@@ -145,7 +145,7 @@ class VideoPipelineRuntime {
     const envWorkers = Number(process.env.VIDEO_PIPELINE_WORKERS);
     this.workers = (config.workers && !isNaN(config.workers))
       ? config.workers
-      : (!isNaN(envWorkers) && envWorkers > 0 ? envWorkers : 1);
+      : (!isNaN(envWorkers) && envWorkers > 0 ? envWorkers : 4);
 
     const envDiscoveryTarget = Number(process.env.VIDEO_PIPELINE_DISCOVERY_TARGET);
     this.discoveryTarget = (config.discoveryTarget && !isNaN(config.discoveryTarget))

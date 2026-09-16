@@ -38,7 +38,7 @@ const { BatchState } = require('./batch_state');
 const { isPathInside } = require('./media_cleaner');
 
 const LOG_PREFIX = '[BATCH_CYCLE_MANAGER]';
-const DEFAULT_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours - production default, never hardcode a short test value here
+const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour - production default (scaled for 70+ videos/day)
 const DEFAULT_ACQUISITION_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_STARTUP_DELAY_MS = 60 * 1000;
 const DEFAULT_MAX_PUBLISH_ATTEMPTS = 3;
@@ -47,7 +47,7 @@ const DEFAULT_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024;
 const DEFAULT_STOP_ACTIVE_RUN_WAIT_MS = 1500;
 // Disk cleanup runs on its own timer so it still happens while a long cycle
 // makes the scheduler skip ticks.
-const DEFAULT_CLEANUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_CLEANUP_INITIAL_DELAY_MS = 10 * 60 * 1000;
 // Ledger states that mean a file's work is finished (safe to delete mid-cycle).
 const TERMINAL_MEDIA_STATES = new Set(['FAILED', 'DUPLICATE', 'ABANDONED', 'CLEANED']);
