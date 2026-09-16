@@ -76,7 +76,7 @@ function formatBytes(bytes) {
 }
 
 function getSystemMetrics() {
-  let diskFreeStr = '알 수 없음';
+  let diskFreeStr = 'Unknown';
   let diskTotalStr = '';
   let diskPercentStr = '';
 
@@ -93,7 +93,7 @@ function getSystemMetrics() {
           diskFreeStr = formatBytes(availKb * 1024);
           diskTotalStr = formatBytes(totalKb * 1024);
           const pct = Math.round((usedKb / totalKb) * 100);
-          diskPercentStr = `${pct}% 사용 중`;
+          diskPercentStr = `${pct}% used`;
         }
       }
     } else if (typeof fs.statfsSync === 'function') {
@@ -102,7 +102,7 @@ function getSystemMetrics() {
       const total = stat.blocks * stat.bsize;
       diskFreeStr = formatBytes(free);
       diskTotalStr = formatBytes(total);
-      diskPercentStr = `${Math.round(((total - free) / total) * 100)}% 사용 중`;
+      diskPercentStr = `${Math.round(((total - free) / total) * 100)}% used`;
     }
   } catch (e) {
     // fallback
@@ -287,40 +287,39 @@ class DailyAdminReporter {
 
     const workersCount = Number(process.env.VIDEO_PIPELINE_WORKERS || 4);
     const metrics = getSystemMetrics();
-    const formattedNowKst = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    const formattedNowUtc = new Date().toUTCString();
+    const formattedNowKst = new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'medium' });
 
     // Format channel breakdown lines
     const channelLines = channels.map((ch, idx) => {
       const cData = channelPublishCounts[ch.id] || { count: 0 };
       const numStr = String(idx + 1).padStart(2, ' ');
-      return `   ${numStr}. <b>${escapeHTML(ch.name)}</b>: <code>${cData.count}개 / ${cData.count} videos</code>`;
+      return `   ${numStr}. <b>${escapeHTML(ch.name)}</b>: <code>${cData.count} videos</code>`;
     }).join('\n');
 
     const htmlText =
-      `📊 <b>[NexaHub] 비디오 파이프라인 일일 보고서 (Video Pipeline Daily Report)</b>\n` +
+      `📊 <b>[NexaHub] Video Pipeline 24-Hour Daily Report</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📅 <b>일시 / Date:</b> ${formattedNowKst} (KST)\n` +
-      `⏱️ <b>집계 기준 / Period:</b> 최근 ${windowHours}시간 (Last ${windowHours} Hours)\n\n` +
-      `🌐 <b>1. Playwright 크롤링 &amp; 링크 생성 (Crawling &amp; Discovery)</b>\n` +
-      `• 누적 발견 링크 / Total Links Discovered: <b>${totalCrawledLinks}개 (posts)</b>\n` +
-      `• 대기 중 다운로드 파일 / Ready for Ingest: <b>${localReadyFilesCount}개 (files)</b>\n` +
-      `• 현재 진행 중 파트 / In-Flight Streaming: <b>${localInFlightPartsCount}개 (parts)</b>\n\n` +
-      `📥 <b>2. 비디오 다운로드 현황 (Video Download Status)</b>\n` +
-      `• 24시간 다운로드 / 24h Completed Downloads: <b>${downloadedInWindowCount}개</b> (${formatBytes(downloadedInWindowBytes)})\n` +
-      `• 활성 다운로드 워커 / Active Download Workers: <b>${workersCount}개 병렬 가동 중 (4 Parallel Workers)</b> 🚀\n` +
-      `• 다운로드 오류 / Download Errors: <b>${totalFailedInWindow}건 (errors)</b>\n\n` +
-      `📤 <b>3. 10개 채널별 비디오 업로드 &amp; 업데이트 (10-Channel Updates)</b>\n` +
-      `• 24시간 총 발행 완료 / 24h Total Published: <b>${totalPublishedInWindow}개 비디오 (videos)</b>\n` +
-      `• 채널별 상세 내역 / Channel Breakdown:\n` +
+      `📅 <b>Date:</b> ${formattedNowKst} (KST)\n` +
+      `⏱️ <b>Reporting Period:</b> Last ${windowHours} Hours\n\n` +
+      `🌐 <b>1. Playwright Crawling &amp; Link Discovery</b>\n` +
+      `• Total Links Discovered: <b>${totalCrawledLinks} posts</b>\n` +
+      `• Ready for Ingest (Downloaded): <b>${localReadyFilesCount} files</b>\n` +
+      `• In-Flight Streaming: <b>${localInFlightPartsCount} parts</b>\n\n` +
+      `📥 <b>2. Video Download Status</b>\n` +
+      `• 24h Completed Downloads: <b>${downloadedInWindowCount} videos</b> (${formatBytes(downloadedInWindowBytes)})\n` +
+      `• Active Download Workers: <b>${workersCount} Parallel Workers (Active)</b> 🚀\n` +
+      `• Download Errors: <b>${totalFailedInWindow} errors</b>\n\n` +
+      `📤 <b>3. 10-Channel Video Publishing &amp; Updates</b>\n` +
+      `• 24h Total Published: <b>${totalPublishedInWindow} videos</b>\n` +
+      `• Channel Breakdown (10 Channels):\n` +
       `${channelLines}\n\n` +
-      `🧹 <b>4. 디스크 클린업 &amp; 서버 상태 (Cleanup &amp; Server Status)</b>\n` +
-      `• 정리 완료된 미디어 / Media Files Cleaned: <b>${cleanedFilesCount}개</b> (${formatBytes(cleanedBytesFreed)} 용량 확보/freed)\n` +
-      `• 서버 남은 용량 / Free Disk Space: <b>${metrics.diskFree}</b> (${metrics.diskPercent})\n` +
-      `• 메모리 사용량 / RAM Usage: <b>${metrics.memory}</b>\n` +
-      `• 파이프라인 주기 / Cycle Interval: <b>1시간 주기 / 매시간 실행 (1 Hour / 24 cycles/day)</b>\n` +
+      `🧹 <b>4. Disk Cleanup &amp; Server Status</b>\n` +
+      `• Media Files Cleaned: <b>${cleanedFilesCount} files</b> (${formatBytes(cleanedBytesFreed)} freed)\n` +
+      `• Free Disk Space: <b>${metrics.diskFree}</b> (${metrics.diskPercent})\n` +
+      `• Memory Usage: <b>${metrics.memory}</b>\n` +
+      `• Pipeline Cycle Interval: <b>1-Hour Schedule (24 cycles/day)</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `💡 <i>관리자 명령어 / Admin Commands: /report, /stats, /waiting</i>`;
+      `💡 <i>Admin Commands: /report, /stats, /waiting</i>`;
 
     return {
       timestamp: formattedNowKst,

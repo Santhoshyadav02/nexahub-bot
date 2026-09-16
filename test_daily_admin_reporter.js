@@ -61,7 +61,7 @@ function runTests() {
   assert.strictEqual(rep.publishing.channels.DESTINATION_2.count, 1, 'DESTINATION_2 count must be 1');
   assert.strictEqual(rep.publishing.channels.DESTINATION_5.count, 1, 'DESTINATION_5 count must be 1');
   assert(rep.htmlText.includes('Romantic Vibe'), 'HTML must include channel name');
-  assert(rep.htmlText.includes('Playwright 크롤링'), 'HTML must include Playwright header');
+  assert(rep.htmlText.includes('Playwright Crawling'), 'HTML must include Playwright header');
 
   console.log('✅ Unit tests passed successfully!');
 
