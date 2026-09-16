@@ -456,11 +456,12 @@ class ContinuousPipeline:
                     elif self.url:
                         try:
                             collected = []
+                            new_unseen_collected = []
                             seen_this_cycle = set()
                             blocked = False
                             consecutive_empty_pages = 0
                             page_num = 1
-                            while len(collected) < self.target_links and page_num <= self.max_pages:
+                            while len(new_unseen_collected) < self.target_links and page_num <= self.max_pages:
                                 page_url = self._with_page_param(self.url, page_num) if page_num > 1 else self.url
                                 response = page.goto(page_url, wait_until="domcontentloaded")
                                 try:
@@ -486,6 +487,8 @@ class ContinuousPipeline:
                                 for u in new_on_page:
                                     seen_this_cycle.add(u)
                                     collected.append(u)
+                                    if u not in self.seen_post_links:
+                                        new_unseen_collected.append(u)
 
                                 if not extracted:
                                     consecutive_empty_pages += 1
@@ -496,7 +499,7 @@ class ContinuousPipeline:
                                     consecutive_empty_pages = 0
 
                                 print(f"[Producer] Page {page_num}: +{len(new_on_page)} link(s) "
-                                      f"(total collected {len(collected)}/{self.target_links})", flush=True)
+                                      f"(unseen {len(new_unseen_collected)}/{self.target_links}, total collected {len(collected)})", flush=True)
                                 page_num += 1
 
                             if not blocked:
