@@ -60,6 +60,41 @@ const CHANNEL_TOPIC_MAPPING = {
   '-1004483241550': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' }
 };
 
+const ALLOWED_USERNAMES = new Set(['tfccdet', 'ccsfvk', 'vsdxda', 'ccdjxc', 'ddkicr', 'cccddghhgf']);
+const ALLOWED_CHANNEL_IDS = new Set([
+  '-1004416217845', '4416217845',
+  '-1003780478806', '3780478806',
+  '-1003725861834', '3725861834',
+  '-1004419758275', '4419758275',
+  '-1004481385613', '4481385613',
+  '-1004483241550', '4483241550'
+]);
+
+function isStrictlyAllowedChannel(item) {
+  if (!item) return false;
+  const chId = String(item.channelId || '').trim();
+  const cleanId = chId.replace(/^-100/, '').replace(/^-/, '');
+  if (chId && !ALLOWED_CHANNEL_IDS.has(chId) && !ALLOWED_CHANNEL_IDS.has(cleanId)) {
+    return false;
+  }
+  const link = (item.directLink || item.url || '').toLowerCase();
+  if (
+    link.includes('bzd4wrf') || link.includes('cccsefk') ||
+    link.includes('e5brygh') || link.includes('sfgfem') ||
+    link.includes('4464504918') || link.includes('4486764871') ||
+    link.includes('4384169456') || link.includes('3786693669')
+  ) {
+    return false;
+  }
+  const uMatch = link.match(/t\.me\/([a-z0-9_]+)\//i);
+  if (uMatch && uMatch[1] && uMatch[1] !== 'c') {
+    if (!ALLOWED_USERNAMES.has(uMatch[1].toLowerCase())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const sharedHttpsAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 30000,
@@ -77,23 +112,12 @@ class VipTopicRouter {
   }
 
   _loadCardsData() {
-    const allowedChannelIds = new Set(Object.keys(CHANNEL_TOPIC_MAPPING));
-    const isAllowed = (it) => {
-      if (!it) return false;
-      if (it.channelId && !allowedChannelIds.has(String(it.channelId))) return false;
-      const link = (it.directLink || it.url || '').toLowerCase();
-      if (link.includes('bzd4wrf') || link.includes('cccsefk') || link.includes('e5brygh') || link.includes('sfgfem')) {
-        return false;
-      }
-      return true;
-    };
-
     try {
       if (fs.existsSync(this.cardsStateFile)) {
         const data = JSON.parse(fs.readFileSync(this.cardsStateFile, 'utf8'));
         if (data && data.categories) {
           for (const cat of Object.keys(data.categories)) {
-            data.categories[cat] = (data.categories[cat] || []).filter(isAllowed);
+            data.categories[cat] = (data.categories[cat] || []).filter(isStrictlyAllowedChannel);
           }
           return data;
         }
@@ -202,16 +226,7 @@ class VipTopicRouter {
    * Only Forward [다음 ➡️] and Backward [⬅️ 이전] buttons (Home button removed).
    */
   formatCategoryCard(category, page = 1, pageSize = 8) {
-    const allowedChannelIds = new Set(Object.keys(CHANNEL_TOPIC_MAPPING));
-    let items = (this.cardsData.categories[category] || []).filter(it => {
-      if (!it) return false;
-      if (it.channelId && !allowedChannelIds.has(String(it.channelId))) return false;
-      const link = (it.directLink || it.url || '').toLowerCase();
-      if (link.includes('bzd4wrf') || link.includes('cccsefk') || link.includes('e5brygh') || link.includes('sfgfem')) {
-        return false;
-      }
-      return true;
-    });
+    let items = (this.cardsData.categories[category] || []).filter(isStrictlyAllowedChannel);
 
     // Ensure 1 dedicated channel per topic (except ALL)
     if (category !== 'ALL' && TOPIC_PRIMARY_CHANNELS[category]) {

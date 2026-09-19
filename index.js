@@ -3583,11 +3583,11 @@ bot.on("message", async (msg) => {
       let category = "ALL";
       if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
       else if (threadId === TOPIC_THREAD_IDS.KR || threadId === 20) category = "KR";
-      else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 19) category = "JP";
-      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 18) category = "CN";
-      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 16) category = "18";
+      else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 14) category = "JP";
+      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17) category = "CN";
+      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8) category = "18";
       else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12) category = "AV";
-      else if (threadId === TOPIC_THREAD_IDS.GENERAL || threadId === 1) category = "GENERAL";
+      else category = "ALL";
 
       const { text: cardText, keyboard: cardKeyboard } = vipRouter.formatCategoryCard(category, 1);
       
