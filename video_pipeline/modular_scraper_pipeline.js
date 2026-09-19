@@ -263,8 +263,9 @@ class ModularScraperPipeline {
     // 2. Technical Validation
     const validation = await validateMediaFile(filePath, { allowRemuxFallback: false });
     if (!validation.valid) {
-      console.warn(`${LOG_PREFIX} Media validation failed for ${filePath}: ${validation.reason}`);
-      return { status: 'INVALID_MEDIA', reason: validation.reason };
+      const errMsg = validation.error || validation.reason || 'Unknown validation failure';
+      console.warn(`${LOG_PREFIX} Media validation failed for ${filePath}: ${errMsg}`);
+      return { status: 'INVALID_MEDIA', reason: errMsg };
     }
 
     // 3. Idempotency Check
