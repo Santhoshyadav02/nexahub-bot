@@ -199,6 +199,7 @@ class VipTopicRouter {
                     channelId: String(post.chat_id || ''),
                     messageId: post.message_id,
                     directLink: post.telegram_url || `https://t.me/${post.username}/${post.message_id}`,
+                    username: post.username,
                     category: cat,
                     publishedAt: post.published_at || new Date().toISOString()
                   };
@@ -218,6 +219,34 @@ class VipTopicRouter {
     }
 
     return data;
+  }
+
+  registerThreadMapping(threadId, category) {
+    if (!threadId || !category) return;
+    try {
+      const mapFile = path.join(this.stateDir, 'vip_topic_threads.json');
+      let map = {};
+      if (fs.existsSync(mapFile)) {
+        map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+      }
+      map[String(threadId)] = category;
+      fs.writeFileSync(mapFile, JSON.stringify(map, null, 2), 'utf8');
+      console.log(`${LOG_PREFIX} Dynamic topic thread mapped: Thread ${threadId} -> Category ${category}`);
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Failed to save thread mapping:`, e.message);
+    }
+  }
+
+  getCategoryForThread(threadId) {
+    if (!threadId) return null;
+    try {
+      const mapFile = path.join(this.stateDir, 'vip_topic_threads.json');
+      if (fs.existsSync(mapFile)) {
+        const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+        return map[String(threadId)] || null;
+      }
+    } catch (_) {}
+    return null;
   }
 
   _saveCardsData() {

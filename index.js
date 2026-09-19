@@ -3586,14 +3586,15 @@ bot.on("message", async (msg) => {
       else if (cleanText === "kr" || cleanText === "/kr") category = "KR";
       else if (cleanText === "jp" || cleanText === "/jp") category = "JP";
       else if (cleanText === "cn" || cleanText === "/cn") category = "CN";
-      else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18") category = "18";
+      else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18" || cleanText === "...") category = "18";
       else if (cleanText === "av" || cleanText === "/av") category = "AV";
+      else if (threadId && vipRouter.getCategoryForThread(threadId)) category = vipRouter.getCategoryForThread(threadId);
       else if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
       else if (threadId === TOPIC_THREAD_IDS.KR || threadId === 20) category = "KR";
-      else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 14) category = "JP";
-      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17 || threadId === 24 || threadId === 25 || threadId === 26 || threadId === 27) category = "CN";
-      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8 || threadId === 16) category = "18";
-      else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12) category = "AV";
+      else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 14 || threadId === 28 || threadId === 29 || threadId === 30 || threadId === 31 || threadId === 32 || threadId === 33 || threadId === 34 || threadId === 35) category = "JP";
+      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17 || threadId === 24 || threadId === 25 || threadId === 26 || threadId === 27 || threadId === 36 || threadId === 37 || threadId === 38 || threadId === 39) category = "CN";
+      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8 || threadId === 16 || threadId === 40 || threadId === 41 || threadId === 42) category = "18";
+      else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12 || threadId === 43 || threadId === 44 || threadId === 45) category = "AV";
       else category = "ALL";
 
       const { text: cardText, keyboard: cardKeyboard } = vipRouter.formatCategoryCard(category, 1);
