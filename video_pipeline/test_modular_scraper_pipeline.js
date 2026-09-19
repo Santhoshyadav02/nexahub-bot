@@ -57,19 +57,19 @@ async function runTests() {
     check('KR topic thread is 20', channels.javleak && channels.javleak.vipTopicThreadId === 20);
 
     // 3. JP (caption)
-    check('JP maps to @vsdxda (-1003725861834)', channels.caption && channels.caption.username === 'vsdxda' && channels.caption.chatId === '-1003725861834');
+    check('JP maps to @vsdxda (-1004486764871)', channels.caption && channels.caption.username === 'vsdxda' && channels.caption.chatId === '-1004486764871');
     check('JP topic thread is 14', channels.caption && channels.caption.vipTopicThreadId === 14);
 
     // 4. CN (javc)
-    check('CN maps to @ccdjxc (-1004419758275)', channels.javc && channels.javc.username === 'ccdjxc' && channels.javc.chatId === '-1004419758275');
+    check('CN maps to @ccdjxc (-1004481385613)', channels.javc && channels.javc.username === 'ccdjxc' && channels.javc.chatId === '-1004481385613');
     check('CN topic thread is 17', channels.javc && channels.javc.vipTopicThreadId === 17);
 
     // 5. 18.. (javmgs)
-    check('18.. maps to @ddkicr (-1004481385613)', channels.javmgs && channels.javmgs.username === 'ddkicr' && channels.javmgs.chatId === '-1004481385613');
+    check('18.. maps to @ddkicr (-1004419758275)', channels.javmgs && channels.javmgs.username === 'ddkicr' && channels.javmgs.chatId === '-1004419758275');
     check('18.. topic thread is 8', channels.javmgs && channels.javmgs.vipTopicThreadId === 8);
 
     // 6. AV (javm)
-    check('AV maps to @cccddghhgf (-1004483241550)', channels.javm && channels.javm.username === 'cccddghhgf' && channels.javm.chatId === '-1004483241550');
+    check('AV maps to @cccddghhgf (-1004384169456)', channels.javm && channels.javm.username === 'cccddghhgf' && channels.javm.chatId === '-1004384169456');
     check('AV topic thread is 12', channels.javm && channels.javm.vipTopicThreadId === 12);
   }
 
