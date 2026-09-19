@@ -31,13 +31,13 @@ const TOPIC_THREAD_IDS = {
 };
 
 const CATEGORY_DISPLAY_TITLES = {
-  ALL: '🌐 All',
-  BJ: '📺 BJ.',
-  KR: '🇰🇷 KR',
-  JP: '🇯🇵 JP',
-  CN: '🇨🇳 CN',
-  '18': '🔞 18..',
-  AV: '🎬 AV'
+  ALL: '🌐 ALL (전체 6개 채널 종합)',
+  BJ: '📺 BJ. (토끼 소녀 코스프레 데이트 · @tfccdet)',
+  KR: '🇰🇷 KR (로맨틱한 분위기💥 · @ccsfvk)',
+  JP: '🇯🇵 JP (모사 JP · @vsdxda)',
+  CN: '🇨🇳 CN (가랑이 CN · @ccdjxc)',
+  '18': '🔞 18.. (첩 · @ddkicr)',
+  AV: '🎬 AV (사키 미즈미 · @cccddghhgf)'
 };
 
 // Exactly 6 Dedicated Channels (1 per Category / Topic)
@@ -354,7 +354,8 @@ class VipTopicRouter {
         const num = startIndex + idx + 1;
         const link = item.directLink || item.url || '#';
         const title = (item.title || '동영상').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        text += `${num}. <a href="${link}">${title}</a>\n\n`;
+        const badge = (category === 'ALL' && item.category) ? `<b>[${item.category}]</b> ` : '';
+        text += `${num}. ${badge}<a href="${link}">${title}</a>\n\n`;
       });
     }
 
