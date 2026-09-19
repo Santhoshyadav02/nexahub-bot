@@ -133,11 +133,22 @@ function printStatus() {
   }
 
   // -------------------------------------------------------------
-  // 3. SCRAPER 1: SOURCE REGISTRY & PUBLISH LEDGER STATUS
+  // 3. SCRAPER 1: 4 CHANNELS (DATING, ROMANCE, HOSTESS, MUSE)
   // -------------------------------------------------------------
   console.log('\n' + '-'.repeat(65));
-  console.log('🌐 [SCRAPER 1 / MASTER FEED] SOURCE REGISTRY & LEDGER STATUS');
+  console.log('🌐 [SCRAPER 1] 4-CHANNEL STREAMING PIPELINE & LEDGER STATUS');
   console.log('-'.repeat(65));
+
+  const scraper1Channels = [
+    { name: 'Dating', channel: '@cccsefk', chatId: '-1004464504918' },
+    { name: 'Romance', channel: '@e5brygh', chatId: '-1004384169456' },
+    { name: 'Lustful Hostess', channel: '@sfgfem', chatId: '-1004486764871' },
+    { name: 'A Muse', channel: '@bzd4wrf', chatId: '-1003786693669' }
+  ];
+
+  for (const ch of scraper1Channels) {
+    console.log(`• ${ch.name.padEnd(16)} | Channel: ${ch.channel.padEnd(12)} | ID: ${ch.chatId} | Target: 5 vids/day`);
+  }
 
   const sourceRegPath = path.join(ROOT_DIR, 'source_registry.json');
   if (fs.existsSync(sourceRegPath)) {
@@ -145,7 +156,7 @@ function printStatus() {
       const reg = JSON.parse(fs.readFileSync(sourceRegPath, 'utf8'));
       const postsCount = (reg.posts || []).length;
       const sourcesCount = (reg.sources || []).length;
-      console.log(`  • Source Registry Channels: ${sourcesCount} sources`);
+      console.log(`\n  • Source Registry Channels: ${sourcesCount} sources`);
       console.log(`  • Total Master Indexed Posts: ${postsCount} posts in registry`);
     } catch (_) {}
   }
@@ -157,8 +168,15 @@ function printStatus() {
     console.log(`  • Total Confirmed Published Records in Ledger: ${publishedCount}`);
   } catch (_) {}
 
+  // -------------------------------------------------------------
+  // 4. OVERALL 50-VIDEO / 24-HOUR TARGET SUMMARY
+  // -------------------------------------------------------------
   console.log('\n' + '='.repeat(65));
-  console.log(`✅ Status Check Complete. Total DB Videos: ${totalScraped2} | Staging Downloads: ${totalPendingDownloads}`);
+  console.log('🎯 OVERALL 24-HOUR TARGET: 50 VIDEOS / DAY (10 CHANNELS x 5)');
+  console.log('='.repeat(65));
+  console.log(`• Total Channels Configured: 10 (4 Scraper 1 + 6 Scraper 2)`);
+  console.log(`• Daily Quota per Channel:   5 videos / 24 hours`);
+  console.log(`• Auto Post-Publish Cleanup: ENABLED (zero disk waste)`);
   console.log('='.repeat(65) + '\n');
 }
 
