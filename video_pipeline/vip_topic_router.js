@@ -112,31 +112,87 @@ class VipTopicRouter {
   }
 
   _loadCardsData() {
+    let data = null;
     try {
       if (fs.existsSync(this.cardsStateFile)) {
-        const data = JSON.parse(fs.readFileSync(this.cardsStateFile, 'utf8'));
+        data = JSON.parse(fs.readFileSync(this.cardsStateFile, 'utf8'));
         if (data && data.categories) {
           for (const cat of Object.keys(data.categories)) {
             data.categories[cat] = (data.categories[cat] || []).filter(isStrictlyAllowedChannel);
           }
-          return data;
         }
       }
     } catch (e) {
       console.warn(`${LOG_PREFIX} Could not load cards data:`, e.message);
     }
-    return {
-      categories: {
-        BJ: [],
-        KR: [],
-        JP: [],
-        CN: [],
-        '18': [],
-        AV: [],
-        ALL: []
-      },
-      updatedAt: new Date().toISOString()
-    };
+
+    if (!data || !data.categories) {
+      data = {
+        categories: {
+          BJ: [],
+          KR: [],
+          JP: [],
+          CN: [],
+          '18': [],
+          AV: [],
+          ALL: []
+        },
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    // Auto-seed from source_registry.json if any category is empty
+    const isAnyCategoryEmpty = Object.keys(CHANNEL_TOPIC_MAPPING).some(chId => {
+      const cat = CHANNEL_TOPIC_MAPPING[chId].category;
+      return !data.categories[cat] || data.categories[cat].length < 10;
+    });
+
+    if (isAnyCategoryEmpty || (data.categories.ALL || []).length < 40) {
+      const candidatePaths = [
+        path.join(this.stateDir, '..', 'source_registry.json'),
+        path.join('/var/lib/nexahub', 'source_registry.json'),
+        path.resolve(__dirname, '..', 'source_registry.json')
+      ];
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const reg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const userMap = {
+              tfccdet: 'BJ',
+              ccsfvk: 'KR',
+              vsdxda: 'JP',
+              ccdjxc: 'CN',
+              ddkicr: '18',
+              cccddghhgf: 'AV'
+            };
+            if (Array.isArray(reg.posts)) {
+              for (const post of reg.posts) {
+                const cat = userMap[post.username];
+                if (cat) {
+                  const rec = {
+                    title: post.title || post.name || '동영상',
+                    channelId: String(post.chat_id || ''),
+                    messageId: post.message_id,
+                    directLink: post.telegram_url || `https://t.me/${post.username}/${post.message_id}`,
+                    category: cat,
+                    publishedAt: post.published_at || new Date().toISOString()
+                  };
+                  if (!data.categories[cat]) data.categories[cat] = [];
+                  data.categories[cat].push(rec);
+                  data.categories.ALL.push(rec);
+                }
+              }
+              console.log(`${LOG_PREFIX} Seeded ${data.categories.ALL.length} items from ${p}`);
+              break;
+            }
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} Failed to seed from ${p}:`, err.message);
+          }
+        }
+      }
+    }
+
+    return data;
   }
 
   _saveCardsData() {
