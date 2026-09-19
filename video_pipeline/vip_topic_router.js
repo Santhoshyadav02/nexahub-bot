@@ -42,51 +42,45 @@ const CATEGORY_DISPLAY_TITLES = {
 
 // Exactly 6 Dedicated Channels (1 per Category / Topic)
 const TOPIC_PRIMARY_CHANNELS = {
-  BJ: { username: 'tfccdet', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23 },
-  KR: { username: 'ccsfvk', name: '로맨틱한 분위기💥(KR)', threadId: 20 },
-  JP: { username: 'vsdxda', name: '모사 JP', threadId: 14 },
-  CN: { username: 'ccdjxc', name: '가랑이(CN)', threadId: 17 },
-  '18': { username: 'ddkicr', name: '첩(🔞..)', threadId: 8 },
-  AV: { username: 'cccddghhgf', name: '사키 미즈미(AV)', threadId: 12 }
+  BJ: { username: 'tfccdet', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, channelId: '-1004416217845' },
+  KR: { username: 'ccsfvk', name: '로맨틱한 분위기💥(KR)', threadId: 20, channelId: '-1003780478806' },
+  JP: { username: 'vsdxda', name: '모사 JP', threadId: 14, channelId: '-1004486764871' },
+  CN: { username: 'ccdjxc', name: '가랑이(CN)', threadId: 17, channelId: '-1004481385613' },
+  '18': { username: 'ddkicr', name: '첩(🔞..)', threadId: 8, channelId: '-1004419758275' },
+  AV: { username: 'cccddghhgf', name: '사키 미즈미(AV)', threadId: 12, channelId: '-1004384169456' }
 };
 
 // Exact 6-Channel Mapping to VIP Category Topics
 const CHANNEL_TOPIC_MAPPING = {
-  // BJ -> Topic BJ. (Thread 23)
-  '-1004416217845': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, username: 'tfccdet' },
-  '4416217845': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, username: 'tfccdet' },
-  'tfccdet': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, username: 'tfccdet' },
+  // BJ -> Topic BJ. (@tfccdet)
+  '-1004416217845': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', username: 'tfccdet' },
+  '4416217845': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', username: 'tfccdet' },
+  'tfccdet': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', username: 'tfccdet' },
 
-  // KR -> Topic KR (Thread 20)
-  '-1003780478806': { category: 'KR', name: '로맨틱한 분위기💥(KR)', threadId: 20, username: 'ccsfvk' },
-  '3780478806': { category: 'KR', name: '로맨틱한 분위기💥(KR)', threadId: 20, username: 'ccsfvk' },
-  'ccsfvk': { category: 'KR', name: '로맨틱한 분위기💥(KR)', threadId: 20, username: 'ccsfvk' },
+  // KR -> Topic KR (@ccsfvk)
+  '-1003780478806': { category: 'KR', name: '로맨틱한 분위기💥(KR)', username: 'ccsfvk' },
+  '3780478806': { category: 'KR', name: '로맨틱한 분위기💥(KR)', username: 'ccsfvk' },
+  'ccsfvk': { category: 'KR', name: '로맨틱한 분위기💥(KR)', username: 'ccsfvk' },
 
-  // JP -> Topic JP (Thread 14)
-  '-1003725861834': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
-  '-1004486764871': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
-  '3725861834': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
-  '4486764871': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
-  'vsdxda': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
+  // JP -> Topic JP (@vsdxda)
+  '-1004486764871': { category: 'JP', name: '모사 JP', username: 'vsdxda' },
+  '4486764871': { category: 'JP', name: '모사 JP', username: 'vsdxda' },
+  'vsdxda': { category: 'JP', name: '모사 JP', username: 'vsdxda' },
 
-  // CN -> Topic CN (Thread 17)
-  '-1004419758275': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
-  '-1004481385613': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
-  '4419758275': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
-  '4481385613': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
-  'ccdjxc': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
+  // CN -> Topic CN (@ccdjxc)
+  '-1004481385613': { category: 'CN', name: '가랑이(CN)', username: 'ccdjxc' },
+  '4481385613': { category: 'CN', name: '가랑이(CN)', username: 'ccdjxc' },
+  'ccdjxc': { category: 'CN', name: '가랑이(CN)', username: 'ccdjxc' },
 
-  // 18.. -> Topic 18.. (Thread 8)
-  '-1004481385613': { category: '18', name: '첩(🔞..)', threadId: 8, username: 'ddkicr' },
-  '-1004419758275': { category: '18', name: '첩(🔞..)', threadId: 8, username: 'ddkicr' },
-  'ddkicr': { category: '18', name: '첩(🔞..)', threadId: 8, username: 'ddkicr' },
+  // 18.. -> Topic 18.. (@ddkicr)
+  '-1004419758275': { category: '18', name: '첩(🔞..)', username: 'ddkicr' },
+  '4419758275': { category: '18', name: '첩(🔞..)', username: 'ddkicr' },
+  'ddkicr': { category: '18', name: '첩(🔞..)', username: 'ddkicr' },
 
-  // AV -> Topic AV (Thread 12)
-  '-1004483241550': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
-  '-1004384169456': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
-  '4483241550': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
-  '4384169456': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
-  'cccddghhgf': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' }
+  // AV -> Topic AV (@cccddghhgf)
+  '-1004384169456': { category: 'AV', name: '사키 미즈미(AV)', username: 'cccddghhgf' },
+  '4384169456': { category: 'AV', name: '사키 미즈미(AV)', username: 'cccddghhgf' },
+  'cccddghhgf': { category: 'AV', name: '사키 미즈미(AV)', username: 'cccddghhgf' }
 };
 
 const ALLOWED_USERNAMES = new Set(['tfccdet', 'ccsfvk', 'vsdxda', 'ccdjxc', 'ddkicr', 'cccddghhgf']);
@@ -131,19 +125,42 @@ class VipTopicRouter {
   constructor(options = {}) {
     this.vipChatId = options.vipChatId || process.env.VIP_SUPERGROUP_CHAT_ID || DEFAULT_VIP_CHAT_ID;
     this.botToken = options.botToken || process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-    this.stateDir = options.stateDir || '/var/lib/nexahub/video_pipeline/state';
+    const defaultStateDir = process.platform === 'win32'
+      ? path.resolve(__dirname, 'state')
+      : '/var/lib/nexahub/video_pipeline/state';
+    this.stateDir = options.stateDir || defaultStateDir;
+    try {
+      fs.mkdirSync(this.stateDir, { recursive: true });
+    } catch (_) {}
     this.cardsStateFile = path.join(this.stateDir, 'vip_topic_cards.json');
+    this.threadsStateFile = path.join(this.stateDir, 'vip_topic_threads.json');
     this.cardsData = this._loadCardsData();
   }
 
   _loadCardsData() {
     let data = null;
+    const categoryUserMap = {
+      BJ: 'tfccdet',
+      KR: 'ccsfvk',
+      JP: 'vsdxda',
+      CN: 'ccdjxc',
+      '18': 'ddkicr',
+      AV: 'cccddghhgf'
+    };
+
     try {
       if (fs.existsSync(this.cardsStateFile)) {
         data = JSON.parse(fs.readFileSync(this.cardsStateFile, 'utf8'));
         if (data && data.categories) {
-          for (const cat of Object.keys(data.categories)) {
-            data.categories[cat] = (data.categories[cat] || []).filter(isStrictlyAllowedChannel);
+          for (const [cat, expectedUser] of Object.entries(categoryUserMap)) {
+            data.categories[cat] = (data.categories[cat] || []).filter(it => {
+              if (!isStrictlyAllowedChannel(it)) return false;
+              const link = (it.directLink || it.url || '').toLowerCase();
+              return (it.username && it.username.toLowerCase() === expectedUser) || link.includes(`/${expectedUser}/`);
+            });
+          }
+          if (data.categories.ALL) {
+            data.categories.ALL = data.categories.ALL.filter(isStrictlyAllowedChannel);
           }
         }
       }
@@ -167,8 +184,7 @@ class VipTopicRouter {
     }
 
     // Auto-seed from source_registry.json if any category is empty
-    const isAnyCategoryEmpty = Object.keys(CHANNEL_TOPIC_MAPPING).some(chId => {
-      const cat = CHANNEL_TOPIC_MAPPING[chId].category;
+    const isAnyCategoryEmpty = Object.keys(categoryUserMap).some(cat => {
       return !data.categories[cat] || data.categories[cat].length < 10;
     });
 
@@ -204,8 +220,11 @@ class VipTopicRouter {
                     publishedAt: post.published_at || new Date().toISOString()
                   };
                   if (!data.categories[cat]) data.categories[cat] = [];
-                  data.categories[cat].push(rec);
-                  data.categories.ALL.push(rec);
+                  const exists = data.categories[cat].some(x => x.directLink === rec.directLink);
+                  if (!exists) {
+                    data.categories[cat].push(rec);
+                    data.categories.ALL.push(rec);
+                  }
                 }
               }
               console.log(`${LOG_PREFIX} Seeded ${data.categories.ALL.length} items from ${p}`);
@@ -218,19 +237,33 @@ class VipTopicRouter {
       }
     }
 
+    // Ensure default thread map file exists
+    try {
+      if (!fs.existsSync(this.threadsStateFile)) {
+        const defaultMap = {
+          '23': 'BJ',
+          '20': 'KR',
+          '14': 'JP',
+          '17': 'CN',
+          '8': '18',
+          '12': 'AV'
+        };
+        fs.writeFileSync(this.threadsStateFile, JSON.stringify(defaultMap, null, 2), 'utf8');
+      }
+    } catch (_) {}
+
     return data;
   }
 
   registerThreadMapping(threadId, category) {
     if (!threadId || !category) return;
     try {
-      const mapFile = path.join(this.stateDir, 'vip_topic_threads.json');
       let map = {};
-      if (fs.existsSync(mapFile)) {
-        map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+      if (fs.existsSync(this.threadsStateFile)) {
+        map = JSON.parse(fs.readFileSync(this.threadsStateFile, 'utf8'));
       }
       map[String(threadId)] = category;
-      fs.writeFileSync(mapFile, JSON.stringify(map, null, 2), 'utf8');
+      fs.writeFileSync(this.threadsStateFile, JSON.stringify(map, null, 2), 'utf8');
       console.log(`${LOG_PREFIX} Dynamic topic thread mapped: Thread ${threadId} -> Category ${category}`);
     } catch (e) {
       console.warn(`${LOG_PREFIX} Failed to save thread mapping:`, e.message);
@@ -240,13 +273,36 @@ class VipTopicRouter {
   getCategoryForThread(threadId) {
     if (!threadId) return null;
     try {
-      const mapFile = path.join(this.stateDir, 'vip_topic_threads.json');
-      if (fs.existsSync(mapFile)) {
-        const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+      if (fs.existsSync(this.threadsStateFile)) {
+        const map = JSON.parse(fs.readFileSync(this.threadsStateFile, 'utf8'));
         return map[String(threadId)] || null;
       }
     } catch (_) {}
     return null;
+  }
+
+  formatTopicChooser(threadId) {
+    const text = `📌 <b>VIP 토픽 채널 연결</b>\n\n이 토픽에 연결할 채널 카테고리를 선택해주세요.\n아래 버튼을 1회 누르면 이 토픽이 해당 채널 전용으로 영구 저장됩니다.`;
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📺 BJ. (@tfccdet)', callback_data: `vip_bind:BJ:${threadId}` },
+          { text: '🇰🇷 KR (@ccsfvk)', callback_data: `vip_bind:KR:${threadId}` }
+        ],
+        [
+          { text: '🇯🇵 JP (@vsdxda)', callback_data: `vip_bind:JP:${threadId}` },
+          { text: '🇨🇳 CN (@ccdjxc)', callback_data: `vip_bind:CN:${threadId}` }
+        ],
+        [
+          { text: '🔞 18.. (@ddkicr)', callback_data: `vip_bind:18:${threadId}` },
+          { text: '🎬 AV (@cccddghhgf)', callback_data: `vip_bind:AV:${threadId}` }
+        ],
+        [
+          { text: '🌐 ALL (전체 채널 종합)', callback_data: `vip_bind:ALL:${threadId}` }
+        ]
+      ]
+    };
+    return { text, keyboard };
   }
 
   _saveCardsData() {

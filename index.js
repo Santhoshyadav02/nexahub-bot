@@ -3179,6 +3179,13 @@ bot.on("callback_query", async (query) => {
       const page = parseInt(parts[2], 10) || 1;
       const { VipTopicRouter } = require("./video_pipeline/vip_topic_router");
       const vipRouter = new VipTopicRouter();
+
+      // Auto-bind topic thread if clicked inside a thread!
+      const tId = (query.message && query.message.message_thread_id) || (query.message && query.message.reply_to_message && query.message.reply_to_message.message_thread_id);
+      if (tId && category !== "ALL") {
+        vipRouter.registerThreadMapping(tId, category);
+      }
+
       const { text, keyboard } = vipRouter.formatCategoryCard(category, page);
       if (query.message) {
         await bot.editMessageText(text, {
@@ -3190,6 +3197,30 @@ bot.on("callback_query", async (query) => {
         }).catch(() => {});
       }
       return await bot.answerCallbackQuery(query.id).catch(() => {});
+    }
+
+    if (data.startsWith("vip_bind:")) {
+      const parts = data.split(":");
+      const category = parts[1] || "ALL";
+      const threadId = parts[2] ? parseInt(parts[2], 10) : null;
+      const { VipTopicRouter } = require("./video_pipeline/vip_topic_router");
+      const vipRouter = new VipTopicRouter();
+
+      if (threadId && category !== "ALL") {
+        vipRouter.registerThreadMapping(threadId, category);
+      }
+
+      const { text, keyboard } = vipRouter.formatCategoryCard(category, 1);
+      if (query.message) {
+        await bot.editMessageText(text, {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+          parse_mode: "HTML",
+          reply_markup: keyboard,
+          disable_web_page_preview: true
+        }).catch(() => {});
+      }
+      return await bot.answerCallbackQuery(query.id, { text: `✅ [${category}] 채널로 연결되었습니다!` }).catch(() => {});
     }
 
     if (data === "vip_card_main") {
@@ -3580,25 +3611,93 @@ bot.on("message", async (msg) => {
       const { VipTopicRouter, TOPIC_THREAD_IDS } = require("./video_pipeline/vip_topic_router");
       const vipRouter = new VipTopicRouter();
       
-      let category = "ALL";
+      let category = null;
       const cleanText = (text || "").toLowerCase().trim();
-      if (cleanText === "bj" || cleanText === "/bj") category = "BJ";
-      else if (cleanText === "kr" || cleanText === "/kr") category = "KR";
-      else if (cleanText === "jp" || cleanText === "/jp") category = "JP";
-      else if (cleanText === "cn" || cleanText === "/cn") category = "CN";
-      else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18" || cleanText === "...") category = "18";
-      else if (cleanText === "av" || cleanText === "/av") category = "AV";
-      else if (threadId && vipRouter.getCategoryForThread(threadId)) category = vipRouter.getCategoryForThread(threadId);
-      else if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
-      else if (threadId === TOPIC_THREAD_IDS.KR || threadId === 20) category = "KR";
-      else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 14 || threadId === 28 || threadId === 29 || threadId === 30 || threadId === 31 || threadId === 32 || threadId === 33 || threadId === 34 || threadId === 35) category = "JP";
-      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17 || threadId === 24 || threadId === 25 || threadId === 26 || threadId === 27 || threadId === 36 || threadId === 37 || threadId === 38 || threadId === 39) category = "CN";
-      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8 || threadId === 16 || threadId === 40 || threadId === 41 || threadId === 42) category = "18";
-      else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12 || threadId === 43 || threadId === 44 || threadId === 45) category = "AV";
-      else category = "ALL";
 
-      const { text: cardText, keyboard: cardKeyboard } = vipRouter.formatCategoryCard(category, 1);
-      
+      // Explicit category mapping command: /map <category> or /set <category> or /topic <category>
+      if (cleanText.startsWith("/map ") || cleanText.startsWith("/set ") || cleanText.startsWith("/topic ") || cleanText.startsWith("!map ") || cleanText.startsWith("!set ")) {
+        const targetCat = cleanText.split(" ")[1]?.toUpperCase();
+        if (["BJ", "KR", "JP", "CN", "18", "AV", "ALL"].includes(targetCat)) {
+          if (threadId && targetCat !== "ALL") {
+            vipRouter.registerThreadMapping(threadId, targetCat);
+          }
+          category = targetCat;
+        }
+      }
+
+      // Explicit category shortcuts
+      if (!category) {
+        if (cleanText === "bj" || cleanText === "/bj" || cleanText === "!bj" || cleanText === "bj." || cleanText.startsWith("bj ")) category = "BJ";
+        else if (cleanText === "kr" || cleanText === "/kr" || cleanText === "!kr" || cleanText.startsWith("kr ")) category = "KR";
+        else if (cleanText === "jp" || cleanText === "/jp" || cleanText === "!jp" || cleanText.startsWith("jp ")) category = "JP";
+        else if (cleanText === "cn" || cleanText === "/cn" || cleanText === "!cn" || cleanText.startsWith("cn ")) category = "CN";
+        else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18" || cleanText === "..." || cleanText.startsWith("18 ")) category = "18";
+        else if (cleanText === "av" || cleanText === "/av" || cleanText === "!av" || cleanText.startsWith("av ")) category = "AV";
+        else if (cleanText === "all" || cleanText === "/all" || cleanText === "!all" || cleanText === "전체") category = "ALL";
+      }
+
+      // Inspect Telegram topic name in service messages or replies
+      if (!category && msg.reply_to_message) {
+        const topicName = (
+          (msg.reply_to_message.forum_topic_created && msg.reply_to_message.forum_topic_created.name) ||
+          (msg.reply_to_message.forum_topic_edited && msg.reply_to_message.forum_topic_edited.name) ||
+          ""
+        ).toUpperCase();
+        if (topicName.includes("JP") || topicName.includes("모사") || topicName.includes("VSDXDA")) category = "JP";
+        else if (topicName.includes("CN") || topicName.includes("가랑이") || topicName.includes("CCDJXC")) category = "CN";
+        else if (topicName.includes("BJ") || topicName.includes("토끼") || topicName.includes("TFCCDET")) category = "BJ";
+        else if (topicName.includes("KR") || topicName.includes("로맨틱") || topicName.includes("CCSFVK")) category = "KR";
+        else if (topicName.includes("18") || topicName.includes("첩") || topicName.includes("DDKICR")) category = "18";
+        else if (topicName.includes("AV") || topicName.includes("사키") || topicName.includes("CCCDDGHHGF")) category = "AV";
+      }
+
+      if (!category && (msg.forum_topic_created || msg.forum_topic_edited)) {
+        const topicName = ((msg.forum_topic_created && msg.forum_topic_created.name) || (msg.forum_topic_edited && msg.forum_topic_edited.name) || "").toUpperCase();
+        if (topicName.includes("JP")) category = "JP";
+        else if (topicName.includes("CN")) category = "CN";
+        else if (topicName.includes("BJ")) category = "BJ";
+        else if (topicName.includes("KR")) category = "KR";
+        else if (topicName.includes("18")) category = "18";
+        else if (topicName.includes("AV")) category = "AV";
+      }
+
+      // Persistent dynamic thread lookup
+      if (!category && threadId) {
+        category = vipRouter.getCategoryForThread(threadId);
+      }
+
+      // Static fallback thread mapping
+      if (!category && threadId) {
+        if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
+        else if (threadId === TOPIC_THREAD_IDS.KR || threadId === 20) category = "KR";
+        else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 14) category = "JP";
+        else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17) category = "CN";
+        else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8) category = "18";
+        else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12) category = "AV";
+      }
+
+      // Auto-save learned mapping
+      if (category && category !== "ALL" && threadId) {
+        vipRouter.registerThreadMapping(threadId, category);
+      }
+
+      let cardText, cardKeyboard;
+      if (category) {
+        const card = vipRouter.formatCategoryCard(category, 1);
+        cardText = card.text;
+        cardKeyboard = card.keyboard;
+      } else if (threadId) {
+        // Unknown topic thread - ask user to select topic category once
+        const chooser = vipRouter.formatTopicChooser(threadId);
+        cardText = chooser.text;
+        cardKeyboard = chooser.keyboard;
+      } else {
+        // Main group chat without thread
+        const card = vipRouter.formatCategoryCard("ALL", 1);
+        cardText = card.text;
+        cardKeyboard = card.keyboard;
+      }
+
       const sendPayload = {
         parse_mode: "HTML",
         reply_markup: cardKeyboard,
