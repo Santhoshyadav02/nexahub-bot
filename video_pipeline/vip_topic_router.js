@@ -40,59 +40,84 @@ const CATEGORY_DISPLAY_TITLES = {
   AV: '🎬 AV'
 };
 
-// Exactly 6 Dedicated Channels (1 per Category / Topic) from Scraper 2
+// Exactly 6 Dedicated Channels (1 per Category / Topic)
 const TOPIC_PRIMARY_CHANNELS = {
-  BJ: { channelId: '-1004416217845', username: 'tfccdet', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23 },
-  KR: { channelId: '-1003780478806', username: 'ccsfvk', name: '로맨틱한 분위기💥(KR)', threadId: 20 },
-  JP: { channelId: '-1003725861834', username: 'vsdxda', name: '모사 JP', threadId: 14 },
-  CN: { channelId: '-1004419758275', username: 'ccdjxc', name: '가랑이(CN)', threadId: 17 },
-  '18': { channelId: '-1004481385613', username: 'ddkicr', name: '첩(🔞..)', threadId: 8 },
-  AV: { channelId: '-1004483241550', username: 'cccddghhgf', name: '사키 미즈미(AV)', threadId: 12 }
+  BJ: { username: 'tfccdet', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23 },
+  KR: { username: 'ccsfvk', name: '로맨틱한 분위기💥(KR)', threadId: 20 },
+  JP: { username: 'vsdxda', name: '모사 JP', threadId: 14 },
+  CN: { username: 'ccdjxc', name: '가랑이(CN)', threadId: 17 },
+  '18': { username: 'ddkicr', name: '첩(🔞..)', threadId: 8 },
+  AV: { username: 'cccddghhgf', name: '사키 미즈미(AV)', threadId: 12 }
 };
 
-// Exact 6-Channel Mapping to VIP Category Topics (Only Scraper 2 channels connected)
+// Exact 6-Channel Mapping to VIP Category Topics
 const CHANNEL_TOPIC_MAPPING = {
+  // BJ -> Topic BJ. (Thread 23)
   '-1004416217845': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, username: 'tfccdet' },
+  '4416217845': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, username: 'tfccdet' },
+  'tfccdet': { category: 'BJ', name: '토끼 소녀 코스프레 데이트(BJ)', threadId: 23, username: 'tfccdet' },
+
+  // KR -> Topic KR (Thread 20)
   '-1003780478806': { category: 'KR', name: '로맨틱한 분위기💥(KR)', threadId: 20, username: 'ccsfvk' },
+  '3780478806': { category: 'KR', name: '로맨틱한 분위기💥(KR)', threadId: 20, username: 'ccsfvk' },
+  'ccsfvk': { category: 'KR', name: '로맨틱한 분위기💥(KR)', threadId: 20, username: 'ccsfvk' },
+
+  // JP -> Topic JP (Thread 14)
   '-1003725861834': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
+  '-1004486764871': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
+  '3725861834': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
+  '4486764871': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
+  'vsdxda': { category: 'JP', name: '모사 JP', threadId: 14, username: 'vsdxda' },
+
+  // CN -> Topic CN (Thread 17)
   '-1004419758275': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
+  '-1004481385613': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
+  '4419758275': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
+  '4481385613': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
+  'ccdjxc': { category: 'CN', name: '가랑이(CN)', threadId: 17, username: 'ccdjxc' },
+
+  // 18.. -> Topic 18.. (Thread 8)
   '-1004481385613': { category: '18', name: '첩(🔞..)', threadId: 8, username: 'ddkicr' },
-  '-1004483241550': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' }
+  '-1004419758275': { category: '18', name: '첩(🔞..)', threadId: 8, username: 'ddkicr' },
+  'ddkicr': { category: '18', name: '첩(🔞..)', threadId: 8, username: 'ddkicr' },
+
+  // AV -> Topic AV (Thread 12)
+  '-1004483241550': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
+  '-1004384169456': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
+  '4483241550': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
+  '4384169456': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' },
+  'cccddghhgf': { category: 'AV', name: '사키 미즈미(AV)', threadId: 12, username: 'cccddghhgf' }
 };
 
 const ALLOWED_USERNAMES = new Set(['tfccdet', 'ccsfvk', 'vsdxda', 'ccdjxc', 'ddkicr', 'cccddghhgf']);
-const ALLOWED_CHANNEL_IDS = new Set([
-  '-1004416217845', '4416217845',
-  '-1003780478806', '3780478806',
-  '-1003725861834', '3725861834',
-  '-1004419758275', '4419758275',
-  '-1004481385613', '4481385613',
-  '-1004483241550', '4483241550'
-]);
 
 function isStrictlyAllowedChannel(item) {
   if (!item) return false;
-  const chId = String(item.channelId || '').trim();
-  const cleanId = chId.replace(/^-100/, '').replace(/^-/, '');
-  if (chId && !ALLOWED_CHANNEL_IDS.has(chId) && !ALLOWED_CHANNEL_IDS.has(cleanId)) {
-    return false;
-  }
   const link = (item.directLink || item.url || '').toLowerCase();
+  
+  // Explicitly block the 4 removed channels
   if (
     link.includes('bzd4wrf') || link.includes('cccsefk') ||
-    link.includes('e5brygh') || link.includes('sfgfem') ||
-    link.includes('4464504918') || link.includes('4486764871') ||
-    link.includes('4384169456') || link.includes('3786693669')
+    link.includes('e5brygh') || link.includes('sfgfem')
   ) {
     return false;
   }
+
+  if (item.username && ALLOWED_USERNAMES.has(item.username.toLowerCase())) {
+    return true;
+  }
+
   const uMatch = link.match(/t\.me\/([a-z0-9_]+)\//i);
   if (uMatch && uMatch[1] && uMatch[1] !== 'c') {
-    if (!ALLOWED_USERNAMES.has(uMatch[1].toLowerCase())) {
-      return false;
-    }
+    return ALLOWED_USERNAMES.has(uMatch[1].toLowerCase());
   }
-  return true;
+
+  const chId = String(item.channelId || '').trim();
+  if (chId && CHANNEL_TOPIC_MAPPING[chId]) {
+    return true;
+  }
+
+  return false;
 }
 
 const sharedHttpsAgent = new https.Agent({
