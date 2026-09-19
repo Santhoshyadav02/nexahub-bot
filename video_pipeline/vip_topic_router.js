@@ -463,8 +463,7 @@ class VipTopicRouter {
         const num = startIndex + idx + 1;
         const link = item.directLink || item.url || '#';
         const title = (item.title || '동영상').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const badge = (category === 'ALL' && item.category) ? `<b>[${item.category}]</b> ` : '';
-        text += `${num}. ${badge}<a href="${link}">${title}</a>\n\n`;
+        text += `${num}. <a href="${link}">${title}</a>\n\n`;
       });
     }
 
