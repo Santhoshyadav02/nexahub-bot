@@ -30,7 +30,7 @@ def sanitize_filename(name):
 
 def download_video_worker(item, output_dir, timeout=180, worker_id=1):
     """
-    Downloads a single video file using chunked HTTP streaming.
+    Downloads a single video file using chunked HTTP streaming with retry and backoff.
     """
     title = item.get("title", "untitled")
     url = item.get("mp4_download_url")
@@ -60,99 +60,123 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
             "post_url": post_url,
         }
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Referer": post_url if post_url else "https://02.avsee.is/",
-        "Origin": "https://02.avsee.is",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
-    }
+    # Stagger thread start slightly to prevent synchronized burst rate-limiting (429)
+    time.sleep(0.15 * worker_id)
 
-    try:
-        print(f"[Worker {worker_id}] [+] Starting download: {filename}", flush=True)
-        start_time = time.time()
+    headers_attempts = [
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Referer": post_url if post_url else "https://02.avsee.is/",
+            "Origin": "https://02.avsee.is",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+        },
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
+                " (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+            ),
+            "Accept": "*/*",
+        },
+    ]
 
-        with requests.get(
-            url, headers=headers, stream=True, timeout=timeout
-        ) as response:
-            if response.status_code != 200:
-                print(
-                    f"[Worker {worker_id}] [!] [HTTP {response.status_code}] Failed: {filename}",
-                    flush=True,
-                )
-                return {
-                    "status": "failed",
-                    "title": title,
-                    "error": f"HTTP {response.status_code}",
-                }
+    for attempt, headers in enumerate(headers_attempts):
+        try:
+            if attempt == 0:
+                print(f"[Worker {worker_id}] [+] Starting download: {filename}", flush=True)
+            start_time = time.time()
 
-            total_size = int(response.headers.get("content-length", 0))
-            total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
-            chunk_size = 1024 * 512  # 512 KB chunks for high throughput
-            downloaded = 0
-            last_log_time = time.time()
+            with requests.get(
+                url, headers=headers, stream=True, timeout=timeout
+            ) as response:
+                if response.status_code in [403, 429] and attempt < len(headers_attempts) - 1:
+                    time.sleep(1.2)
+                    continue
 
-            with open(filepath, "wb") as f:
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
+                if response.status_code != 200:
+                    print(
+                        f"[Worker {worker_id}] [!] [HTTP {response.status_code}] Failed: {filename}",
+                        flush=True,
+                    )
+                    return {
+                        "status": "failed",
+                        "title": title,
+                        "error": f"HTTP {response.status_code}",
+                    }
 
-                        now = time.time()
-                        if now - last_log_time >= 4.0:
-                            cur_mb = downloaded / (1024 * 1024)
-                            pct = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
-                            if total_mb > 0:
-                                print(
-                                    f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB / {total_mb:.1f} MB ({pct:.1f}%)",
-                                    flush=True,
-                                )
-                            else:
-                                print(
-                                    f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB downloaded",
-                                    flush=True,
-                                )
-                            last_log_time = now
+                total_size = int(response.headers.get("content-length", 0))
+                total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
+                chunk_size = 1024 * 512  # 512 KB chunks for high throughput
+                downloaded = 0
+                last_log_time = time.time()
 
-        final_mb = (
-            (os.path.getsize(filepath) / (1024 * 1024))
-            if os.path.exists(filepath)
-            else 0
-        )
-        duration = time.time() - start_time
-        speed = (final_mb / duration) if duration > 0 else 0
+                with open(filepath, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
 
-        print(
-            f"[Worker {worker_id}] [✓] Finished: {filename} ({final_mb:.1f} MB in {duration:.1f}s at {speed:.2f} MB/s)",
-            flush=True,
-        )
-        return {
-            "status": "completed",
-            "title": title,
-            "filepath": os.path.abspath(filepath),
-            "size_mb": final_mb,
-            "post_url": post_url,
-            "source_video_url": url,
-        }
+                            now = time.time()
+                            if now - last_log_time >= 4.0:
+                                cur_mb = downloaded / (1024 * 1024)
+                                pct = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
+                                if total_mb > 0:
+                                    print(
+                                        f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB / {total_mb:.1f} MB ({pct:.1f}%)",
+                                        flush=True,
+                                    )
+                                else:
+                                    print(
+                                        f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB downloaded",
+                                        flush=True,
+                                    )
+                                last_log_time = now
 
-    except Exception as e:
-        if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
-        print(f"[Worker {worker_id}] [!] [Error] {filename}: {e}", flush=True)
-        return {"status": "error", "title": title, "error": str(e)}
+            final_mb = (
+                (os.path.getsize(filepath) / (1024 * 1024))
+                if os.path.exists(filepath)
+                else 0
+            )
+            duration = time.time() - start_time
+            speed = (final_mb / duration) if duration > 0 else 0
+
+            print(
+                f"[Worker {worker_id}] [✓] Finished: {filename} ({final_mb:.1f} MB in {duration:.1f}s at {speed:.2f} MB/s)",
+                flush=True,
+            )
+            return {
+                "status": "completed",
+                "title": title,
+                "filepath": os.path.abspath(filepath),
+                "size_mb": final_mb,
+                "post_url": post_url,
+                "source_video_url": url,
+            }
+
+        except Exception as e:
+            if attempt < len(headers_attempts) - 1:
+                time.sleep(1.0)
+                continue
+            if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+            print(f"[Worker {worker_id}] [!] [Error] {filename}: {e}", flush=True)
+            return {"status": "error", "title": title, "error": str(e)}
+
+    return {"status": "failed", "title": title, "error": "All download attempts failed"}
 
 
 def run_parallel_downloader(
     json_file, output_dir, max_workers=4, limit=5, timeout=180
 ):
     """
-    Spawns a ThreadPoolExecutor with 3-4 parallel workers to download up to `limit` videos.
+    Spawns a ThreadPoolExecutor with 3-4 parallel workers to download up to `limit` videos,
+    iterating through the database until target quota is reached or items are exhausted.
     """
     if not os.path.exists(json_file):
         print(f"[!] JSON file not found: {json_file}", flush=True)
@@ -163,45 +187,55 @@ def run_parallel_downloader(
 
     valid_items = [it for it in items if it.get("mp4_download_url")]
 
-    if limit and limit > 0:
-        valid_items = valid_items[:limit]
-
     os.makedirs(output_dir, exist_ok=True)
 
     print("\n=======================================================", flush=True)
     print(f"[*] Modular Parallel Video Downloader", flush=True)
-    print(f"[*] Queue Items:       {len(valid_items)} (Limit: {limit})", flush=True)
-    print(f"[*] Concurrent Workers: {max_workers} Workers", flush=True)
-    print(f"[*] Destination Dir:   {os.path.abspath(output_dir)}", flush=True)
+    print(f"[*] Database Valid Items: {len(valid_items)} (Target Quota: {limit})", flush=True)
+    print(f"[*] Concurrent Workers:   {max_workers} Workers", flush=True)
+    print(f"[*] Destination Dir:      {os.path.abspath(output_dir)}", flush=True)
     print("=======================================================\n", flush=True)
 
     results = []
+    successful_downloads = []
+
+    # Process candidates in batches or until limit is reached
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=max_workers
     ) as executor:
-        future_to_item = {
-            executor.submit(
-                download_video_worker,
-                item,
-                output_dir,
-                timeout,
-                (i % max_workers) + 1,
-            ): item
-            for i, item in enumerate(valid_items)
-        }
+        cursor = 0
+        total_items = len(valid_items)
 
-        for future in concurrent.futures.as_completed(future_to_item):
-            try:
-                res = future.result()
-                results.append(res)
-            except Exception as exc:
-                results.append({"status": "error", "error": str(exc)})
+        while cursor < total_items and len(successful_downloads) < limit:
+            batch_size = min(max_workers * 2, total_items - cursor)
+            batch = valid_items[cursor : cursor + batch_size]
+            cursor += batch_size
 
-    completed = sum(
-        1 for r in results if r.get("status") in ["completed", "exists"]
-    )
+            future_to_item = {
+                executor.submit(
+                    download_video_worker,
+                    item,
+                    output_dir,
+                    timeout,
+                    (idx % max_workers) + 1,
+                ): item
+                for idx, item in enumerate(batch)
+            }
+
+            for future in concurrent.futures.as_completed(future_to_item):
+                try:
+                    res = future.result()
+                    results.append(res)
+                    if res.get("status") in ["completed", "exists"]:
+                        successful_downloads.append(res)
+                        if len(successful_downloads) >= limit:
+                            break
+                except Exception as exc:
+                    results.append({"status": "error", "error": str(exc)})
+
+    completed = len(successful_downloads)
     print(
-        f"\n[*] Parallel Download Complete: {completed}/{len(valid_items)} ready on disk.\n",
+        f"\n[*] Parallel Download Complete: {completed}/{limit} target ready on disk.\n",
         flush=True,
     )
     return results
