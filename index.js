@@ -3173,6 +3173,41 @@ bot.on("callback_query", async (query) => {
       return await bot.answerCallbackQuery(query.id).catch(() => {});
     }
 
+    if (data.startsWith("vip_card:")) {
+      const parts = data.split(":");
+      const category = parts[1] || "ALL";
+      const page = parseInt(parts[2], 10) || 1;
+      const { VipTopicRouter } = require("./video_pipeline/vip_topic_router");
+      const vipRouter = new VipTopicRouter();
+      const { text, keyboard } = vipRouter.formatCategoryCard(category, page);
+      if (query.message) {
+        await bot.editMessageText(text, {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+          parse_mode: "HTML",
+          reply_markup: keyboard,
+          disable_web_page_preview: true
+        }).catch(() => {});
+      }
+      return await bot.answerCallbackQuery(query.id).catch(() => {});
+    }
+
+    if (data === "vip_card_main") {
+      const { VipTopicRouter } = require("./video_pipeline/vip_topic_router");
+      const vipRouter = new VipTopicRouter();
+      const { text, keyboard } = vipRouter.formatCategoryCard("ALL", 1);
+      if (query.message) {
+        await bot.editMessageText(text, {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+          parse_mode: "HTML",
+          reply_markup: keyboard,
+          disable_web_page_preview: true
+        }).catch(() => {});
+      }
+      return await bot.answerCallbackQuery(query.id).catch(() => {});
+    }
+
     if (data.startsWith("det:")) {
       // det:<callbackPrefix>:<itemIndex>:<page>
       const firstColon = data.indexOf(":");
@@ -3535,6 +3570,39 @@ bot.on("message", async (msg) => {
       console.log(`💬 [MESSAGE] text="${text}", from=${msg.from.id} (@${msg.from.username || "no_user"})`);
     }
 
+    // ==========================================
+    // 👑 VIP SUPERGROUP TOPIC MESSAGE AUTO-RESPONDER
+    // ==========================================
+    if (String(chatId) === "-1003983458986" || (msg.chat && msg.chat.type === "supergroup" && String(chatId).includes("3983458986"))) {
+      const threadId = msg.message_thread_id || null;
+      console.log(`👑 [VIP_GROUP_MSG] text="${text}", threadId=${threadId}, from=${msg.from ? msg.from.id : 'unknown'}`);
+      
+      const { VipTopicRouter, TOPIC_THREAD_IDS } = require("./video_pipeline/vip_topic_router");
+      const vipRouter = new VipTopicRouter();
+      
+      let category = "ALL";
+      if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
+      else if (threadId === TOPIC_THREAD_IDS.KR || threadId === 20) category = "KR";
+      else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 19) category = "JP";
+      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 18) category = "CN";
+      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 16) category = "18";
+      else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12) category = "AV";
+      else if (threadId === TOPIC_THREAD_IDS.GENERAL || threadId === 1) category = "GENERAL";
+
+      const { text: cardText, keyboard: cardKeyboard } = vipRouter.formatCategoryCard(category, 1);
+      
+      const sendPayload = {
+        parse_mode: "HTML",
+        reply_markup: cardKeyboard,
+        disable_web_page_preview: true
+      };
+      if (threadId) {
+        sendPayload.message_thread_id = threadId;
+      }
+      
+      return await bot.sendMessage(chatId, cardText, sendPayload).catch(e => console.warn("VIP group send error:", e.message));
+    }
+
     if (text === "/admin" || text === "/vip_admin" || text === "/register_admin" || text === "/vip_list" || text === "/list") {
       if (msg.from && vipAccessManager.isAuthorizedAdmin(msg.from)) {
         vipAccessManager.registerAdminIfMatched(msg.from);
@@ -3746,6 +3814,23 @@ if (isMainModule) {
     videoRuntime.start();
   } catch (videoErr) {
     console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
+  }
+
+  // 🚀 Modular 6-Channel Scraper Pipeline (BJ, KR, JP, CN, 18.., AV)
+  try {
+    if (process.env.MODULAR_PIPELINE_ENABLED === 'true') {
+      const { ModularScraperPipeline } = require("./video_pipeline/modular_scraper_pipeline");
+      const modularPipeline = new ModularScraperPipeline({
+        telegramClient: bot,
+        workers: Number(process.env.MODULAR_PIPELINE_WORKERS) || 4,
+        dailyQuota: Number(process.env.MODULAR_PIPELINE_DAILY_QUOTA) || 5
+      });
+      const intervalMs = Number(process.env.MODULAR_PIPELINE_INTERVAL_MS) || (6 * 60 * 60 * 1000);
+      modularPipeline.startScheduler(intervalMs);
+      console.log("✅ [MODULAR_PIPELINE] 6-Channel Modular Pipeline active (5 videos/24h per channel).");
+    }
+  } catch (modErr) {
+    console.error("❌ [MODULAR_PIPELINE] Startup failed:", modErr.message);
   }
 
   // 📊 Daily Admin Reporter (24-Hour Automated Report to @CSE_006)

@@ -703,6 +703,21 @@ class VideoBatchPublisher {
 
         console.log(`${LOG_PREFIX} Successfully published media ${mediaId} (${canonicalDestination}) -> msgId ${telegramMessageId} (readBackVerified=${readBack.verified})`);
 
+        // Forward to VIP Supergroup Topics & All Feed (Non-blocking)
+        try {
+          const { VipTopicRouter } = require('./vip_topic_router');
+          const vipRouter = new VipTopicRouter();
+          vipRouter.onVideoPublished({
+            channelId: destinationId,
+            messageId: String(telegramMessageId),
+            title: media.title || (planItem && planItem.title) || caption,
+            duration: media.duration,
+            size: currentStat.size
+          }).catch(vErr => console.warn(`${LOG_PREFIX} VIP Topic router async error:`, vErr.message));
+        } catch (vipErr) {
+          console.warn(`${LOG_PREFIX} VIP Topic router dispatch note:`, vipErr.message);
+        }
+
         // 8. Verified Post-Publish Cleanup (ONLY after confirmed publication
         // in the ledger AND a passing read-back verification)
         let cleaned = false;

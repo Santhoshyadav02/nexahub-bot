@@ -1,0 +1,253 @@
+"""
+============================================================
+🚀 MODULAR PARALLEL VIDEO DOWNLOADER (3-4 Concurrent Workers)
+============================================================
+Downloads discovered videos from modular scraper JSON databases
+using a multi-worker concurrent thread pool (3-4 workers) with
+resume capability, progress tracking, and validation.
+"""
+
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import requests
+import sys
+import time
+
+# Ensure unbuffered terminal output
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
+
+def sanitize_filename(name):
+    if not name or name.strip() == "":
+        name = "untitled_video"
+    sanitized = re.sub(r'[\\/*?:"<>|]', "", name).strip()
+    return sanitized[:100]
+
+
+def download_video_worker(item, output_dir, timeout=180, worker_id=1):
+    """
+    Downloads a single video file using chunked HTTP streaming.
+    """
+    title = item.get("title", "untitled")
+    url = item.get("mp4_download_url")
+    post_url = item.get("post_url", "")
+
+    if not url:
+        return {"status": "skipped", "title": title, "reason": "No MP4 URL"}
+
+    safe_title = sanitize_filename(title)
+    wr_id_match = re.search(r"wr_id=(\d+)", post_url)
+    suffix = f"_{wr_id_match.group(1)}" if wr_id_match else ""
+    filename = f"{safe_title}{suffix}.mp4"
+    filepath = os.path.join(output_dir, filename)
+
+    # Check if complete file already exists (> 1MB)
+    if os.path.exists(filepath) and os.path.getsize(filepath) > 1024 * 1024:
+        size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        print(
+            f"[Worker {worker_id}] [Already Downloaded] {filename} ({size_mb:.1f} MB)",
+            flush=True,
+        )
+        return {
+            "status": "exists",
+            "title": title,
+            "filepath": filepath,
+            "size_mb": size_mb,
+            "post_url": post_url,
+        }
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": post_url if post_url else "https://02.avsee.is/",
+        "Origin": "https://02.avsee.is",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+    }
+
+    try:
+        print(f"[Worker {worker_id}] [+] Starting download: {filename}", flush=True)
+        start_time = time.time()
+
+        with requests.get(
+            url, headers=headers, stream=True, timeout=timeout
+        ) as response:
+            if response.status_code != 200:
+                print(
+                    f"[Worker {worker_id}] [!] [HTTP {response.status_code}] Failed: {filename}",
+                    flush=True,
+                )
+                return {
+                    "status": "failed",
+                    "title": title,
+                    "error": f"HTTP {response.status_code}",
+                }
+
+            total_size = int(response.headers.get("content-length", 0))
+            total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
+            chunk_size = 1024 * 512  # 512 KB chunks for high throughput
+            downloaded = 0
+            last_log_time = time.time()
+
+            with open(filepath, "wb") as f:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        now = time.time()
+                        if now - last_log_time >= 4.0:
+                            cur_mb = downloaded / (1024 * 1024)
+                            pct = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
+                            if total_mb > 0:
+                                print(
+                                    f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB / {total_mb:.1f} MB ({pct:.1f}%)",
+                                    flush=True,
+                                )
+                            else:
+                                print(
+                                    f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB downloaded",
+                                    flush=True,
+                                )
+                            last_log_time = now
+
+        final_mb = (
+            (os.path.getsize(filepath) / (1024 * 1024))
+            if os.path.exists(filepath)
+            else 0
+        )
+        duration = time.time() - start_time
+        speed = (final_mb / duration) if duration > 0 else 0
+
+        print(
+            f"[Worker {worker_id}] [✓] Finished: {filename} ({final_mb:.1f} MB in {duration:.1f}s at {speed:.2f} MB/s)",
+            flush=True,
+        )
+        return {
+            "status": "completed",
+            "title": title,
+            "filepath": os.path.abspath(filepath),
+            "size_mb": final_mb,
+            "post_url": post_url,
+            "source_video_url": url,
+        }
+
+    except Exception as e:
+        if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+        print(f"[Worker {worker_id}] [!] [Error] {filename}: {e}", flush=True)
+        return {"status": "error", "title": title, "error": str(e)}
+
+
+def run_parallel_downloader(
+    json_file, output_dir, max_workers=4, limit=5, timeout=180
+):
+    """
+    Spawns a ThreadPoolExecutor with 3-4 parallel workers to download up to `limit` videos.
+    """
+    if not os.path.exists(json_file):
+        print(f"[!] JSON file not found: {json_file}", flush=True)
+        return []
+
+    with open(json_file, "r", encoding="utf-8") as f:
+        items = json.load(f)
+
+    valid_items = [it for it in items if it.get("mp4_download_url")]
+
+    if limit and limit > 0:
+        valid_items = valid_items[:limit]
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    print("\n=======================================================", flush=True)
+    print(f"[*] Modular Parallel Video Downloader", flush=True)
+    print(f"[*] Queue Items:       {len(valid_items)} (Limit: {limit})", flush=True)
+    print(f"[*] Concurrent Workers: {max_workers} Workers", flush=True)
+    print(f"[*] Destination Dir:   {os.path.abspath(output_dir)}", flush=True)
+    print("=======================================================\n", flush=True)
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+        future_to_item = {
+            executor.submit(
+                download_video_worker,
+                item,
+                output_dir,
+                timeout,
+                (i % max_workers) + 1,
+            ): item
+            for i, item in enumerate(valid_items)
+        }
+
+        for future in concurrent.futures.as_completed(future_to_item):
+            try:
+                res = future.result()
+                results.append(res)
+            except Exception as exc:
+                results.append({"status": "error", "error": str(exc)})
+
+    completed = sum(
+        1 for r in results if r.get("status") in ["completed", "exists"]
+    )
+    print(
+        f"\n[*] Parallel Download Complete: {completed}/{len(valid_items)} ready on disk.\n",
+        flush=True,
+    )
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Modular 3-4 Worker Video Downloader"
+    )
+    parser.add_argument(
+        "--json", required=True, help="Path to scraper JSON database"
+    )
+    parser.add_argument(
+        "--output", required=True, help="Directory to save downloaded MP4s"
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel download workers (default 4)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum videos to download (default 5)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=180,
+        help="Download timeout per video in seconds",
+    )
+
+    args = parser.parse_args()
+    results = run_parallel_downloader(
+        json_file=args.json,
+        output_dir=args.output,
+        max_workers=args.workers,
+        limit=args.limit,
+        timeout=args.timeout,
+    )
+
+    # Output JSON summary to stdout for Node orchestrator consumption
+    print(f"__RESULT_JSON__:{json.dumps(results)}")
+
+
+if __name__ == "__main__":
+    main()
