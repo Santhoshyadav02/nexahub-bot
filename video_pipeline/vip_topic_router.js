@@ -307,17 +307,36 @@ class VipTopicRouter {
    * Only Forward [다음 ➡️] and Backward [⬅️ 이전] buttons (Home button removed).
    */
   formatCategoryCard(category, page = 1, pageSize = 8) {
-    let items = (this.cardsData.categories[category] || []).filter(isStrictlyAllowedChannel);
+    let items = [];
 
-    // Ensure 1 dedicated channel per topic (except ALL)
-    if (category !== 'ALL' && TOPIC_PRIMARY_CHANNELS[category]) {
+    if (category === 'ALL') {
+      // Interleave all 6 channels in balanced round-robin order (BJ, CN, KR, JP, 18.., AV)
+      const cats = ['BJ', 'CN', 'KR', 'JP', '18', 'AV'];
+      const catItems = {};
+      let maxLen = 0;
+      for (const c of cats) {
+        catItems[c] = (this.cardsData.categories[c] || []).filter(isStrictlyAllowedChannel);
+        if (catItems[c].length > maxLen) maxLen = catItems[c].length;
+      }
+      const interleaved = [];
+      for (let i = 0; i < maxLen; i++) {
+        for (const c of cats) {
+          if (catItems[c][i]) {
+            interleaved.push(catItems[c][i]);
+          }
+        }
+      }
+      items = interleaved.length > 0 ? interleaved : (this.cardsData.categories.ALL || []).filter(isStrictlyAllowedChannel);
+    } else if (TOPIC_PRIMARY_CHANNELS[category]) {
       const primary = TOPIC_PRIMARY_CHANNELS[category];
-      const primaryId = String(primary.channelId);
       const primaryUser = (primary.username || '').toLowerCase();
-      items = items.filter(it =>
-        String(it.channelId) === primaryId ||
-        (it.directLink && primaryUser && it.directLink.toLowerCase().includes(`/${primaryUser}/`))
-      );
+      items = (this.cardsData.categories[category] || []).filter(it => {
+        if (!isStrictlyAllowedChannel(it)) return false;
+        const link = (it.directLink || it.url || '').toLowerCase();
+        return (it.username && it.username.toLowerCase() === primaryUser) || link.includes(`/${primaryUser}/`);
+      });
+    } else {
+      items = (this.cardsData.categories[category] || []).filter(isStrictlyAllowedChannel);
     }
 
     const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
