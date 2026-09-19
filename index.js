@@ -3581,11 +3581,18 @@ bot.on("message", async (msg) => {
       const vipRouter = new VipTopicRouter();
       
       let category = "ALL";
-      if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
+      const cleanText = (text || "").toLowerCase().trim();
+      if (cleanText === "bj" || cleanText === "/bj") category = "BJ";
+      else if (cleanText === "kr" || cleanText === "/kr") category = "KR";
+      else if (cleanText === "jp" || cleanText === "/jp") category = "JP";
+      else if (cleanText === "cn" || cleanText === "/cn") category = "CN";
+      else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18") category = "18";
+      else if (cleanText === "av" || cleanText === "/av") category = "AV";
+      else if (threadId === TOPIC_THREAD_IDS.BJ || threadId === 23) category = "BJ";
       else if (threadId === TOPIC_THREAD_IDS.KR || threadId === 20) category = "KR";
       else if (threadId === TOPIC_THREAD_IDS.JP || threadId === 14) category = "JP";
-      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17) category = "CN";
-      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8) category = "18";
+      else if (threadId === TOPIC_THREAD_IDS.CN || threadId === 17 || threadId === 24 || threadId === 25 || threadId === 26 || threadId === 27) category = "CN";
+      else if (threadId === TOPIC_THREAD_IDS['18'] || threadId === 8 || threadId === 16) category = "18";
       else if (threadId === TOPIC_THREAD_IDS.AV || threadId === 12) category = "AV";
       else category = "ALL";
 

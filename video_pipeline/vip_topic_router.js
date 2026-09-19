@@ -368,8 +368,30 @@ class VipTopicRouter {
       navRow.push({ text: '다음 ➡️', callback_data: `vip_card:${category}:${safePage + 1}` });
     }
 
+    const keyboardRows = [];
+    if (navRow.length > 0) {
+      keyboardRows.push(navRow);
+    }
+
+    // Category quick switch buttons
+    keyboardRows.push([
+      { text: category === 'BJ' ? '🔘 BJ.' : '📺 BJ.', callback_data: 'vip_card:BJ:1' },
+      { text: category === 'KR' ? '🔘 KR' : '🇰🇷 KR', callback_data: 'vip_card:KR:1' },
+      { text: category === 'JP' ? '🔘 JP' : '🇯🇵 JP', callback_data: 'vip_card:JP:1' }
+    ]);
+    keyboardRows.push([
+      { text: category === 'CN' ? '🔘 CN' : '🇨🇳 CN', callback_data: 'vip_card:CN:1' },
+      { text: category === '18' ? '🔘 18..' : '🔞 18..', callback_data: 'vip_card:18:1' },
+      { text: category === 'AV' ? '🔘 AV' : '🎬 AV', callback_data: 'vip_card:AV:1' }
+    ]);
+    if (category !== 'ALL') {
+      keyboardRows.push([
+        { text: '🌐 ALL (전체 채널 모아보기)', callback_data: 'vip_card:ALL:1' }
+      ]);
+    }
+
     const keyboard = {
-      inline_keyboard: navRow.length ? [navRow] : []
+      inline_keyboard: keyboardRows
     };
 
     return { text, keyboard };
