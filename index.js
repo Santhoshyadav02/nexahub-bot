@@ -3627,12 +3627,12 @@ bot.on("message", async (msg) => {
 
       // Explicit category shortcuts
       if (!category) {
-        if (cleanText === "bj" || cleanText === "/bj" || cleanText === "!bj" || cleanText === "bj." || cleanText.startsWith("bj ")) category = "BJ";
-        else if (cleanText === "kr" || cleanText === "/kr" || cleanText === "!kr" || cleanText.startsWith("kr ")) category = "KR";
-        else if (cleanText === "jp" || cleanText === "/jp" || cleanText === "!jp" || cleanText.startsWith("jp ")) category = "JP";
-        else if (cleanText === "cn" || cleanText === "/cn" || cleanText === "!cn" || cleanText.startsWith("cn ")) category = "CN";
-        else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18" || cleanText === "..." || cleanText.startsWith("18 ")) category = "18";
-        else if (cleanText === "av" || cleanText === "/av" || cleanText === "!av" || cleanText.startsWith("av ")) category = "AV";
+        if (cleanText === "bj" || cleanText === "/bj" || cleanText === "!bj" || cleanText === "bj." || cleanText.includes("토끼") || cleanText.startsWith("bj ")) category = "BJ";
+        else if (cleanText === "kr" || cleanText === "/kr" || cleanText === "!kr" || cleanText.includes("로맨틱") || cleanText.startsWith("kr ")) category = "KR";
+        else if (cleanText === "jp" || cleanText === "/jp" || cleanText === "!jp" || cleanText.includes("모사") || cleanText.includes("vsdxda") || cleanText.startsWith("jp ")) category = "JP";
+        else if (cleanText === "cn" || cleanText === "/cn" || cleanText === "!cn" || cleanText.includes("가랑이") || cleanText.includes("ccdjxc") || cleanText.startsWith("cn ")) category = "CN";
+        else if (cleanText === "18" || cleanText === "18.." || cleanText === "/18" || cleanText === "..." || cleanText.includes("첩") || cleanText.startsWith("18 ")) category = "18";
+        else if (cleanText === "av" || cleanText === "/av" || cleanText === "!av" || cleanText.includes("사키") || cleanText.startsWith("av ")) category = "AV";
         else if (cleanText === "all" || cleanText === "/all" || cleanText === "!all" || cleanText === "전체") category = "ALL";
       }
 

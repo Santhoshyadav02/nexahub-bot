@@ -125,16 +125,31 @@ class VipTopicRouter {
   constructor(options = {}) {
     this.vipChatId = options.vipChatId || process.env.VIP_SUPERGROUP_CHAT_ID || DEFAULT_VIP_CHAT_ID;
     this.botToken = options.botToken || process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-    const defaultStateDir = process.platform === 'win32'
-      ? path.resolve(__dirname, 'state')
-      : '/var/lib/nexahub/video_pipeline/state';
-    this.stateDir = options.stateDir || defaultStateDir;
-    try {
-      fs.mkdirSync(this.stateDir, { recursive: true });
-    } catch (_) {}
+    this.stateDir = this._resolveStateDir(options.stateDir);
     this.cardsStateFile = path.join(this.stateDir, 'vip_topic_cards.json');
     this.threadsStateFile = path.join(this.stateDir, 'vip_topic_threads.json');
+    this._threadMemoryMap = {};
     this.cardsData = this._loadCardsData();
+  }
+
+  _resolveStateDir(preferred) {
+    if (preferred) {
+      try {
+        fs.mkdirSync(preferred, { recursive: true });
+        return preferred;
+      } catch (_) {}
+    }
+    const primary = process.platform === 'win32'
+      ? path.resolve(__dirname, 'state')
+      : '/var/lib/nexahub/video_pipeline/state';
+    try {
+      fs.mkdirSync(primary, { recursive: true });
+      return primary;
+    } catch (_) {
+      const fallback = path.resolve(__dirname, 'state');
+      try { fs.mkdirSync(fallback, { recursive: true }); } catch (__) {}
+      return fallback;
+    }
   }
 
   _loadCardsData() {
@@ -257,6 +272,8 @@ class VipTopicRouter {
 
   registerThreadMapping(threadId, category) {
     if (!threadId || !category) return;
+    this._threadMemoryMap = this._threadMemoryMap || {};
+    this._threadMemoryMap[String(threadId)] = category;
     try {
       let map = {};
       if (fs.existsSync(this.threadsStateFile)) {
@@ -272,10 +289,17 @@ class VipTopicRouter {
 
   getCategoryForThread(threadId) {
     if (!threadId) return null;
+    if (this._threadMemoryMap && this._threadMemoryMap[String(threadId)]) {
+      return this._threadMemoryMap[String(threadId)];
+    }
     try {
       if (fs.existsSync(this.threadsStateFile)) {
         const map = JSON.parse(fs.readFileSync(this.threadsStateFile, 'utf8'));
-        return map[String(threadId)] || null;
+        if (map[String(threadId)]) {
+          this._threadMemoryMap = this._threadMemoryMap || {};
+          this._threadMemoryMap[String(threadId)] = map[String(threadId)];
+          return map[String(threadId)];
+        }
       }
     } catch (_) {}
     return null;
