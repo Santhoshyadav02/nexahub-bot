@@ -277,7 +277,30 @@ class ModularScraperPipeline {
 
     let msgId = null;
     try {
-      const client = this._getOrInitTelegramClient();
+      const fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+      let client = this._getOrInitTelegramClient();
+
+      // If file > 48 MB and client is the standard HTTP bot, switch to MTProto uploader
+      if (fileSize > 48 * 1024 * 1024 && process.env.TELEGRAM_SESSION_STRING && process.env.TELEGRAM_API_ID) {
+        if (!this._mtprotoUploader) {
+          try {
+            const { MtprotoVideoUploader } = require('./mtproto_video_uploader');
+            this._mtprotoUploader = new MtprotoVideoUploader({
+              apiId: process.env.TELEGRAM_API_ID,
+              apiHash: process.env.TELEGRAM_API_HASH,
+              sessionString: process.env.TELEGRAM_SESSION_STRING,
+              uploadWorkers: 4,
+              uploadPartsDir: dataPath('video_pipeline', 'upload_parts')
+            });
+          } catch (e) {
+            console.warn(`${LOG_PREFIX} Could not init MTProto uploader: ${e.message}`);
+          }
+        }
+        if (this._mtprotoUploader) {
+          client = this._mtprotoUploader;
+        }
+      }
+
       if (client) {
         let uploadTarget = channelConf.chatId;
         if (typeof client.getEntity === 'function') {
