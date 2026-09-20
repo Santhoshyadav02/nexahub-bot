@@ -45,8 +45,15 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
     filename = f"{safe_title}{suffix}.mp4"
     filepath = os.path.join(output_dir, filename)
 
+    # If a broken/empty file exists (< 1MB), clean it up
+    if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+
     # Check if complete file already exists (> 1MB)
-    if os.path.exists(filepath) and os.path.getsize(filepath) > 1024 * 1024:
+    if os.path.exists(filepath) and os.path.getsize(filepath) >= 1024 * 1024:
         size_mb = os.path.getsize(filepath) / (1024 * 1024)
         print(
             f"[Worker {worker_id}] [Already Downloaded] {filename} ({size_mb:.1f} MB)",
@@ -83,6 +90,10 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
         },
     ]
 
+    part_filepath = os.path.join(
+        output_dir, f".part_{safe_title}{suffix}_{worker_id}_{int(time.time()*1000)}.tmp"
+    )
+
     for attempt, headers in enumerate(headers_attempts):
         try:
             if attempt == 0:
@@ -113,7 +124,7 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                 downloaded = 0
                 last_log_time = time.time()
 
-                with open(filepath, "wb") as f:
+                with open(part_filepath, "wb") as f:
                     for chunk in response.iter_content(chunk_size=chunk_size):
                         if chunk:
                             f.write(chunk)
@@ -134,6 +145,18 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                                         flush=True,
                                     )
                                 last_log_time = now
+
+                # Verify completeness if content-length header was supplied
+                if total_size > 0 and downloaded < (total_size * 0.98):
+                    if os.path.exists(part_filepath):
+                        os.remove(part_filepath)
+                    raise IOError(
+                        f"Incomplete download stream: received {downloaded}/{total_size} bytes"
+                    )
+
+            # Atomically move verified part file to final destination
+            if os.path.exists(part_filepath):
+                os.replace(part_filepath, filepath)
 
             final_mb = (
                 (os.path.getsize(filepath) / (1024 * 1024))
@@ -157,14 +180,16 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
             }
 
         except Exception as e:
+            if os.path.exists(part_filepath):
+                try:
+                    os.remove(part_filepath)
+                except Exception:
+                    pass
+
             if attempt < len(headers_attempts) - 1:
                 time.sleep(1.0)
                 continue
-            if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
-                try:
-                    os.remove(filepath)
-                except Exception:
-                    pass
+
             print(f"[Worker {worker_id}] [!] [Error] {filename}: {e}", flush=True)
             return {"status": "error", "title": title, "error": str(e)}
 

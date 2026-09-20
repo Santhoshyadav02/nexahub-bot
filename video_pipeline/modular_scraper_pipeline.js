@@ -282,7 +282,15 @@ class ModularScraperPipeline {
     const validation = await validateMediaFile(filePath, { allowRemuxFallback: false });
     if (!validation.valid) {
       const errMsg = validation.error || validation.reason || 'Unknown validation failure';
-      console.warn(`${LOG_PREFIX} Media validation failed for ${filePath}: ${errMsg}`);
+      console.warn(`${LOG_PREFIX} Media validation failed for ${filePath}: ${errMsg}. Deleting corrupted/partial file.`);
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`${LOG_PREFIX} 🗑️ Deleted corrupt/partial media file from disk: ${path.basename(filePath)}`);
+        }
+      } catch (delErr) {
+        console.warn(`${LOG_PREFIX} Could not delete invalid media file ${filePath}: ${delErr.message}`);
+      }
       return { status: 'INVALID_MEDIA', reason: errMsg };
     }
 

@@ -42,8 +42,15 @@ def download_single_video(
     filename = f"{safe_title}{suffix}.mp4"
     filepath = os.path.join(output_dir, filename)
 
+    # If broken/empty file exists, remove it
+    if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+
     # Check if file already exists and is complete (> 1MB)
-    if os.path.exists(filepath) and os.path.getsize(filepath) > 1024 * 1024:
+    if os.path.exists(filepath) and os.path.getsize(filepath) >= 1024 * 1024:
         size_mb = os.path.getsize(filepath) / (1024 * 1024)
         print(f"[*] [Already Downloaded] {filename} ({size_mb:.1f} MB)\n", flush=True)
         return {"status": "exists", "title": title, "filepath": filepath}
@@ -52,6 +59,8 @@ def download_single_video(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://02.avsee.is/",
     }
+
+    part_filepath = os.path.join(output_dir, f".part_{safe_title}{suffix}_{int(time.time()*1000)}.tmp")
 
     try:
         print(f"[+] Downloading: {filename}", flush=True)
@@ -73,9 +82,10 @@ def download_single_video(
 
             total_size = int(response.headers.get("content-length", 0))
             chunk_size = 1024 * 256  # 256 KB chunks for smooth progress
+            downloaded = 0
 
             with (
-                open(filepath, "wb") as f,
+                open(part_filepath, "wb") as f,
                 tqdm(
                     desc=f"    Progress",
                     total=total_size,
@@ -90,7 +100,16 @@ def download_single_video(
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:
                         f.write(chunk)
+                        downloaded += len(chunk)
                         pbar.update(len(chunk))
+
+            if total_size > 0 and downloaded < (total_size * 0.98):
+                if os.path.exists(part_filepath):
+                    os.remove(part_filepath)
+                raise IOError(f"Incomplete download: received {downloaded}/{total_size} bytes")
+
+        if os.path.exists(part_filepath):
+            os.replace(part_filepath, filepath)
 
         total_mb = (
             (os.path.getsize(filepath) / (1024 * 1024))
@@ -111,9 +130,9 @@ def download_single_video(
         }
 
     except Exception as e:
-        if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
+        if os.path.exists(part_filepath):
             try:
-                os.remove(filepath)
+                os.remove(part_filepath)
             except Exception:
                 pass
         print(f"[!] [Download Error] {filename}: {e}\n", flush=True)
