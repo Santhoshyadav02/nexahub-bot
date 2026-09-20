@@ -213,7 +213,7 @@ class ModularScraperPipeline {
       '--limit', String(limit)
     ];
 
-    const res = await this._execProcess(this.pythonPath, args, ROOT_DIR, 600000);
+    const res = await this._execProcess(this.pythonPath, args, ROOT_DIR, 1800000);
     const match = res.stdout.match(/__RESULT_JSON__:(.*)$/m);
     if (match && match[1]) {
       try {
