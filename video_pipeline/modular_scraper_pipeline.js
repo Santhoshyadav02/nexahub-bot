@@ -217,7 +217,25 @@ class ModularScraperPipeline {
     const match = res.stdout.match(/__RESULT_JSON__:(.*)$/m);
     if (match && match[1]) {
       try {
-        return JSON.parse(match[1].trim());
+        const parsed = JSON.parse(match[1].trim());
+        // Invalidate stale 403 items from JSON cache so next run extracts fresh video URLs
+        const failed403Titles = new Set(parsed.filter(r => r.error && r.error.includes('403')).map(r => r.title));
+        if (failed403Titles.size > 0 && fs.existsSync(jsonPath)) {
+          try {
+            const currentDb = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            let modified = false;
+            for (const it of currentDb) {
+              if (failed403Titles.has(it.title)) {
+                it.scraped_at = 0;
+                modified = true;
+              }
+            }
+            if (modified) {
+              fs.writeFileSync(jsonPath, JSON.stringify(currentDb, null, 2), 'utf8');
+            }
+          } catch (_) {}
+        }
+        return parsed;
       } catch (_) {}
     }
 
