@@ -273,7 +273,7 @@ def extract_post_title(page):
 
 
 def video_sources(page, timeout, play, verification_wait=180, headed=False):
-    effective_timeout = min(timeout, 15) if timeout > 0 else 15
+    effective_timeout = min(timeout, 6) if timeout > 0 else 6
     deadline = time.monotonic() + effective_timeout
     attempted = set()
     verification_remaining = verification_wait
