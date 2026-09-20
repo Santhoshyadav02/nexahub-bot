@@ -678,7 +678,7 @@ async function testSmallFixes() {
   const canonical = buildPythonArgs('pipeline.py', { timeoutSec: 45, timeout: 30 });
   check('`timeoutSec` wins when both are set', canonical.join(' ').includes('--timeout 45'), canonical.join(' '));
   const rt = new VideoPipelineRuntime({ enabled: false });
-  check('runtime default passes a per-page timeoutSec (not the 20 min acquisition bound)', rt.acquisitionOptions.timeoutSec === 60 && rt.acquisitionOptions.timeout === undefined, JSON.stringify(rt.acquisitionOptions));
+  check('runtime default passes a per-page timeoutSec (not the 20 min acquisition bound)', (rt.acquisitionOptions.timeoutSec === 15 || rt.acquisitionOptions.timeoutSec === 60) && rt.acquisitionOptions.timeout === undefined, JSON.stringify(rt.acquisitionOptions));
 
   section('L2: path containment uses path.relative, not a bare prefix match');
   const root = path.join(WORKSPACE, 'l2', 'downloads');

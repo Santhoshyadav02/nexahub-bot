@@ -273,49 +273,81 @@ def extract_post_title(page):
 
 
 def video_sources(page, timeout, play, verification_wait=180, headed=False):
-    deadline = time.monotonic() + timeout
+    effective_timeout = min(timeout, 15) if timeout > 0 else 15
+    deadline = time.monotonic() + effective_timeout
     attempted = set()
     verification_remaining = verification_wait
     overlay_attempted = False
-    print(f'Waiting up to {timeout:g}s for video source (checking overlay: {OVERLAY_SELECTOR})', flush=True)
-    while time.monotonic() < deadline:
-        if verification_visible(page):
-            if verification_remaining <= 0:
-                raise VerificationRequired('Human verification wait budget expired; video source was not reached.')
-            started = time.monotonic()
-            wait_for_verification(page, verification_remaining, headed)
-            verification_remaining -= time.monotonic() - started
-            deadline = time.monotonic() + timeout
+    captured_network_sources = []
 
-        if not overlay_attempted:
-            try:
-                overlay_clicked = click_player_overlay(page, min(3000, max(1, (deadline - time.monotonic()) * 1000)))
-                if overlay_clicked:
-                    deadline = time.monotonic() + timeout
-            except Error:
-                pass
-            overlay_attempted = True
+    def handle_request(request):
+        try:
+            url = request.url
+            if (
+                (".mp4" in url or ".m3u8" in url or "cdn" in url)
+                and (url.startswith("http://") or url.startswith("https://"))
+                and not url.endswith(".js")
+                and not url.endswith(".css")
+                and not url.endswith(".png")
+                and not url.endswith(".jpg")
+                and not url.endswith(".gif")
+            ):
+                if url not in captured_network_sources:
+                    captured_network_sources.append(url)
+        except Exception:
+            pass
 
-        sources = []
-        # Include videos inside iframes as well as the main document.
-        for frame in page.frames:
-            try:
-                frame_sources = extract_sources_from_frame(frame)
-                sources.extend(frame_sources)
-                if play and frame not in attempted:
-                    videos = frame.locator('video')
-                    if videos.count():
-                        attempted.add(frame)
-                        videos.evaluate_all('''videos => { for (const v of videos) {
-                            v.muted = true; v.play().catch(() => {});
-                        }}''')
-            except Error:
-                continue  # An iframe may detach while the player loads.
-        sources = list(dict.fromkeys(sources))
-        if sources:
-            return sources
-        page.wait_for_timeout(500)
-    return []
+    page.on("request", handle_request)
+    print(f'Waiting up to {effective_timeout:g}s for video source (checking overlay: {OVERLAY_SELECTOR})', flush=True)
+
+    try:
+        while time.monotonic() < deadline:
+            if verification_visible(page):
+                if verification_remaining <= 0:
+                    raise VerificationRequired('Human verification wait budget expired; video source was not reached.')
+                started = time.monotonic()
+                wait_for_verification(page, verification_remaining, headed)
+                verification_remaining -= time.monotonic() - started
+                deadline = time.monotonic() + effective_timeout
+
+            if not overlay_attempted:
+                try:
+                    overlay_clicked = click_player_overlay(page, min(2000, max(1, (deadline - time.monotonic()) * 1000)))
+                    if overlay_clicked:
+                        deadline = time.monotonic() + effective_timeout
+                except Error:
+                    pass
+                overlay_attempted = True
+
+            sources = list(captured_network_sources)
+
+            # Include videos inside iframes as well as the main document.
+            for frame in page.frames:
+                try:
+                    frame_sources = extract_sources_from_frame(frame)
+                    sources.extend(frame_sources)
+                    if play and frame not in attempted:
+                        videos = frame.locator('video')
+                        if videos.count():
+                            attempted.add(frame)
+                            videos.evaluate_all('''videos => { for (const v of videos) {
+                                v.muted = true; v.play().catch(() => {});
+                            }}''')
+                except Error:
+                    continue  # An iframe may detach while the player loads.
+
+            sources = list(dict.fromkeys(sources))
+            if sources:
+                return sources
+
+            page.wait_for_timeout(400)
+
+        return list(dict.fromkeys(captured_network_sources))
+    finally:
+        try:
+            page.remove_listener("request", handle_request)
+        except Exception:
+            pass
 
 
 def main():

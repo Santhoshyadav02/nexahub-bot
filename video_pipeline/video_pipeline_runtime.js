@@ -34,8 +34,8 @@ const LOG_PREFIX = '[VIDEO_PIPELINE_RUNTIME]';
 const ROOT_DIR = path.resolve(__dirname, '..');
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour (scaled for 70+ videos/day)
-const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;      // 20 minutes (whole acquisition)
-const DEFAULT_PAGE_TIMEOUT_SEC = 60;            // per page/download inside video-tools
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;      // 15 minutes (whole acquisition)
+const DEFAULT_PAGE_TIMEOUT_SEC = 15;            // per page/download inside video-tools
 const DEFAULT_DISCOVERY_TARGET = 100;
 const DEFAULT_DISCOVERY_MAX = 150;
 const DEFAULT_MAX_PAGES = 50;
