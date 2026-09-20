@@ -283,16 +283,16 @@ def video_sources(page, timeout, play, verification_wait=180, headed=False):
     def handle_request(request):
         try:
             url = request.url
-            if (
-                (".mp4" in url or ".m3u8" in url or "cdn" in url)
-                and (url.startswith("http://") or url.startswith("https://"))
-                and not url.endswith(".js")
-                and not url.endswith(".css")
-                and not url.endswith(".png")
-                and not url.endswith(".jpg")
-                and not url.endswith(".gif")
-            ):
-                if url not in captured_network_sources:
+            clean_path = url.split("?")[0].lower()
+            resource_type = request.resource_type
+            if resource_type == "media" or clean_path.endswith(".mp4") or clean_path.endswith(".m3u8"):
+                if (
+                    not clean_path.endswith(".js")
+                    and not clean_path.endswith(".css")
+                    and not clean_path.endswith(".html")
+                    and not clean_path.endswith(".json")
+                    and url not in captured_network_sources
+                ):
                     captured_network_sources.append(url)
         except Exception:
             pass
