@@ -3918,24 +3918,20 @@ if (isMainModule) {
     console.error("[EXTERNAL_SOURCE] scheduler startup failed:", extErr.message);
   }
 
-  // 🎬 Automated Batched Video Pipeline Runtime (Phase 6)
-  try {
-    const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
-    // Reuse the existing, already-authenticated node-telegram-bot-api instance
-    // as the publisher's Telegram client - its sendVideo(chatId, video, options)
-    // signature already matches exactly what VideoBatchPublisher calls. This is
-    // the SAME bot the rest of NexaHub uses; no second Telegram client/session
-    // is created. Only used if the runtime is actually enabled (VIDEO_PIPELINE_ENABLED)
-    // and configured to auto-publish - otherwise it's constructed but never invoked.
-    const videoRuntime = getVideoPipelineRuntime({ telegramClient: bot });
-    videoRuntime.start();
-  } catch (videoErr) {
-    console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
+  // 🎬 Legacy Video Pipeline Runtime (Disabled in favor of Unified 10-Channel Scraper Pipeline)
+  if (process.env.LEGACY_VIDEO_PIPELINE_ENABLED === 'true') {
+    try {
+      const { getVideoPipelineRuntime } = require("./video_pipeline/video_pipeline_runtime");
+      const videoRuntime = getVideoPipelineRuntime({ telegramClient: bot });
+      videoRuntime.start();
+    } catch (videoErr) {
+      console.error("❌ [LEGACY_VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
+    }
   }
 
   // 🚀 Unified 10-Channel Scraper Pipeline (10 Channels, 5 vids/day, 2 parallel download workers)
   try {
-    if (process.env.MODULAR_PIPELINE_ENABLED === 'true') {
+    if (process.env.MODULAR_PIPELINE_ENABLED !== 'false') {
       const { getModularPipelineInstance } = require("./video_pipeline/modular_scraper_pipeline");
       const modularPipeline = getModularPipelineInstance({
         telegramClient: bot,
