@@ -416,8 +416,8 @@ class ModularScraperPipeline {
       return { status: 'SKIPPED_DUPLICATE', mediaId, title };
     }
 
-    // 3. Technical Media Validation
-    const validation = await validateMediaFile(filePath, { allowRemuxFallback: false });
+    // 3. Technical Media Validation (Fast FFprobe metadata inspection, skipping heavy full-decode CPU freeze)
+    const validation = await validateMediaFile(filePath, { skipDecode: true, allowRemuxFallback: false });
     if (!validation.valid) {
       const errMsg = validation.error || validation.reason || 'Unknown validation failure';
       console.warn(`${LOG_PREFIX} Media validation failed for ${filePath}: ${errMsg}. Deleting corrupted file.`);
