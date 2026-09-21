@@ -119,7 +119,7 @@ function printStatus() {
   console.log('\n' + '='.repeat(68));
   console.log(`🎯 OVERALL 24-HOUR TARGET: ${totalPublishedToday}/${targetTotal || 50} POSTED (${channelKeys.length} CHANNELS x 5)`);
   console.log('='.repeat(68));
-  console.log(`• Parallel Workers:         2 download workers`);
+  console.log(`• Download Worker:          1 dedicated sequential worker`);
   console.log(`• Total Scraped Inventory:  ${totalScraped} items in DBs`);
   console.log(`• Temp Disk Space in Use:   ${formatBytes(totalDiskBytes)} (${totalFilesOnDisk} files awaiting upload)`);
   console.log(`• Post-Publish Cleanup:     ENABLED (temp files unlinked after send)`);

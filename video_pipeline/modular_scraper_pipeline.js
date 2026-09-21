@@ -38,7 +38,7 @@ class ModularScraperPipeline {
   constructor(options = {}) {
     this.configPath = options.configPath || CONFIG_FILE;
     this.config = this._loadConfig();
-    this.workers = options.workers || 2;
+    this.workers = options.workers || Number(process.env.MODULAR_PIPELINE_WORKERS) || 1;
     this.dailyQuota = options.dailyQuota || this.config.dailyQuotaPerChannel || 5;
     this.maxDailyTotal = options.maxDailyTotal || 50;
     this.pythonPath = options.pythonPath || this._resolvePythonPath();
@@ -627,12 +627,11 @@ class ModularScraperPipeline {
                 }
               }
 
-              // 2. Download 2 videos in parallel with 2 concurrent workers
+              // 2. Download 1 video with 1 dedicated worker
               const chRemaining = this.quotaTracker.getRemainingQuota(key, conf.dailyQuota);
-              const batchLimit = Math.min(2, chRemaining);
-              if (nonDupes.length > 0 && batchLimit > 0) {
-                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading ${batchLimit} videos in parallel (Workers: 2)...`);
-                const downloadResults = await this.runDownloader(conf, batchLimit);
+              if (nonDupes.length > 0 && chRemaining > 0) {
+                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading 1 video (1 Worker)...`);
+                const downloadResults = await this.runDownloader(conf, 1);
                 for (const item of downloadResults) {
                   if (item.status === 'completed' || item.status === 'exists') {
                     // 3. Publish to Telegram
