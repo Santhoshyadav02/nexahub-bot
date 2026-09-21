@@ -255,7 +255,7 @@ class ModularScraperPipeline {
       '--end', String(endPage),
       '--output', dbFilename
     ];
-    await this._execProcess(this.pythonPath, args, scrapingDir, 180000);
+    await this._execProcess(this.pythonPath, args, scrapingDir, 480000);
 
     if (fs.existsSync(dbPath)) {
       try {
