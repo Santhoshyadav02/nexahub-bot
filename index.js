@@ -3942,9 +3942,9 @@ if (isMainModule) {
         workers: Number(process.env.MODULAR_PIPELINE_WORKERS) || 2,
         dailyQuota: Number(process.env.MODULAR_PIPELINE_DAILY_QUOTA) || 5
       });
-      const intervalMs = Number(process.env.MODULAR_PIPELINE_INTERVAL_MS) || (6 * 60 * 60 * 1000);
+      const intervalMs = Number(process.env.MODULAR_PIPELINE_INTERVAL_MS) || (2 * 60 * 60 * 1000);
       modularPipeline.startScheduler(intervalMs);
-      console.log("✅ [MODULAR_PIPELINE] Unified 10-Channel Pipeline active (5 videos/24h per channel, 50 total/day, 2 download workers).");
+      console.log("✅ [MODULAR_PIPELINE] Unified 10-Channel Pipeline active (every 2h, 5 videos/day per channel, 50 total/day, 2 download workers).");
     }
   } catch (modErr) {
     console.error("❌ [MODULAR_PIPELINE] Startup failed:", modErr.message);
