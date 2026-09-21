@@ -335,6 +335,22 @@ class ModularScraperPipeline {
     if (match && match[1]) {
       try {
         const parsed = JSON.parse(match[1].trim());
+        // Invalidate expired 403 token items in DB so next scrape fetches fresh URLs automatically
+        const expiredUrls = new Set(parsed.filter(r => r.expired_token || (r.error && r.error.includes('403'))).map(r => r.post_url || r.title));
+        if (expiredUrls.size > 0 && fs.existsSync(jsonPath)) {
+          try {
+            const dbData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            let mod = false;
+            for (const item of dbData) {
+              if (expiredUrls.has(item.post_url) || expiredUrls.has(item.title)) {
+                item.mp4_download_url = null;
+                item.scraped_at = 0;
+                mod = true;
+              }
+            }
+            if (mod) fs.writeFileSync(jsonPath, JSON.stringify(dbData, null, 2), 'utf8');
+          } catch (_) {}
+        }
         return parsed;
       } catch (_) {}
     }
@@ -641,6 +657,8 @@ class ModularScraperPipeline {
                     overallResults[key].push(pub);
                     if (pub.status === 'PUBLISHED') {
                       progressMade = true;
+                      console.log(`${LOG_PREFIX} ⏳ [PACE] Pausing 20s before next channel to respect Telegram rate limits...`);
+                      await new Promise(r => setTimeout(r, 20000));
                     }
                   }
                 }
@@ -744,6 +762,36 @@ class ModularScraperPipeline {
       clearInterval(this._cleanupTimer);
       this._cleanupTimer = null;
     }
+  }
+
+  /**
+   * Cleans all downloaded files across all 10 channels.
+   */
+  cleanAllDownloads() {
+    let count = 0;
+    let bytes = 0;
+    const channelKeys = Object.keys(this.config.channels || {});
+    for (const key of channelKeys) {
+      const conf = this.config.channels[key];
+      const dirPath = path.resolve(ROOT_DIR, conf.downloadDir || `scraping/downloads/${key}`);
+      if (fs.existsSync(dirPath)) {
+        try {
+          const files = fs.readdirSync(dirPath);
+          for (const f of files) {
+            const fp = path.join(dirPath, f);
+            try {
+              const stat = fs.statSync(fp);
+              fs.unlinkSync(fp);
+              count++;
+              bytes += stat.size;
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+    }
+    const mb = (bytes / (1024 * 1024)).toFixed(1);
+    console.log(`${LOG_PREFIX} 🧹 Cleaned all download directories: removed ${count} file(s), freed ${mb} MB.`);
+    return { count, bytes, freedMb: mb };
   }
 
   getStatus() {

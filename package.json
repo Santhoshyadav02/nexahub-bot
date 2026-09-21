@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "status": "node video_pipeline/status.js"
+    "status": "node video_pipeline/status.js",
+    "clean-downloads": "node video_pipeline/clean_downloads.js"
   },
   "keywords": [],
   "author": "",

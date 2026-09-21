@@ -112,10 +112,13 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                         f"[Worker {worker_id}] [!] [HTTP {response.status_code}] Failed: {filename}",
                         flush=True,
                     )
+                    is_expired = response.status_code == 403
                     return {
                         "status": "failed",
                         "title": title,
                         "error": f"HTTP {response.status_code}",
+                        "expired_token": is_expired,
+                        "post_url": post_url,
                     }
 
                 total_size = int(response.headers.get("content-length", 0))
