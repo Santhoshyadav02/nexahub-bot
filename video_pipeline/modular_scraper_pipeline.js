@@ -38,7 +38,7 @@ class ModularScraperPipeline {
   constructor(options = {}) {
     this.configPath = options.configPath || CONFIG_FILE;
     this.config = this._loadConfig();
-    this.workers = options.workers || Number(process.env.MODULAR_PIPELINE_WORKERS) || 2;
+    this.workers = Math.min(2, Math.max(1, Number(options.workers || process.env.MODULAR_PIPELINE_WORKERS || 2)));
     this.dailyQuota = options.dailyQuota || this.config.dailyQuotaPerChannel || 5;
     this.maxDailyTotal = options.maxDailyTotal || 50;
     this.pythonPath = options.pythonPath || this._resolvePythonPath();

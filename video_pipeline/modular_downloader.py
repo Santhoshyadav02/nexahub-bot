@@ -200,7 +200,7 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
 
 
 def run_parallel_downloader(
-    json_file, output_dir, max_workers=4, limit=5, timeout=180
+    json_file, output_dir, max_workers=2, limit=5, timeout=180
 ):
     """
     Spawns a ThreadPoolExecutor with 3-4 parallel workers to download up to `limit` videos,
