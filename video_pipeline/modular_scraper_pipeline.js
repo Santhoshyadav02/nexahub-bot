@@ -627,10 +627,12 @@ class ModularScraperPipeline {
                 }
               }
 
-              // 2. Download 1 video with 2-worker downloader
-              if (nonDupes.length > 0) {
-                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading 1 video (Workers: ${this.workers})...`);
-                const downloadResults = await this.runDownloader(conf, 1);
+              // 2. Download 2 videos in parallel with 2 concurrent workers
+              const chRemaining = this.quotaTracker.getRemainingQuota(key, conf.dailyQuota);
+              const batchLimit = Math.min(2, chRemaining);
+              if (nonDupes.length > 0 && batchLimit > 0) {
+                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading ${batchLimit} videos in parallel (Workers: 2)...`);
+                const downloadResults = await this.runDownloader(conf, batchLimit);
                 for (const item of downloadResults) {
                   if (item.status === 'completed' || item.status === 'exists') {
                     // 3. Publish to Telegram
