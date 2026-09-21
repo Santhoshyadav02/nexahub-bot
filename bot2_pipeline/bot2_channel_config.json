@@ -1,0 +1,82 @@
+{
+  "version": "1.0.0",
+  "name": "NexaHub Bot 2 (INFINITY_01bot / Scraping-1 Engine)",
+  "botUsername": "INFINITY_121_bot",
+  "botId": "8600463420",
+  "dailyQuotaPerChannel": 5,
+  "maxDailyTotal": 30,
+  "channels": {
+    "krx": {
+      "key": "krx",
+      "name": "VIP-🔞",
+      "chatId": "-1003845130520",
+      "scraperScript": "scraping-1/krx_scraper.py",
+      "downloaderScript": "scraping-1/krx_downloader.py",
+      "databaseJson": "scraping-1/krx_videos.json",
+      "downloadDir": "scraping-1/downloads/krx",
+      "board": "krx",
+      "dailyQuota": 5,
+      "enabled": true
+    },
+    "xchina": {
+      "key": "xchina",
+      "name": "VIP-CN",
+      "chatId": "-1004304488687",
+      "scraperScript": "scraping-1/xchina_scraper.py",
+      "downloaderScript": "scraping-1/xchina_downloader.py",
+      "databaseJson": "scraping-1/xchina_videos.json",
+      "downloadDir": "scraping-1/downloads/xchina",
+      "board": "xchina",
+      "dailyQuota": 5,
+      "enabled": true
+    },
+    "jp": {
+      "key": "jp",
+      "name": "VIP-JP",
+      "chatId": "-1004484964035",
+      "scraperScript": "scraping-1/jp_scraper.py",
+      "downloaderScript": "scraping-1/jp_downloader.py",
+      "databaseJson": "scraping-1/jp_videos.json",
+      "downloadDir": "scraping-1/downloads/jp",
+      "board": "caption",
+      "dailyQuota": 5,
+      "enabled": true
+    },
+    "kr": {
+      "key": "kr",
+      "name": "VIP-KR",
+      "chatId": "-1004435999618",
+      "scraperScript": "scraping-1/kr_scraper.py",
+      "downloaderScript": "scraping-1/kr_downloader.py",
+      "databaseJson": "scraping-1/kr_videos.json",
+      "downloadDir": "scraping-1/downloads/kr",
+      "board": "kr",
+      "dailyQuota": 5,
+      "enabled": true
+    },
+    "bj": {
+      "key": "bj",
+      "name": "VIP-BJ.",
+      "chatId": "-1003977934133",
+      "scraperScript": "scraping-1/bj_scraper.py",
+      "downloaderScript": "scraping-1/bj_downloader.py",
+      "databaseJson": "scraping-1/bj_videos.json",
+      "downloadDir": "scraping-1/downloads/bj",
+      "board": "korea",
+      "dailyQuota": 5,
+      "enabled": true
+    },
+    "av": {
+      "key": "av",
+      "name": "VIP-AV",
+      "chatId": "-1004352512630",
+      "scraperScript": "scraping-1/av_scraper.py",
+      "downloaderScript": "scraping-1/av_downloader.py",
+      "databaseJson": "scraping-1/av_videos.json",
+      "downloadDir": "scraping-1/downloads/av",
+      "board": "caption",
+      "dailyQuota": 5,
+      "enabled": true
+    }
+  }
+}
