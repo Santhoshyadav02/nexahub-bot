@@ -145,86 +145,86 @@ def run_bj_scraper(
             print(f"[*] Starting BJ Scraper (Pages {start_page} to {end_page})")
             print(f"=======================================================\n")
 
-        for page_num in range(start_page, end_page + 1):
-            page_board_url = f"{BASE_URL}{board}&page={page_num}"
-            print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
+            for page_num in range(start_page, end_page + 1):
+                page_board_url = f"{BASE_URL}{board}&page={page_num}"
+                print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
 
-            page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
-            for _ in range(10):
-                if "Just a moment" not in page.title():
-                    break
-                page.wait_for_timeout(1000)
+                page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
+                for _ in range(10):
+                    if "Just a moment" not in page.title():
+                        break
+                    page.wait_for_timeout(1000)
 
-            soup = BeautifulSoup(page.content(), "html.parser")
-            post_links = []
-            for a in soup.find_all(
-                "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
-            ):
-                href = a.get("href", "")
-                full_url = (
-                    href if href.startswith("http") else f"https://02.avsee.is{href}"
-                )
-                clean_url = full_url.split("&page=")[0]
-                if clean_url not in post_links:
-                    post_links.append(clean_url)
-
-            now = time.time()
-            for idx, post_url in enumerate(post_links, 1):
-                cached = saved_data.get(post_url)
-                if (
-                    cached
-                    and cached.get("mp4_download_url")
-                    and (now - cached.get("scraped_at", 0) < 3600)
+                soup = BeautifulSoup(page.content(), "html.parser")
+                post_links = []
+                for a in soup.find_all(
+                    "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
                 ):
-                    print(
-                        f"    [{idx}/{len(post_links)}] (Cached) {cached['title']}"
+                    href = a.get("href", "")
+                    full_url = (
+                        href if href.startswith("http") else f"https://02.avsee.is{href}"
                     )
-                    continue
+                    clean_url = full_url.split("&page=")[0]
+                    if clean_url not in post_links:
+                        post_links.append(clean_url)
 
-                print(f"    [{idx}/{len(post_links)}] Extracting fresh video link: {post_url}")
-                item = extract_video_and_title(page, post_url)
-                item["page"] = page_num
-                item["category"] = "bj"
-                item["board"] = board
-                item["scraped_at"] = now
-                saved_data[post_url] = item
+                now = time.time()
+                for idx, post_url in enumerate(post_links, 1):
+                    cached = saved_data.get(post_url)
+                    if (
+                        cached
+                        and cached.get("mp4_download_url")
+                        and (now - cached.get("scraped_at", 0) < 3600)
+                    ):
+                        print(
+                            f"    [{idx}/{len(post_links)}] (Cached) {cached['title']}"
+                        )
+                        continue
 
-                print(f"        Title:   {item['title']}")
-                print(f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n")
+                    print(f"    [{idx}/{len(post_links)}] Extracting fresh video link: {post_url}")
+                    item = extract_video_and_title(page, post_url)
+                    item["page"] = page_num
+                    item["category"] = "bj"
+                    item["board"] = board
+                    item["scraped_at"] = now
+                    saved_data[post_url] = item
 
-            # Save incrementally
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
+                    print(f"        Title:   {item['title']}")
+                    print(f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n")
 
-            csv_file = output_file.replace(".json", ".csv")
-            with open(csv_file, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "title",
-                        "mp4_download_url",
-                        "post_url",
-                        "page",
-                        "category",
-                        "board",
-                    ],
+                # Save incrementally
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
+
+                csv_file = output_file.replace(".json", ".csv")
+                with open(csv_file, "w", newline="", encoding="utf-8-sig") as f:
+                    writer = csv.DictWriter(
+                        f,
+                        fieldnames=[
+                            "title",
+                            "mp4_download_url",
+                            "post_url",
+                            "page",
+                            "category",
+                            "board",
+                        ],
+                    )
+                    writer.writeheader()
+                    for v in saved_data.values():
+                        writer.writerow(
+                            {
+                                "title": v.get("title", ""),
+                                "mp4_download_url": v.get("mp4_download_url", ""),
+                                "post_url": v.get("post_url", ""),
+                                "page": v.get("page", ""),
+                                "category": "bj",
+                                "board": v.get("board", board),
+                            }
+                        )
+
+                print(
+                    f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
                 )
-                writer.writeheader()
-                for v in saved_data.values():
-                    writer.writerow(
-                        {
-                            "title": v.get("title", ""),
-                            "mp4_download_url": v.get("mp4_download_url", ""),
-                            "post_url": v.get("post_url", ""),
-                            "page": v.get("page", ""),
-                            "category": "bj",
-                            "board": v.get("board", board),
-                        }
-                    )
-
-            print(
-                f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
-            )
         finally:
             if browser:
                 try:

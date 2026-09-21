@@ -244,6 +244,26 @@ class Bot2PipelineOrchestrator {
     if (match && match[1]) {
       try {
         const parsed = JSON.parse(match[1].trim());
+        const expiredUrls = new Set(
+          parsed
+            .filter(r => r.expired_token || (r.error && r.error.includes('403')))
+            .map(r => r.post_url || r.title)
+        );
+        if (expiredUrls.size > 0 && fs.existsSync(jsonPath)) {
+          try {
+            const dbData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            let mod = false;
+            for (const item of dbData) {
+              if (expiredUrls.has(item.post_url) || expiredUrls.has(item.title)) {
+                item.mp4_download_url = null;
+                item.scraped_at = 0;
+                mod = true;
+              }
+            }
+            if (mod) fs.writeFileSync(jsonPath, JSON.stringify(dbData, null, 2), 'utf8');
+            console.log(`${LOG_PREFIX} Cleared ${expiredUrls.size} expired (403) token candidates from "${channelConf.name}" database.`);
+          } catch (_) {}
+        }
         return parsed;
       } catch (e) {
         console.error(`${LOG_PREFIX} Failed to parse downloader JSON output: ${e.message}`);
