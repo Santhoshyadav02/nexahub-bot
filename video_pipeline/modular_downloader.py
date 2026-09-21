@@ -271,7 +271,7 @@ def run_parallel_downloader(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unified 1-Worker Video Downloader"
+        description="Unified 2-Worker Video Downloader"
     )
     parser.add_argument(
         "--json", required=True, help="Path to scraper JSON database"
@@ -282,8 +282,8 @@ def main():
     parser.add_argument(
         "--workers",
         type=int,
-        default=1,
-        help="Number of parallel download workers (default 1)",
+        default=2,
+        help="Number of parallel download workers (default 2)",
     )
     parser.add_argument(
         "--limit",

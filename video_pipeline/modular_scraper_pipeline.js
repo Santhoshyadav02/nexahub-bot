@@ -38,7 +38,7 @@ class ModularScraperPipeline {
   constructor(options = {}) {
     this.configPath = options.configPath || CONFIG_FILE;
     this.config = this._loadConfig();
-    this.workers = options.workers || Number(process.env.MODULAR_PIPELINE_WORKERS) || 1;
+    this.workers = options.workers || Number(process.env.MODULAR_PIPELINE_WORKERS) || 2;
     this.dailyQuota = options.dailyQuota || this.config.dailyQuotaPerChannel || 5;
     this.maxDailyTotal = options.maxDailyTotal || 50;
     this.pythonPath = options.pythonPath || this._resolvePythonPath();
@@ -242,12 +242,21 @@ class ModularScraperPipeline {
       : this._getPageRangeForChannel(channelConf.key);
     const scrapingDir = path.resolve(ROOT_DIR, 'scraping');
 
-    console.log(`${LOG_PREFIX} 🌐 Running scraper for "${channelConf.name}" (Pages ${startPage}-${endPage}) using python: ${this.pythonPath}`);
+    const dbPath = path.resolve(ROOT_DIR, channelConf.databaseJson);
+    const dbFilename = path.basename(dbPath);
+    const boardName = channelConf.board || 'korea';
 
-    const args = [scriptPath, '--start', String(startPage), '--end', String(endPage)];
+    console.log(`${LOG_PREFIX} 🌐 Running scraper for "${channelConf.name}" (Board: ${boardName}, Pages ${startPage}-${endPage}) using python: ${this.pythonPath}`);
+
+    const args = [
+      scriptPath,
+      '--board', boardName,
+      '--start', String(startPage),
+      '--end', String(endPage),
+      '--output', dbFilename
+    ];
     await this._execProcess(this.pythonPath, args, scrapingDir, 180000);
 
-    const dbPath = path.resolve(ROOT_DIR, channelConf.databaseJson);
     if (fs.existsSync(dbPath)) {
       try {
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
@@ -643,11 +652,12 @@ class ModularScraperPipeline {
                 }
               }
 
-              // 2. Download 1 video with 1 dedicated worker
+              // 2. Download up to 2 videos in parallel with 2 concurrent workers
               const chRemaining = this.quotaTracker.getRemainingQuota(key, conf.dailyQuota);
-              if (nonDupes.length > 0 && chRemaining > 0) {
-                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading 1 video (1 Worker)...`);
-                const downloadResults = await this.runDownloader(conf, 1);
+              const batchLimit = Math.min(2, chRemaining);
+              if (nonDupes.length > 0 && batchLimit > 0) {
+                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading ${batchLimit} video(s) in parallel (Workers: 2)...`);
+                const downloadResults = await this.runDownloader(conf, batchLimit);
                 for (const item of downloadResults) {
                   if (item.status === 'completed' || item.status === 'exists') {
                     // 3. Publish to Telegram
