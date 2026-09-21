@@ -578,7 +578,7 @@ class ModularScraperPipeline {
 
   /**
    * ⚖️ Algorithmic Round-Robin Fair Distribution across all 10 channels.
-   * Alternates through each channel to ensure even publishing and prevent channel starvation.
+   * Alternates through each channel to ensure even publishing and instant progress.
    */
   async runRoundRobinCycle(options = {}) {
     if (this._running) {
@@ -595,26 +595,13 @@ class ModularScraperPipeline {
 
     try {
       const channelKeys = Object.keys(this.config.channels);
-
-      // Phase 1: Run scrapers across active channels to index fresh links (~30 links total)
-      for (const key of channelKeys) {
-        const conf = this.config.channels[key];
-        if (conf.enabled !== false && this.quotaTracker.canPublish(key, conf.dailyQuota)) {
-          try {
-            await this.runScraper(conf, options);
-          } catch (err) {
-            console.error(`${LOG_PREFIX} Error scraping ${key}: ${err.message}`);
-          }
-        }
-      }
-
-      // Phase 2: Round-Robin download & publish loop
       let progressMade = true;
       let passNumber = 1;
 
+      // Multi-pass round-robin loop: 1 video per channel per pass
       while (progressMade && this.getTotalPublishedToday() < this.maxDailyTotal) {
         progressMade = false;
-        console.log(`\n--- [ROUND-ROBIN PASS ${passNumber}] ---`);
+        console.log(`\n--- [ROUND-ROBIN PASS ${passNumber}] Total Today: ${this.getTotalPublishedToday()}/${this.maxDailyTotal} ---`);
 
         for (const key of channelKeys) {
           const conf = this.config.channels[key];
@@ -622,15 +609,38 @@ class ModularScraperPipeline {
 
           if (this.quotaTracker.canPublish(key, conf.dailyQuota) && this.getTotalPublishedToday() < this.maxDailyTotal) {
             try {
-              // Download 1-2 videos for this channel per pass
-              const downloadResults = await this.runDownloader(conf, 1);
-              for (const item of downloadResults) {
-                if (item.status === 'completed' || item.status === 'exists') {
-                  const pub = await this.publishVideoToChannel(conf, item);
-                  if (!overallResults[key]) overallResults[key] = [];
-                  overallResults[key].push(pub);
-                  if (pub.status === 'PUBLISHED') {
-                    progressMade = true;
+              // 1. Check existing non-duplicate candidates in database
+              const dbPath = path.resolve(ROOT_DIR, conf.databaseJson);
+              let items = [];
+              if (fs.existsSync(dbPath)) {
+                try { items = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
+              }
+              let nonDupes = this._getNonDuplicateCandidates(conf, items);
+
+              // If low on fresh items (< 2), scrape 1 page immediately to top up
+              if (nonDupes.length < 2) {
+                console.log(`${LOG_PREFIX} 🌐 Fetching fresh links for "${conf.name}"...`);
+                await this.runScraper(conf, options);
+                if (fs.existsSync(dbPath)) {
+                  try { items = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
+                  nonDupes = this._getNonDuplicateCandidates(conf, items);
+                }
+              }
+
+              // 2. Download 1 video with 2-worker downloader
+              if (nonDupes.length > 0) {
+                console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading 1 video (Workers: ${this.workers})...`);
+                const downloadResults = await this.runDownloader(conf, 1);
+                for (const item of downloadResults) {
+                  if (item.status === 'completed' || item.status === 'exists') {
+                    // 3. Publish to Telegram
+                    console.log(`${LOG_PREFIX} 📤 [PUBLISH] Uploading "${item.title}" to ${conf.name}...`);
+                    const pub = await this.publishVideoToChannel(conf, item);
+                    if (!overallResults[key]) overallResults[key] = [];
+                    overallResults[key].push(pub);
+                    if (pub.status === 'PUBLISHED') {
+                      progressMade = true;
+                    }
                   }
                 }
               }
@@ -640,7 +650,7 @@ class ModularScraperPipeline {
           }
         }
         passNumber++;
-        if (passNumber > 6) break; // Maximum 6 passes per run cycle
+        if (passNumber > 6) break; // Maximum 6 passes per 2-hour cycle (up to 5 vids/channel)
       }
 
     } finally {
