@@ -187,10 +187,14 @@ def run_bj_scraper(
                     item["category"] = "bj"
                     item["board"] = board
                     item["scraped_at"] = now
-                    saved_data[post_url] = item
 
-                    print(f"        Title:   {item['title']}")
-                    print(f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n")
+                    if item.get("mp4_download_url") and not item.get("title", "").startswith("Just a moment") and item.get("title") != "Error":
+                        saved_data[post_url] = item
+                        print(f"        Title:   {item['title']}")
+                        print(f"        MP4 URL: {item['mp4_download_url']}\n")
+                    else:
+                        print(f"        Title:   {item['title']}")
+                        print(f"        MP4 URL: Not found (Skipped)\n")
 
                 # Save incrementally
                 with open(output_file, "w", encoding="utf-8") as f:
