@@ -121,7 +121,10 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                         "post_url": post_url,
                     }
 
-                total_size = int(response.headers.get("content-length", 0))
+                try:
+                    total_size = int(response.headers.get("content-length", 0) or 0)
+                except (ValueError, TypeError):
+                    total_size = 0
                 total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
                 chunk_size = 1024 * 512  # 512 KB chunks for high throughput
                 downloaded = 0

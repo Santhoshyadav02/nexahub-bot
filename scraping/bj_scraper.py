@@ -101,36 +101,49 @@ def run_bj_scraper(
             pass
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            channel="chrome",
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        )
-        page = context.new_page()
+        browser = None
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+        ]
+        try:
+            browser = p.chromium.launch(headless=True, args=launch_args)
+        except Exception:
+            try:
+                browser = p.chromium.launch(channel="chrome", headless=True, args=launch_args)
+            except Exception as e:
+                print(f"[!] Browser launch error: {e}", flush=True)
+                raise
 
-        if end_page is None:
-            url = f"{BASE_URL}{board}&page=1"
-            print(f"[*] Detecting total BJ board pages from {url}...")
-            page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            for _ in range(10):
-                if "Just a moment" not in page.title():
-                    break
-                page.wait_for_timeout(1000)
-            soup = BeautifulSoup(page.content(), "html.parser")
-            page_numbers = [1]
-            for a in soup.find_all("a", href=re.compile(r"page=(\d+)")):
-                m = re.search(r"page=(\d+)", a.get("href", ""))
-                if m:
-                    page_numbers.append(int(m.group(1)))
-            end_page = max(page_numbers)
-            print(f"[+] Total pages detected: {end_page}")
+        try:
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
 
-        print(f"\n=======================================================")
-        print(f"[*] Starting BJ Scraper (Pages {start_page} to {end_page})")
-        print(f"=======================================================\n")
+            if end_page is None:
+                url = f"{BASE_URL}{board}&page=1"
+                print(f"[*] Detecting total BJ board pages from {url}...")
+                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                for _ in range(10):
+                    if "Just a moment" not in page.title():
+                        break
+                    page.wait_for_timeout(1000)
+                soup = BeautifulSoup(page.content(), "html.parser")
+                page_numbers = [1]
+                for a in soup.find_all("a", href=re.compile(r"page=(\d+)")):
+                    m = re.search(r"page=(\d+)", a.get("href", ""))
+                    if m:
+                        page_numbers.append(int(m.group(1)))
+                end_page = max(page_numbers)
+                print(f"[+] Total pages detected: {end_page}")
+
+            print(f"\n=======================================================")
+            print(f"[*] Starting BJ Scraper (Pages {start_page} to {end_page})")
+            print(f"=======================================================\n")
 
         for page_num in range(start_page, end_page + 1):
             page_board_url = f"{BASE_URL}{board}&page={page_num}"
@@ -212,8 +225,12 @@ def run_bj_scraper(
             print(
                 f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
             )
-
-        browser.close()
+        finally:
+            if browser:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     print(
         f"\n[+] BJ Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"

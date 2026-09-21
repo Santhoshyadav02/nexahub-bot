@@ -88,8 +88,8 @@
       "chatId": "-1003786693669",
       "scraperScript": "scraping/bj_scraper.py",
       "downloaderScript": "scraping/bj_downloader.py",
-      "databaseJson": "scraping/javfc2_videos.json",
-      "downloadDir": "scraping/downloads/JAV FC2",
+      "databaseJson": "scraping/dating_videos.json",
+      "downloadDir": "scraping/downloads/dating",
       "board": "javfc2",
       "dailyQuota": 5,
       "enabled": true
@@ -101,8 +101,8 @@
       "chatId": "-1004483241550",
       "scraperScript": "scraping/bj_scraper.py",
       "downloaderScript": "scraping/bj_downloader.py",
-      "databaseJson": "scraping/javm_videos.json",
-      "downloadDir": "scraping/downloads/JAV removed Mosaic",
+      "databaseJson": "scraping/romance_videos.json",
+      "downloadDir": "scraping/downloads/romance",
       "board": "javm",
       "dailyQuota": 5,
       "enabled": true
@@ -114,8 +114,8 @@
       "chatId": "-1003725861834",
       "scraperScript": "scraping/bj_scraper.py",
       "downloaderScript": "scraping/bj_downloader.py",
-      "databaseJson": "scraping/javmgs_videos.json",
-      "downloadDir": "scraping/downloads/JAV MGStage",
+      "databaseJson": "scraping/hostess_videos.json",
+      "downloadDir": "scraping/downloads/hostess",
       "board": "javmgs",
       "dailyQuota": 5,
       "enabled": true
@@ -127,8 +127,8 @@
       "chatId": "-1004464504918",
       "scraperScript": "scraping/bj_scraper.py",
       "downloaderScript": "scraping/bj_downloader.py",
-      "databaseJson": "scraping/javc_videos.json",
-      "downloadDir": "scraping/downloads/JAV censored",
+      "databaseJson": "scraping/muse_videos.json",
+      "downloadDir": "scraping/downloads/muse",
       "board": "javc",
       "dailyQuota": 5,
       "enabled": true
