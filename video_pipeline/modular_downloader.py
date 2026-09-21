@@ -230,39 +230,56 @@ def run_parallel_downloader(
     results = []
     successful_downloads = []
 
-    # Process candidates in batches or until limit is reached
+    # Continuous dynamic worker queue: each worker immediately picks up next item as soon as it finishes
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=max_workers
     ) as executor:
-        cursor = 0
-        total_items = len(valid_items)
+        active_futures = {}
+        item_iter = iter(enumerate(valid_items))
 
-        while cursor < total_items and len(successful_downloads) < limit:
-            batch_size = min(max_workers * 2, total_items - cursor)
-            batch = valid_items[cursor : cursor + batch_size]
-            cursor += batch_size
-
-            future_to_item = {
-                executor.submit(
+        def submit_next(slot_worker_id=None):
+            try:
+                idx, next_item = next(item_iter)
+                worker_id = slot_worker_id or ((idx % max_workers) + 1)
+                fut = executor.submit(
                     download_video_worker,
-                    item,
+                    next_item,
                     output_dir,
                     timeout,
-                    (idx % max_workers) + 1,
-                ): item
-                for idx, item in enumerate(batch)
-            }
+                    worker_id,
+                )
+                active_futures[fut] = (worker_id, next_item)
+                return True
+            except StopIteration:
+                return False
 
-            for future in concurrent.futures.as_completed(future_to_item):
+        # Prime all workers (Worker 1, Worker 2) with initial tasks
+        for w in range(1, max_workers + 1):
+            if len(successful_downloads) < limit:
+                if not submit_next(w):
+                    break
+
+        # Process results as soon as ANY worker completes, immediately refilling that worker's slot
+        while active_futures and len(successful_downloads) < limit:
+            done, _ = concurrent.futures.wait(
+                active_futures.keys(),
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for fut in done:
+                worker_id, item = active_futures.pop(fut)
                 try:
-                    res = future.result()
+                    res = fut.result()
                     results.append(res)
                     if res.get("status") in ["completed", "exists"]:
                         successful_downloads.append(res)
-                        if len(successful_downloads) >= limit:
-                            break
                 except Exception as exc:
-                    results.append({"status": "error", "error": str(exc)})
+                    results.append(
+                        {"status": "error", "error": str(exc), "title": item.get("title", "")}
+                    )
+
+                # Refill freed worker slot immediately if limit is not yet reached
+                if len(successful_downloads) < limit:
+                    submit_next(worker_id)
 
     completed = len(successful_downloads)
     print(
