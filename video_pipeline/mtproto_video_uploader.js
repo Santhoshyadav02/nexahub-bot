@@ -253,13 +253,26 @@ class MtprotoVideoUploader {
     console.log(`${LOG_PREFIX} Uploading part ${index}/${total} (${partSize} bytes) via MTProto user session...`);
 
     let message;
+    let lastLogTime = Date.now();
+    const totalMb = (partSize / (1024 * 1024)).toFixed(1);
+
     try {
       message = await withTimeout(reader.client.sendFile(entity, {
         file: partPath,
         caption,
+        parseMode: 'html',
         supportsStreaming: true,
         attributes: attributes.length ? attributes : undefined,
-        workers: this.uploadWorkers
+        workers: this.uploadWorkers,
+        progressCallback: (progress) => {
+          const now = Date.now();
+          if (now - lastLogTime >= 3000 || progress >= 0.99) {
+            const currentMb = ((partSize * progress) / (1024 * 1024)).toFixed(1);
+            const pct = (progress * 100).toFixed(1);
+            console.log(`${LOG_PREFIX} 📤 [Upload Part ${index}/${total}] ${currentMb} MB / ${totalMb} MB (${pct}%)`);
+            lastLogTime = now;
+          }
+        }
       }), timeoutMs, `MTProto upload of part ${index}/${total}`);
     } catch (err) {
       if (typeof reader.noteFloodWait === 'function') reader.noteFloodWait(err);
