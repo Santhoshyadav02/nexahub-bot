@@ -1,10 +1,10 @@
 /**
  * ============================================================
- * 🧪 TEST SUITE: MODULAR 6-CHANNEL SCRAPER PIPELINE
+ * 🧪 TEST SUITE: UNIFIED 10-CHANNEL SCRAPER PIPELINE
  * ============================================================
  * Verifies:
- *   1. Correct mapping for all 6 specialized scrapers and channels.
- *   2. 24-hour quota management (5 videos/day per channel limit).
+ *   1. Correct mapping for all 10 specialized channels.
+ *   2. 24-hour quota management (5 videos/day per channel limit, 50 total).
  *   3. Date rollover behavior.
  *   4. Dedicated channel routing and idempotency.
  *   5. End-to-end dry-run orchestration.
@@ -46,31 +46,37 @@ async function runTests() {
     });
     const channels = pipeline.config.channels;
 
-    check('Exactly 6 channels configured', Object.keys(channels).length === 6);
+    check('Exactly 10 channels configured', Object.keys(channels).length === 10);
 
     // 1. BJ
     check('BJ maps to @tfccdet (-1004416217845)', channels.bj && channels.bj.username === 'tfccdet' && channels.bj.chatId === '-1004416217845');
-    check('BJ topic thread is 23', channels.bj && channels.bj.vipTopicThreadId === 23);
 
     // 2. KR (javleak)
     check('KR maps to @ccsfvk (-1003780478806)', channels.javleak && channels.javleak.username === 'ccsfvk' && channels.javleak.chatId === '-1003780478806');
-    check('KR topic thread is 20', channels.javleak && channels.javleak.vipTopicThreadId === 20);
 
     // 3. JP (caption)
     check('JP maps to @vsdxda (-1004486764871)', channels.caption && channels.caption.username === 'vsdxda' && channels.caption.chatId === '-1004486764871');
-    check('JP topic thread is 14', channels.caption && channels.caption.vipTopicThreadId === 14);
 
     // 4. CN (javc)
     check('CN maps to @ccdjxc (-1004481385613)', channels.javc && channels.javc.username === 'ccdjxc' && channels.javc.chatId === '-1004481385613');
-    check('CN topic thread is 17', channels.javc && channels.javc.vipTopicThreadId === 17);
 
     // 5. 18.. (javmgs)
     check('18.. maps to @ddkicr (-1004419758275)', channels.javmgs && channels.javmgs.username === 'ddkicr' && channels.javmgs.chatId === '-1004419758275');
-    check('18.. topic thread is 8', channels.javmgs && channels.javmgs.vipTopicThreadId === 8);
 
     // 6. AV (javm)
     check('AV maps to @cccddghhgf (-1004384169456)', channels.javm && channels.javm.username === 'cccddghhgf' && channels.javm.chatId === '-1004384169456');
-    check('AV topic thread is 12', channels.javm && channels.javm.vipTopicThreadId === 12);
+
+    // 7. Dating
+    check('Dating maps to @cccsefk (-1003786693669)', channels.dating && channels.dating.username === 'cccsefk' && channels.dating.chatId === '-1003786693669');
+
+    // 8. Romance
+    check('Romance maps to @e5brygh (-1004483241550)', channels.romance && channels.romance.username === 'e5brygh' && channels.romance.chatId === '-1004483241550');
+
+    // 9. Hostess
+    check('Hostess maps to @sfgfem (-1003725861834)', channels.hostess && channels.hostess.username === 'sfgfem' && channels.hostess.chatId === '-1003725861834');
+
+    // 10. Muse
+    check('Muse maps to @bzd4wrf (-1004464504918)', channels.muse && channels.muse.username === 'bzd4wrf' && channels.muse.chatId === '-1004464504918');
   }
 
   section('Test 2: 24-Hour Quota Tracker (5 Videos/Day Per Channel)');
@@ -121,7 +127,7 @@ async function runTests() {
     const pipeline = new ModularScraperPipeline({
       quotaTracker: new ModularQuotaTracker({ quotaPath: TEST_QUOTA_FILE, defaultDailyQuota: 5 }),
       telegramClient: mockClient,
-      workers: 4
+      workers: 2
     });
 
     const status = pipeline.getStatus();

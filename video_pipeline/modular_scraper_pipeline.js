@@ -24,7 +24,6 @@ const { ModularQuotaTracker } = require('./modular_quota_tracker');
 const { PublishLedger } = require('./publish_ledger');
 const { MediaLedger } = require('./media_ledger');
 const { validateMediaFile } = require('./media_validator');
-const { VipTopicRouter } = require('./vip_topic_router');
 const { dataPath } = require('../runtime_paths');
 
 const LOG_PREFIX = '[MODULAR_PIPELINE]';
@@ -36,14 +35,13 @@ class ModularScraperPipeline {
    * @param {object} [options]
    * @param {string} [options.configPath]
    * @param {object} [options.telegramClient] Injected MTProto or Bot client
-   * @param {object} [options.vipTopicRouter] Injected VIP Topic Router
-   * @param {number} [options.workers=4] Parallel download workers
+   * @param {number} [options.workers=2] Parallel download workers
    * @param {number} [options.dailyQuota=5] Max videos per channel per 24 hours
    */
   constructor(options = {}) {
     this.configPath = options.configPath || CONFIG_FILE;
     this.config = this._loadConfig();
-    this.workers = options.workers || 4;
+    this.workers = options.workers || 2;
     this.dailyQuota = options.dailyQuota || this.config.dailyQuotaPerChannel || 5;
     this.pythonPath = options.pythonPath || this._resolvePythonPath();
 
@@ -52,7 +50,6 @@ class ModularScraperPipeline {
     });
     this.publishLedger = options.publishLedger || new PublishLedger();
     this.mediaLedger = options.mediaLedger || new MediaLedger();
-    this.vipTopicRouter = options.vipTopicRouter || new VipTopicRouter();
     this.telegramClient = options.telegramClient || null;
     this.enableCleanup = options.enableCleanup !== undefined ? Boolean(options.enableCleanup) : true;
 
@@ -375,20 +372,6 @@ class ModularScraperPipeline {
         destinationId: channelConf.chatId
       });
 
-      // Post update & direct link card to VIP group
-      if (this.vipTopicRouter) {
-        try {
-          await this.vipTopicRouter.onVideoPublished({
-            channelId: channelConf.chatId,
-            messageId: msgId,
-            title,
-            channelUsername: channelConf.username
-          });
-        } catch (vipErr) {
-          console.warn(`${LOG_PREFIX} VIP router notify error: ${vipErr.message}`);
-        }
-      }
-
       // Cleanup post-publish to conserve disk space
       if (this.enableCleanup && fs.existsSync(filePath)) {
         try {
@@ -532,7 +515,17 @@ class ModularScraperPipeline {
   }
 }
 
+let _modularPipelineInstance = null;
+function getModularPipelineInstance(options = {}) {
+  if (!_modularPipelineInstance) {
+    _modularPipelineInstance = new ModularScraperPipeline(options);
+  }
+  return _modularPipelineInstance;
+}
+
 module.exports = {
   ModularScraperPipeline,
+  getModularPipelineInstance,
   CONFIG_FILE
 };
+

@@ -235,6 +235,16 @@ async function handleProcessExit(signal, exitCode = 0) {
     })(),
     (async () => {
       try {
+        const { getModularPipelineInstance } = require("./video_pipeline/modular_scraper_pipeline");
+        const modularPipeline = getModularPipelineInstance();
+        modularPipeline.stopScheduler();
+        console.log(`✅ [PID:${APP_PID}] Modular Scraper Pipeline stopped cleanly for ${signal}.`);
+      } catch (err) {
+        // Modular pipeline might not be instantiated, silent pass
+      }
+    })(),
+    (async () => {
+      try {
         const finished = await waitForActiveCycle(10000);
         if (!finished) {
           console.warn(`⚠️ [PID:${APP_PID}] Telegram publish cycle still running at shutdown; exiting after the current item.`);
@@ -3923,18 +3933,18 @@ if (isMainModule) {
     console.error("❌ [VIDEO_PIPELINE] Runtime startup failed:", videoErr.message);
   }
 
-  // 🚀 Modular 6-Channel Scraper Pipeline (BJ, KR, JP, CN, 18.., AV)
+  // 🚀 Unified 10-Channel Scraper Pipeline (10 Channels, 5 vids/day, 2 parallel download workers)
   try {
     if (process.env.MODULAR_PIPELINE_ENABLED === 'true') {
-      const { ModularScraperPipeline } = require("./video_pipeline/modular_scraper_pipeline");
-      const modularPipeline = new ModularScraperPipeline({
+      const { getModularPipelineInstance } = require("./video_pipeline/modular_scraper_pipeline");
+      const modularPipeline = getModularPipelineInstance({
         telegramClient: bot,
-        workers: Number(process.env.MODULAR_PIPELINE_WORKERS) || 4,
+        workers: Number(process.env.MODULAR_PIPELINE_WORKERS) || 2,
         dailyQuota: Number(process.env.MODULAR_PIPELINE_DAILY_QUOTA) || 5
       });
       const intervalMs = Number(process.env.MODULAR_PIPELINE_INTERVAL_MS) || (6 * 60 * 60 * 1000);
       modularPipeline.startScheduler(intervalMs);
-      console.log("✅ [MODULAR_PIPELINE] 6-Channel Modular Pipeline active (5 videos/24h per channel).");
+      console.log("✅ [MODULAR_PIPELINE] Unified 10-Channel Pipeline active (5 videos/24h per channel, 50 total/day, 2 download workers).");
     }
   } catch (modErr) {
     console.error("❌ [MODULAR_PIPELINE] Startup failed:", modErr.message);
