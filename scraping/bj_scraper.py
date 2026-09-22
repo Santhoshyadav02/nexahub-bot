@@ -12,6 +12,8 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
 OVERLAY_SELECTOR = "div[data-cl-overlay], div.p6driy29haev"
 VIDEO_SELECTOR = ".jw-media video.jw-video, video"
+ROOT_DIR = Path(__file__).resolve().parent
+PROFILE_DIR = ROOT_DIR / "browser_profile"
 
 
 def click_player_overlay(page, timeout=3000):
@@ -56,6 +58,23 @@ def click_player_overlay(page, timeout=3000):
     return False
 
 
+def wait_for_cloudflare_clearance(page, max_wait=12):
+    """
+    Waits for Cloudflare challenge clearance if present.
+    """
+    start = time.monotonic()
+    while time.monotonic() - start < max_wait:
+        t = ""
+        try:
+            t = page.title()
+        except Exception:
+            pass
+        if "Just a moment" not in t and "Security Verification" not in t and "Checking your browser" not in t:
+            return True
+        page.wait_for_timeout(1000)
+    return False
+
+
 def extract_video_and_title(page, post_url):
     """
     Visits a post page, extracts video title, interacts with player overlay,
@@ -72,18 +91,14 @@ def extract_video_and_title(page, post_url):
     page.on("request", handle_request)
 
     try:
-        response = page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
+        page.goto(post_url, wait_until="commit", timeout=45000)
 
-        # Wait for Cloudflare clearance (up to 10s)
-        for _ in range(10):
-            t = page.title()
-            if "Just a moment" not in t and "Security Verification" not in t:
-                break
-            page.wait_for_timeout(1000)
+        # Wait for Cloudflare clearance
+        wait_for_cloudflare_clearance(page, max_wait=10)
 
         # Trigger player overlay click
         try:
-            click_player_overlay(page, timeout=3500)
+            click_player_overlay(page, timeout=3000)
         except Exception:
             pass
 
@@ -108,7 +123,7 @@ def extract_video_and_title(page, post_url):
             except Exception:
                 continue
 
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1500)
 
         soup = BeautifulSoup(page.content(), "html.parser")
 
@@ -166,46 +181,60 @@ def run_bj_scraper(
         except Exception:
             pass
 
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
     with sync_playwright() as p:
-        browser = None
+        context = None
         launch_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
             "--disable-gpu",
+            "--disable-infobars",
+            "--window-size=1920,1080",
         ]
-        try:
-            browser = p.chromium.launch(headless=True, args=launch_args)
-        except Exception:
-            try:
-                browser = p.chromium.launch(channel="chrome", headless=True, args=launch_args)
-            except Exception as e:
-                print(f"[!] Browser launch error: {e}", flush=True)
-                raise
 
         try:
-            context = browser.new_context(
+            # Use persistent browser context for cookie persistence & anti-fingerprinting
+            context = p.chromium.launch_persistent_context(
+                str(PROFILE_DIR.resolve()),
+                headless=True,
+                args=launch_args,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1920, "height": 1080},
                 locale="en-US",
                 timezone_id="Asia/Seoul",
             )
-            # Inject stealth properties to bypass automated webdriver detection
+        except Exception:
+            try:
+                browser = p.chromium.launch(headless=True, args=launch_args)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    locale="en-US",
+                    timezone_id="Asia/Seoul",
+                )
+            except Exception as e:
+                print(f"[!] Browser context initialization error: {e}", flush=True)
+                raise
+
+        try:
+            # Comprehensive stealth script
             context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                window.chrome = { runtime: {} };
+                window.chrome = { runtime: {}, app: {}, loadTimes: function() {}, csi: function() {} };
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en', 'ko'] });
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             """)
-            page = context.new_page()
+
+            page = context.pages[0] if context.pages else context.new_page()
 
             if end_page is None:
                 url = f"{BASE_URL}{board}&page=1"
                 print(f"[*] Detecting total BJ board pages from {url}...")
-                page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                for _ in range(10):
-                    if "Just a moment" not in page.title():
-                        break
-                    page.wait_for_timeout(1000)
+                page.goto(url, wait_until="commit", timeout=45000)
+                wait_for_cloudflare_clearance(page, max_wait=10)
                 soup = BeautifulSoup(page.content(), "html.parser")
                 page_numbers = [1]
                 for a in soup.find_all("a", href=re.compile(r"page=(\d+)")):
@@ -223,11 +252,8 @@ def run_bj_scraper(
                 page_board_url = f"{BASE_URL}{board}&page={page_num}"
                 print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
 
-                page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
-                for _ in range(10):
-                    if "Just a moment" not in page.title():
-                        break
-                    page.wait_for_timeout(1000)
+                page.goto(page_board_url, wait_until="commit", timeout=45000)
+                wait_for_cloudflare_clearance(page, max_wait=10)
 
                 soup = BeautifulSoup(page.content(), "html.parser")
                 post_links = []
@@ -304,9 +330,9 @@ def run_bj_scraper(
                     f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
                 )
         finally:
-            if browser:
+            if context:
                 try:
-                    browser.close()
+                    context.close()
                 except Exception:
                     pass
 
