@@ -13,7 +13,7 @@ from playwright.sync_api import Error, TimeoutError as PlaywrightTimeoutError, s
 
 from proxy_config import load_proxy_config, redacted, require_proxy_if_expected
 
-POST_SELECTOR = '#fboardlist .list-row a[href*="wr_id"]'
+POST_SELECTOR = '.main-box .post-image a[href], #fboardlist .list-row a[href*="wr_id"], a[href*="wr_id="], .bo_v_tit a, .pic_wr a, .list-item a[href*="wr_id="]'
 VIDEO_SELECTOR = '.jw-media video.jw-video'
 OVERLAY_SELECTOR = 'div[data-cl-overlay], div.p6driy29haev'
 # General-purpose guesses for a board post's content title, checked in order.
@@ -434,11 +434,21 @@ def main():
             )
         elif args.headless:
             browser = launch_chromium(p.chromium, True, proxy)
-            context = browser.new_context()
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                viewport={'width': 1280, 'height': 800}
+            )
         else:
             browser = launch_chromium(p.chromium, not args.headed, proxy)
-            context = browser.new_context()
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                viewport={'width': 1280, 'height': 800}
+            )
         page = context.new_page() if args.cdp_url else (context.pages[0] if context.pages else context.new_page())
+        try:
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        except Exception:
+            pass
         page.set_default_timeout(args.timeout * 1000)
         leave_page_open = False
         verification_blocked = False
