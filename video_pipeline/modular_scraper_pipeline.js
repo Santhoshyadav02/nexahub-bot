@@ -253,7 +253,7 @@ class ModularScraperPipeline {
       '--board', boardName,
       '--start', String(startPage),
       '--end', String(endPage),
-      '--output', dbFilename
+      '--output', dbPath
     ];
     await this._execProcess(this.pythonPath, args, scrapingDir, 480000);
 

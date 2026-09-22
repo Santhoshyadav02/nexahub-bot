@@ -1,0 +1,40 @@
+{
+  "updatedAt": "2026-09-15T09:21:59.139Z",
+  "adminIds": [
+    "8781836301"
+  ],
+  "users": {
+    "111": {
+      "userId": "111",
+      "username": "@user1",
+      "displayName": "Test1",
+      "status": "APPROVED",
+      "requestedAt": "2026-09-15T09:21:59.061Z",
+      "approvedAt": "2026-09-15T09:21:59.139Z",
+      "approvedBy": "@cse_006",
+      "approvals": {
+        "8781836301": {
+          "decision": "APPROVED",
+          "adminName": "@cse_006",
+          "timestamp": "2026-09-15T09:21:59.139Z"
+        }
+      }
+    },
+    "222": {
+      "userId": "222",
+      "username": "@user2",
+      "displayName": "Test2",
+      "status": "APPROVED",
+      "requestedAt": "2026-09-15T09:21:59.073Z",
+      "approvedAt": "2026-09-15T09:21:59.139Z",
+      "approvedBy": "@cse_006",
+      "approvals": {
+        "8781836301": {
+          "decision": "APPROVED",
+          "adminName": "@cse_006",
+          "timestamp": "2026-09-15T09:21:59.139Z"
+        }
+      }
+    }
+  }
+}

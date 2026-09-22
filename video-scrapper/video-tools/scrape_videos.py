@@ -189,10 +189,18 @@ def wait_for_verification(page, seconds, headed):
     raise VerificationRequired('Human verification was not completed before the wait expired.')
 
 
-def save_results(folder, results):
-    (folder / 'videos.json').write_text(
-        json.dumps(results, indent=2, ensure_ascii=False), encoding='utf-8'
-    )
+def save_results(target, results):
+    target_path = Path(target)
+    if target_path.suffix.lower() == '.json':
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(
+            json.dumps(results, indent=2, ensure_ascii=False), encoding='utf-8'
+        )
+    else:
+        target_path.mkdir(parents=True, exist_ok=True)
+        (target_path / 'videos.json').write_text(
+            json.dumps(results, indent=2, ensure_ascii=False), encoding='utf-8'
+        )
 
 
 def extract_sources_from_frame(frame):
@@ -353,6 +361,9 @@ def video_sources(page, timeout, play, verification_wait=180, headed=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('url', nargs='?', help='Main website/listing URL')
+    parser.add_argument('--board', help='Board name (e.g. korea, javleak, caption, javc, etc.)')
+    parser.add_argument('--start', type=int, default=1, help='Start page number')
+    parser.add_argument('--end', type=int, default=1, help='End page number')
     parser.add_argument('--input-links', help='Read saved post_links.json instead of visiting main page')
     parser.add_argument('--output', default='output')
     parser.add_argument('--links-only', action='store_true', help='Save main page links only, without visiting posts')
@@ -387,13 +398,18 @@ def main():
                 raise ValueError('Input must be a JSON array of complete HTTP/HTTPS URLs')
         except (OSError, ValueError) as exc:
             parser.error(str(exc))
-    elif not args.url or urlsplit(args.url).scheme not in ('http', 'https') or not urlsplit(args.url).netloc:
+    elif not args.url and not args.board:
+        parser.error('Provide a complete http:// or https:// URL or specify --board <board_name>')
+    elif args.url and (urlsplit(args.url).scheme not in ('http', 'https') or not urlsplit(args.url).netloc):
         parser.error('Provide a complete http:// or https:// URL')
     if args.timeout <= 0 or args.verification_wait <= 0 or args.delay < 0 or args.scrolls < 0:
         parser.error('timeout and verification-wait must be positive; delay and scrolls must be nonnegative')
 
     folder = Path(args.output)
-    folder.mkdir(parents=True, exist_ok=True)
+    if folder.suffix.lower() == '.json':
+        folder.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        folder.mkdir(parents=True, exist_ok=True)
     results = []
     proxy = load_proxy_config()
     require_proxy_if_expected(proxy)
@@ -427,27 +443,58 @@ def main():
         leave_page_open = False
         verification_blocked = False
         try:
-            if saved_links is None:
-                page.goto(args.url, wait_until='domcontentloaded')
-                page.locator(POST_SELECTOR).first.wait_for(state='attached')
             links = list(saved_links) if saved_links is not None else []
-            for step in range(args.scrolls + 1 if saved_links is None else 0):
-                links.extend(page.locator(POST_SELECTOR).evaluate_all('''anchors => anchors
-                    .filter(a => (a.getAttribute('href') || '').trim()
-                        && !a.getAttribute('href').trim().startsWith('#'))
-                    .map(a => a.href).filter(u => u.startsWith('https://') || u.startsWith('http://'))'''))
-                if step < args.scrolls:
-                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                    page.wait_for_timeout(1000)
+            if saved_links is None:
+                listing_urls = []
+                if args.board:
+                    start_p = max(1, args.start)
+                    end_p = max(start_p, args.end)
+                    for pg in range(start_p, end_p + 1):
+                        listing_urls.append(f"https://02.avsee.is/bbs/board.php?bo_table={args.board}&page={pg}")
+                elif args.url:
+                    listing_urls.append(args.url)
+
+                for list_url in listing_urls:
+                    print(f"Opening listing page: {list_url}", flush=True)
+                    try:
+                        page.goto(list_url, wait_until='domcontentloaded')
+                        page.locator(POST_SELECTOR).first.wait_for(state='attached', timeout=min(8000, args.timeout * 1000))
+                    except Exception:
+                        pass
+
+                    for step in range(args.scrolls + 1):
+                        links.extend(page.locator(POST_SELECTOR).evaluate_all('''anchors => anchors
+                            .filter(a => (a.getAttribute('href') || '').trim()
+                                && !a.getAttribute('href').trim().startsWith('#'))
+                            .map(a => a.href).filter(u => u.startsWith('https://') || u.startsWith('http://'))'''))
+                        if step < args.scrolls:
+                            page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                            page.wait_for_timeout(1000)
+
+                # Fallback to page 1 if higher page had 0 links
+                if not links and args.board and args.start > 1:
+                    fallback_url = f"https://02.avsee.is/bbs/board.php?bo_table={args.board}&page=1"
+                    print(f"Higher page had 0 links, falling back to Page 1: {fallback_url}", flush=True)
+                    try:
+                        page.goto(fallback_url, wait_until='domcontentloaded')
+                        page.locator(POST_SELECTOR).first.wait_for(state='attached', timeout=min(8000, args.timeout * 1000))
+                        links.extend(page.locator(POST_SELECTOR).evaluate_all('''anchors => anchors
+                            .filter(a => (a.getAttribute('href') || '').trim()
+                                && !a.getAttribute('href').trim().startsWith('#'))
+                            .map(a => a.href).filter(u => u.startsWith('https://') || u.startsWith('http://'))'''))
+                    except Exception:
+                        pass
+
             links = list(dict.fromkeys(links))
             if saved_links is None:
-                (folder / 'post_links.json').write_text(json.dumps(links, indent=2), encoding='utf-8')
+                post_links_dest = folder.parent / 'post_links.json' if folder.suffix.lower() == '.json' else folder / 'post_links.json'
+                post_links_dest.write_text(json.dumps(links, indent=2), encoding='utf-8')
             print(f'Found {len(links)} unique post links', flush=True)
             if not links:
                 print('No post links available to open.', flush=True)
                 return
             if args.links_only:
-                print(f"Links saved in: {(folder / 'post_links.json').resolve()}")
+                print(f"Links saved in: {post_links_dest.resolve()}")
                 return
             save_results(folder, results)
             # Reuse one visible tab for all posts instead of leaving a blank
@@ -463,7 +510,17 @@ def main():
                     pass
             detail.on('popup', close_popup)
             for index, link in enumerate(links, 1):
-                result = dict(page_url=link, title='', video_urls=[], status='not_found', error='')
+                result = dict(
+                    page_url=link,
+                    post_url=link,
+                    title='',
+                    video_urls=[],
+                    mp4_download_url='',
+                    status='not_found',
+                    error='',
+                    board=args.board or '',
+                    page=args.start
+                )
                 detail.set_default_timeout(args.timeout * 1000)
                 try:
                     print(f'[{index}/{len(links)}] Opening post...', flush=True)
@@ -481,6 +538,7 @@ def main():
                     )
                     if result['video_urls']:
                         result['status'] = 'found'
+                        result['mp4_download_url'] = result['video_urls'][0]
                     else:
                         result['error'] = 'No nonempty video source appeared before timeout; player may need interaction or a different selector.'
                 except VerificationRequired as exc:
