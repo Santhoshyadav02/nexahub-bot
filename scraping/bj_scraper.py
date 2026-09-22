@@ -11,8 +11,10 @@ from playwright.sync_api import sync_playwright, Error
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
-OVERLAY_SELECTOR = "div[data-cl-overlay], div.p6driy29haev"
+POST_SELECTOR = ".main-box .post-image a[href], a[href*='wr_id=']"
+OVERLAY_SELECTOR = "div[data-cl-overlay], div.p6driy29haev, .jw-preview, .jw-display-icon-container"
 VIDEO_SELECTOR = ".jw-media video.jw-video, video"
+
 ROOT_DIR = Path(__file__).resolve().parent
 PROFILE_DIR = ROOT_DIR / "browser_profile"
 
@@ -22,11 +24,13 @@ def click_player_overlay(page, timeout=3000):
     Clicks player overlay to trigger playback and closes any opened ad popups.
     Adapted from video-tools DOM extraction engine.
     """
+    clicked = False
     for frame in page.frames:
         try:
             overlays = frame.locator(OVERLAY_SELECTOR).all()
         except Error:
             continue
+
         for overlay in overlays:
             try:
                 if not overlay.is_visible():
@@ -41,7 +45,7 @@ def click_player_overlay(page, timeout=3000):
             page.on("popup", track_popup)
             try:
                 overlay.click(timeout=timeout)
-                popup_deadline = time.monotonic() + 3
+                popup_deadline = time.monotonic() + 3.0
                 while not popups and time.monotonic() < popup_deadline:
                     page.wait_for_timeout(100)
                 for popup in popups:
@@ -51,12 +55,15 @@ def click_player_overlay(page, timeout=3000):
                     except Exception:
                         pass
                 page.bring_to_front()
-                return True
+                clicked = True
+                break
             except Exception:
                 pass
             finally:
                 page.remove_listener("popup", track_popup)
-    return False
+        if clicked:
+            break
+    return clicked
 
 
 def wait_for_cloudflare_clearance(page, max_wait=10):
@@ -70,7 +77,11 @@ def wait_for_cloudflare_clearance(page, max_wait=10):
             t = page.title()
         except Exception:
             pass
-        if "Just a moment" not in t and "Security Verification" not in t and "Checking your browser" not in t:
+        if (
+            "Just a moment" not in t
+            and "Security Verification" not in t
+            and "Checking your browser" not in t
+        ):
             return True
         page.wait_for_timeout(1000)
     return False
@@ -78,30 +89,37 @@ def wait_for_cloudflare_clearance(page, max_wait=10):
 
 def extract_video_from_dom_and_network(page, post_url):
     """
-    Uses Playwright to navigate to post page, intercept network CDN tokens,
-    click player overlays, and inspect DOM video tags across all frames.
+    Visits post page with Playwright, intercepts network requests/responses,
+    clicks player overlays across frames, and extracts direct video sources from DOM.
     """
-    cdn_video_urls = []
+    captured_urls = []
 
     def handle_request(request):
         url = request.url
-        if "data.cdn.avsee.is" in url and (".mp4" in url or "bcdn_token=" in url):
-            if url not in cdn_video_urls:
-                cdn_video_urls.append(url)
+        if "data.cdn.avsee.is" in url or ".mp4" in url:
+            if "blob:" not in url and url not in captured_urls:
+                captured_urls.append(url)
+
+    def handle_response(response):
+        url = response.url
+        if "data.cdn.avsee.is" in url or ".mp4" in url:
+            if "blob:" not in url and url not in captured_urls:
+                captured_urls.append(url)
 
     page.on("request", handle_request)
+    page.on("response", handle_response)
 
     try:
         page.goto(post_url, wait_until="commit", timeout=45000)
         wait_for_cloudflare_clearance(page, max_wait=10)
 
-        # Trigger player overlay click
+        # Trigger player overlay click to unlock streams
         try:
             click_player_overlay(page, timeout=3000)
         except Exception:
             pass
 
-        # Inspect DOM video elements across all frames
+        # Inspect DOM video elements across all frames and attempt muted play
         dom_sources = []
         for frame in page.frames:
             try:
@@ -124,11 +142,10 @@ def extract_video_from_dom_and_network(page, post_url):
 
         page.wait_for_timeout(1500)
 
-        # Parse page HTML with BeautifulSoup for title and fallback video tags
+        # Extract title and fallback video tags from HTML
         html_content = page.content()
         soup = BeautifulSoup(html_content, "html.parser")
 
-        # 1. Extract Title
         title = ""
         title_tag = (
             soup.select_one("#bo_v_title")
@@ -148,8 +165,8 @@ def extract_video_from_dom_and_network(page, post_url):
 
         title = html.unescape(title)
 
-        # 2. Extract MP4 URL from network interception, DOM sources, or BeautifulSoup regex
-        candidate_urls = cdn_video_urls + dom_sources
+        # Combine captured network streams and DOM video sources
+        candidate_urls = captured_urls + dom_sources
         mp4_url = None
 
         for u in candidate_urls:
@@ -157,7 +174,7 @@ def extract_video_from_dom_and_network(page, post_url):
                 mp4_url = u
                 break
 
-        # Fallback regex search on raw HTML if not captured by DOM/network
+        # Fallback regex search on raw HTML
         if not mp4_url:
             match = re.search(
                 r'https://data\.cdn\.avsee\.is/[^\s"\'<>]+\.mp4[^\s"\'<>]*', html_content
@@ -185,6 +202,7 @@ def extract_video_from_dom_and_network(page, post_url):
         }
     finally:
         page.remove_listener("request", handle_request)
+        page.remove_listener("response", handle_response)
 
 
 def run_bj_scraper(
@@ -216,12 +234,14 @@ def run_bj_scraper(
         ]
 
         try:
-            # Persistent context to retain anti-bot cookies and clearance tokens
             context = p.chromium.launch_persistent_context(
                 str(PROFILE_DIR.resolve()),
                 headless=True,
                 args=launch_args,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
                 viewport={"width": 1920, "height": 1080},
                 locale="en-US",
                 timezone_id="Asia/Seoul",
@@ -230,7 +250,10 @@ def run_bj_scraper(
             try:
                 browser = p.chromium.launch(headless=True, args=launch_args)
                 context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                        " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                    ),
                     viewport={"width": 1920, "height": 1080},
                     locale="en-US",
                     timezone_id="Asia/Seoul",
@@ -240,7 +263,6 @@ def run_bj_scraper(
                 raise
 
         try:
-            # Full stealth initialization script
             context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                 window.chrome = { runtime: {}, app: {}, loadTimes: function() {}, csi: function() {} };
@@ -252,7 +274,7 @@ def run_bj_scraper(
 
             if end_page is None:
                 url = f"{BASE_URL}{board}&page=1"
-                print(f"[*] Detecting total BJ board pages from {url}...")
+                print(f"[*] Detecting total board pages from {url}...")
                 page.goto(url, wait_until="commit", timeout=45000)
                 wait_for_cloudflare_clearance(page, max_wait=10)
                 soup = BeautifulSoup(page.content(), "html.parser")
@@ -299,9 +321,7 @@ def run_bj_scraper(
                         and cached.get("mp4_download_url")
                         and (now - cached.get("scraped_at", 0) < 3600)
                     ):
-                        print(
-                            f"    [{idx}/{len(post_links)}] (Cached) {cached['title']}"
-                        )
+                        print(f"    [{idx}/{len(post_links)}] (Cached) {cached['title']}")
                         continue
 
                     print(f"    [{idx}/{len(post_links)}] Extracting fresh video link: {post_url}")
