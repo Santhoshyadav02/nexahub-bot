@@ -167,6 +167,7 @@ async function runTests() {
     const pipeline = new ModularScraperPipeline({
       workers: 2
     });
+    pipeline.pagePointers['bj'] = 1;
 
     const range1 = pipeline._getPageRangeForChannel('bj');
     check('Page range 1 starts at page 1', range1.startPage === 1 && range1.endPage === 2);
