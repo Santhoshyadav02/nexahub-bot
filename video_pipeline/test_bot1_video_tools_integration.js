@@ -14,10 +14,10 @@ assert(fs.existsSync(scraperPath), 'bj_scraper.py must exist');
 
 const scraperCode = fs.readFileSync(scraperPath, 'utf8');
 assert(scraperCode.includes('BeautifulSoup'), 'Must include BeautifulSoup parsing');
-assert(scraperCode.includes('extract_video_from_html'), 'Must define extract_video_from_html');
+assert(scraperCode.includes('extract_video_from_dom_and_network') || scraperCode.includes('extract_video_from_html'), 'Must define video extraction function');
 assert(scraperCode.includes('bcdn_token'), 'Must include bcdn_token regex extraction');
-assert(scraperCode.includes('requests.Session'), 'Must include requests Session');
-console.log('  ✅ scraping/bj_scraper.py includes all BeautifulSoup & regex video extraction features');
+assert(scraperCode.includes('click_player_overlay'), 'Must include overlay clicker');
+console.log('  ✅ scraping/bj_scraper.py includes all Playwright & video extraction features');
 
 console.log('\n' + '='.repeat(60));
 console.log('🔍 Test 2: Bot 1 Downloader Container Integrity Guard');
