@@ -81,8 +81,8 @@ class ModularScraperPipeline {
     const current = this.pagePointers[channelKey] || 1;
     const startPage = current;
     const endPage = current + 1; // 2 pages per scrape run (~18-20 videos)
-    // Advance pointer for next run, wrapping at 600
-    this.pagePointers[channelKey] = endPage >= 600 ? 1 : endPage + 1;
+    // Advance pointer for next run, wrapping at 15 so it stays on active content
+    this.pagePointers[channelKey] = endPage >= 15 ? 1 : endPage + 1;
     this._savePagePointers();
     return { startPage, endPage };
   }

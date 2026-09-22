@@ -298,18 +298,55 @@ def run_bj_scraper(
                 page.goto(page_board_url, wait_until="commit", timeout=45000)
                 wait_for_cloudflare_clearance(page, max_wait=10)
 
-                soup = BeautifulSoup(page.content(), "html.parser")
+                # Scroll to load lazy items
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(800)
+                except Exception:
+                    pass
+
                 post_links = []
-                for a in soup.find_all(
-                    "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
-                ):
-                    href = a.get("href", "")
-                    full_url = (
-                        href if href.startswith("http") else f"https://02.avsee.is{href}"
-                    )
-                    clean_url = full_url.split("&page=")[0]
-                    if clean_url not in post_links:
-                        post_links.append(clean_url)
+                try:
+                    # 1. Playwright locator evaluation (matching video-tools)
+                    anchors = page.locator(".main-box .post-image a[href], a[href*='wr_id=']").evaluate_all("""anchors => anchors
+                        .filter(a => (a.getAttribute('href') || '').trim() && !a.getAttribute('href').trim().startsWith('#'))
+                        .map(a => a.href).filter(u => u.startsWith('https://') || u.startsWith('http://'))""")
+                    for u in anchors:
+                        clean_u = u.split("&page=")[0]
+                        if clean_u not in post_links:
+                            post_links.append(clean_u)
+                except Exception:
+                    pass
+
+                # 2. BeautifulSoup fallback if locator returned empty
+                if not post_links:
+                    soup = BeautifulSoup(page.content(), "html.parser")
+                    for a in soup.find_all(
+                        "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
+                    ):
+                        href = a.get("href", "")
+                        full_url = (
+                            href if href.startswith("http") else f"https://02.avsee.is{href}"
+                        )
+                        clean_url = full_url.split("&page=")[0]
+                        if clean_url not in post_links:
+                            post_links.append(clean_url)
+
+                # 3. If high page number returned 0 links, automatically fallback to page 1
+                if not post_links and page_num > 1:
+                    print(f"    [!] Page {page_num} is beyond board ceiling. Falling back to page 1...")
+                    page.goto(f"{BASE_URL}{board}&page=1", wait_until="commit", timeout=45000)
+                    wait_for_cloudflare_clearance(page, max_wait=10)
+                    try:
+                        anchors = page.locator(".main-box .post-image a[href], a[href*='wr_id=']").evaluate_all("""anchors => anchors
+                            .filter(a => (a.getAttribute('href') || '').trim() && !a.getAttribute('href').trim().startsWith('#'))
+                            .map(a => a.href).filter(u => u.startsWith('https://') || u.startsWith('http://'))""")
+                        for u in anchors:
+                            clean_u = u.split("&page=")[0]
+                            if clean_u not in post_links:
+                                post_links.append(clean_u)
+                    except Exception:
+                        pass
 
                 print(f"    [+] Discovered {len(post_links)} candidate post links on page {page_num}")
 
