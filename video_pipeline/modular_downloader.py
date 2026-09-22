@@ -12,9 +12,10 @@ import concurrent.futures
 import json
 import os
 import re
-import requests
 import sys
 import time
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 # Ensure unbuffered terminal output
 if hasattr(sys.stdout, "reconfigure"):
@@ -106,29 +107,29 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                 print(f"[Worker {worker_id}] [+] Starting download: {filename}", flush=True)
             start_time = time.time()
 
-            with requests.get(
-                url, headers=headers, stream=True, timeout=timeout
-            ) as response:
-                if response.status_code in [403, 429] and attempt < len(headers_attempts) - 1:
+            req = Request(url, headers=headers)
+            with urlopen(req, timeout=timeout) as response:
+                status_code = getattr(response, "status", 200)
+                if status_code in [403, 429] and attempt < len(headers_attempts) - 1:
                     time.sleep(1.2)
                     continue
 
-                if response.status_code != 200:
+                if status_code != 200:
                     print(
-                        f"[Worker {worker_id}] [!] [HTTP {response.status_code}] Failed: {filename}",
+                        f"[Worker {worker_id}] [!] [HTTP {status_code}] Failed: {filename}",
                         flush=True,
                     )
-                    is_expired = response.status_code == 403
+                    is_expired = status_code == 403
                     return {
                         "status": "failed",
                         "title": title,
-                        "error": f"HTTP {response.status_code}",
+                        "error": f"HTTP {status_code}",
                         "expired_token": is_expired,
                         "post_url": post_url,
                     }
 
                 try:
-                    total_size = int(response.headers.get("content-length", 0) or 0)
+                    total_size = int(response.headers.get("Content-Length", 0) or 0)
                 except (ValueError, TypeError):
                     total_size = 0
                 total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
@@ -138,30 +139,32 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
 
                 prefix = None
                 with open(part_filepath, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            if prefix is None:
-                                prefix = chunk[:32]
-                                if len(prefix) >= 12 and prefix[4:8] != b"ftyp" and b"moov" not in prefix and b"<!DOCTYPE" in prefix:
-                                    raise ValueError("Not a valid MP4 container (received HTML error or challenge page)")
-                            f.write(chunk)
-                            downloaded += len(chunk)
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        if prefix is None:
+                            prefix = chunk[:32]
+                            if len(prefix) >= 12 and prefix[4:8] != b"ftyp" and b"moov" not in prefix and b"<!DOCTYPE" in prefix:
+                                raise ValueError("Not a valid MP4 container (received HTML error or challenge page)")
+                        f.write(chunk)
+                        downloaded += len(chunk)
 
-                            now = time.time()
-                            if now - last_log_time >= 4.0:
-                                cur_mb = downloaded / (1024 * 1024)
-                                pct = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
-                                if total_mb > 0:
-                                    print(
-                                        f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB / {total_mb:.1f} MB ({pct:.1f}%)",
-                                        flush=True,
-                                    )
-                                else:
-                                    print(
-                                        f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB downloaded",
-                                        flush=True,
-                                    )
-                                last_log_time = now
+                        now = time.time()
+                        if now - last_log_time >= 4.0:
+                            cur_mb = downloaded / (1024 * 1024)
+                            pct = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
+                            if total_mb > 0:
+                                print(
+                                    f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB / {total_mb:.1f} MB ({pct:.1f}%)",
+                                    flush=True,
+                                )
+                            else:
+                                print(
+                                    f"[Worker {worker_id}] STREAM {cur_mb:.1f} MB downloaded",
+                                    flush=True,
+                                )
+                            last_log_time = now
 
                 # Verify completeness if content-length header was supplied
                 if total_size > 0 and downloaded < (total_size * 0.98):
@@ -194,6 +197,26 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                 "size_mb": final_mb,
                 "post_url": post_url,
                 "source_video_url": url,
+            }
+
+        except HTTPError as http_err:
+            if os.path.exists(part_filepath):
+                try:
+                    os.remove(part_filepath)
+                except Exception:
+                    pass
+
+            if http_err.code in [403, 429] and attempt < len(headers_attempts) - 1:
+                time.sleep(1.2)
+                continue
+
+            print(f"[Worker {worker_id}] [!] [HTTP {http_err.code}] Failed: {filename}", flush=True)
+            return {
+                "status": "failed",
+                "title": title,
+                "error": f"HTTP {http_err.code}",
+                "expired_token": http_err.code == 403,
+                "post_url": post_url,
             }
 
         except Exception as e:
