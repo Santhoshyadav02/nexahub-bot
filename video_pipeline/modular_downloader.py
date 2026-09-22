@@ -34,7 +34,13 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
     """
     title = item.get("title", "untitled")
     url = item.get("mp4_download_url")
-    post_url = item.get("post_url", "")
+    if not url and item.get("video_urls"):
+        urls = item.get("video_urls")
+        if isinstance(urls, list) and len(urls) > 0:
+            url = urls[0]
+        elif isinstance(urls, str):
+            url = urls
+    post_url = item.get("post_url") or item.get("page_url") or ""
 
     if not url:
         return {"status": "skipped", "title": title, "reason": "No MP4 URL"}
@@ -221,7 +227,15 @@ def run_parallel_downloader(
     with open(json_file, "r", encoding="utf-8") as f:
         items = json.load(f)
 
-    valid_items = [it for it in items if it.get("mp4_download_url")]
+    valid_items = [
+        it
+        for it in items
+        if (
+            it.get("mp4_download_url")
+            or (isinstance(it.get("video_urls"), list) and len(it.get("video_urls")) > 0)
+            or (isinstance(it.get("video_urls"), str) and it.get("video_urls").strip())
+        )
+    ]
 
     os.makedirs(output_dir, exist_ok=True)
 

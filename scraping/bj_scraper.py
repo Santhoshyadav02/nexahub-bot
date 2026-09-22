@@ -324,12 +324,18 @@ def run_bj_scraper(
                         print(f"    [{idx}/{len(post_links)}] (Cached) {cached['title']}")
                         continue
 
-                    print(f"    [{idx}/{len(post_links)}] Extracting fresh video link: {post_url}")
                     item = extract_video_from_dom_and_network(page, post_url)
                     item["page"] = page_num
                     item["category"] = "bj"
                     item["board"] = board
                     item["scraped_at"] = now
+                    item["page_url"] = post_url
+                    if item.get("mp4_download_url"):
+                        item["video_urls"] = [item["mp4_download_url"]]
+                        item["status"] = "found"
+                    else:
+                        item["video_urls"] = []
+                        item["status"] = "not_found"
 
                     if (
                         item.get("mp4_download_url")

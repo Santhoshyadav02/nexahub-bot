@@ -277,7 +277,12 @@ class ModularScraperPipeline {
     const seenInBatch = new Set();
 
     for (const item of rawItems) {
-      if (!item || !item.mp4_download_url) continue;
+      if (!item) continue;
+      const downloadUrl = item.mp4_download_url || (Array.isArray(item.video_urls) ? item.video_urls[0] : item.video_urls);
+      if (!downloadUrl) continue;
+      item.mp4_download_url = downloadUrl;
+      item.post_url = item.post_url || item.page_url || '';
+
       const title = item.title || item.code || '';
       const postUrl = item.post_url || '';
       const norm = this._normalizeTitle(title);
