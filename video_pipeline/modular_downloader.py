@@ -130,9 +130,14 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                 downloaded = 0
                 last_log_time = time.time()
 
+                prefix = None
                 with open(part_filepath, "wb") as f:
                     for chunk in response.iter_content(chunk_size=chunk_size):
                         if chunk:
+                            if prefix is None:
+                                prefix = chunk[:32]
+                                if len(prefix) >= 12 and prefix[4:8] != b"ftyp" and b"moov" not in prefix and b"<!DOCTYPE" in prefix:
+                                    raise ValueError("Not a valid MP4 container (received HTML error or challenge page)")
                             f.write(chunk)
                             downloaded += len(chunk)
 

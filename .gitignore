@@ -44,4 +44,9 @@ video-scrapper/**/*.log
 
 # Scratch notes & session generator
 sam.readme
+sam.txt
 generate_session.js
+video-tools*
+video_tools_new/
+scraping0/
+

@@ -1,19 +1,65 @@
 import argparse
 import csv
+import html
 import json
 import os
 import re
 import time
-from playwright.sync_api import sync_playwright
+from pathlib import Path
+from playwright.sync_api import sync_playwright, Error
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
+OVERLAY_SELECTOR = "div[data-cl-overlay], div.p6driy29haev"
+VIDEO_SELECTOR = ".jw-media video.jw-video, video"
+
+
+def click_player_overlay(page, timeout=3000):
+    """
+    Clicks player overlay to trigger playback and closes any opened ad popups.
+    Adapted from video-tools DOM extraction engine.
+    """
+    for frame in page.frames:
+        try:
+            overlays = frame.locator(OVERLAY_SELECTOR).all()
+        except Error:
+            continue
+        for overlay in overlays:
+            try:
+                if not overlay.is_visible():
+                    continue
+            except Error:
+                continue
+
+            popups = []
+            def track_popup(popup):
+                popups.append(popup)
+
+            page.on("popup", track_popup)
+            try:
+                overlay.click(timeout=timeout)
+                popup_deadline = time.monotonic() + 3
+                while not popups and time.monotonic() < popup_deadline:
+                    page.wait_for_timeout(100)
+                for popup in popups:
+                    try:
+                        if not popup.is_closed():
+                            popup.close()
+                    except Exception:
+                        pass
+                page.bring_to_front()
+                return True
+            except Exception:
+                pass
+            finally:
+                page.remove_listener("popup", track_popup)
+    return False
 
 
 def extract_video_and_title(page, post_url):
     """
-    Visits a BJ post page, extracts the video title,
-    and intercepts the direct CDN token MP4 download URL.
+    Visits a post page, extracts video title, interacts with player overlay,
+    and extracts direct video source URLs from DOM and network requests.
     """
     cdn_video_urls = []
 
@@ -26,21 +72,43 @@ def extract_video_and_title(page, post_url):
     page.on("request", handle_request)
 
     try:
-        page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
+        response = page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
 
-        # Wait for Cloudflare clearance
+        # Wait for Cloudflare clearance (up to 10s)
         for _ in range(10):
-            if "Just a moment" not in page.title():
+            t = page.title()
+            if "Just a moment" not in t and "Security Verification" not in t:
                 break
             page.wait_for_timeout(1000)
 
-        # Wait for player initialization
+        # Trigger player overlay click
         try:
-            page.wait_for_selector("video, .jw-media, iframe", timeout=8000)
+            click_player_overlay(page, timeout=3500)
         except Exception:
             pass
 
-        page.wait_for_timeout(2500)
+        # Try muted playback and DOM frame inspection
+        dom_sources = []
+        for frame in page.frames:
+            try:
+                videos = frame.locator(VIDEO_SELECTOR)
+                sources = videos.evaluate_all("""videos => videos.flatMap(v =>
+                    [v.currentSrc, v.getAttribute('src'),
+                     ...Array.from(v.querySelectorAll('source[src]'), s => s.getAttribute('src'))]
+                    .filter(s => s && s.trim())
+                    .map(s => new URL(s, v.baseURI).href))""")
+                for s in sources:
+                    if s and "blob:" not in s and s not in dom_sources:
+                        dom_sources.append(s)
+
+                if videos.count() > 0:
+                    videos.evaluate_all("""videos => { for (const v of videos) {
+                        v.muted = true; v.play().catch(() => {});
+                    }}""")
+            except Exception:
+                continue
+
+        page.wait_for_timeout(2000)
 
         soup = BeautifulSoup(page.content(), "html.parser")
 
@@ -62,17 +130,15 @@ def extract_video_and_title(page, post_url):
         else:
             title = "Unknown Title"
 
-        # Check DOM video tag as fallback
-        for video in soup.find_all("video"):
-            src = video.get("src", "")
-            if (
-                "data.cdn.avsee.is" in src
-                and ".mp4" in src
-                and src not in cdn_video_urls
-            ):
-                cdn_video_urls.append(src)
+        title = html.unescape(title)
 
-        mp4_url = cdn_video_urls[0] if cdn_video_urls else None
+        # Combine DOM sources and intercepted CDN requests
+        candidate_urls = cdn_video_urls + dom_sources
+        mp4_url = None
+        for u in candidate_urls:
+            if u and (".mp4" in u or "data.cdn" in u) and "blob:" not in u:
+                mp4_url = u
+                break
 
         return {"title": title, "mp4_download_url": mp4_url, "post_url": post_url}
     except Exception as e:
@@ -120,8 +186,16 @@ def run_bj_scraper(
 
         try:
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="Asia/Seoul",
             )
+            # Inject stealth properties to bypass automated webdriver detection
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+            """)
             page = context.new_page()
 
             if end_page is None:
