@@ -104,14 +104,19 @@ class MtprotoVideoUploader {
    * VideoBatchPublisher `publish()` hook.
    * @returns {Promise<{messageId: number, messageIds: number[], parts: number}>}
    */
-  async publish({ destinationId, filePath, caption, media }) {
+  async publish({ destinationId, chatId, filePath, caption, media }) {
+    const targetDest = destinationId || chatId;
+    if (!targetDest || targetDest === 'undefined') {
+      throw new Error('MTProto publish error: destinationId or chatId must be provided and not "undefined"');
+    }
+
     const reader = this.reader;
     const connected = await reader.connect();
     if (!connected || !reader.client) {
       throw new Error(`MTProto user session is not connected${reader.fatalError ? `: ${reader.fatalError}` : ''}`);
     }
 
-    const entity = await this._resolveEntity(reader, destinationId);
+    const entity = await this._resolveEntity(reader, targetDest);
     const size = fs.statSync(filePath).size;
 
     let parts = [filePath];

@@ -522,6 +522,7 @@ class VipPipelineOrchestrator {
       const cleanTitle = item.title || '신규 동영상';
 
       const result = await uploader.publish({
+        destinationId: def.chatId,
         chatId: def.chatId,
         filePath: filePath,
         caption: cleanTitle,
