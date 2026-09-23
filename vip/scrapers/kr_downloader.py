@@ -257,7 +257,7 @@ def download_single_video(
                     pass
             print(f"[!] [Download Error] {filename}: {err}\n", flush=True)
             return {"status": "error", "title": title, "error": err}
-        return {"status": "downloaded", "title": title, "filepath": filepath}
+        return {"status": "completed", "title": title, "filepath": filepath}
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",

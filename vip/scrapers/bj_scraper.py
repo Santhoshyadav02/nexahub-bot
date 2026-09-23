@@ -10,6 +10,38 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
 
 
+def save_checkpoint(output_file, saved_data, board="korea"):
+    """Saves checkpoint data immediately to both JSON and CSV."""
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
+
+    csv_file = output_file.replace(".json", ".csv")
+    with open(csv_file, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "title",
+                "mp4_download_url",
+                "post_url",
+                "page",
+                "category",
+                "board",
+            ],
+        )
+        writer.writeheader()
+        for v in saved_data.values():
+            writer.writerow(
+                {
+                    "title": v.get("title", ""),
+                    "mp4_download_url": v.get("mp4_download_url", ""),
+                    "post_url": v.get("post_url", ""),
+                    "page": v.get("page", ""),
+                    "category": "bj",
+                    "board": v.get("board", board),
+                }
+            )
+
+
 def extract_video_and_title(page, post_url):
     """
     Visits a BJ post page, extracts the video title,
@@ -182,35 +214,8 @@ def run_bj_scraper(
                 print(f"        Title:   {item['title']}")
                 print(f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n")
 
-            # Save incrementally
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
-
-            csv_file = output_file.replace(".json", ".csv")
-            with open(csv_file, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "title",
-                        "mp4_download_url",
-                        "post_url",
-                        "page",
-                        "category",
-                        "board",
-                    ],
-                )
-                writer.writeheader()
-                for v in saved_data.values():
-                    writer.writerow(
-                        {
-                            "title": v.get("title", ""),
-                            "mp4_download_url": v.get("mp4_download_url", ""),
-                            "post_url": v.get("post_url", ""),
-                            "page": v.get("page", ""),
-                            "category": "bj",
-                            "board": v.get("board", board),
-                        }
-                    )
+                # Immediate per-item checkpoint save
+                save_checkpoint(output_file, saved_data, board=board)
 
             print(
                 f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"

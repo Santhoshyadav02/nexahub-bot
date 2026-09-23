@@ -22,6 +22,20 @@ def sanitize_filename(name):
     return sanitized[:100]
 
 
+def clean_kr_title(title):
+    """
+    Removes leading video code prefixes (like MFK0084, MFK-0084, [MFK0084], etc.)
+    and bracketed tags so that only the descriptive sentence title is saved.
+    """
+    if not title:
+        return ""
+    cleaned = re.sub(r"\[.*?\]", "", title)
+    cleaned = re.sub(r"^[A-Za-z0-9_\-]+(?:\s*[-:]\s*|\s+)", "", cleaned.strip())
+    cleaned = re.sub(r"^\s*[-:/]\s*", "", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned if cleaned else title.strip()
+
+
 def save_checkpoint(output_file, saved_data):
     """Saves checkpoint data immediately to both JSON and CSV."""
     with open(output_file, "w", encoding="utf-8") as f:
@@ -161,6 +175,7 @@ def extract_video_and_title(page, post_url):
             title = "Untitled Video"
 
         title = html.unescape(title)
+        title = clean_kr_title(title)
 
         # 2. Video Stream URL Extraction
         video_url_found = None

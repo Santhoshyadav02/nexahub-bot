@@ -11,6 +11,20 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
 
 
+def clean_jp_title(title):
+    """
+    Removes leading Japanese video codes (e.g. NSFS-049, IPX-854, SSIS-400)
+    and bracketed tags so only the Korean title sentence is saved.
+    """
+    if not title:
+        return ""
+    cleaned = re.sub(r"\[.*?\]", "", title)
+    cleaned = re.sub(r"^[A-Za-z0-9_\-]+(?:\s*[-:]\s*|\s+)", "", cleaned.strip())
+    cleaned = re.sub(r"^\s*[-:/]\s*", "", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned if cleaned else title.strip()
+
+
 def save_checkpoint(output_file, saved_data, board="caption"):
     """Saves checkpoint data immediately to both JSON and CSV."""
     with open(output_file, "w", encoding="utf-8") as f:
@@ -96,6 +110,7 @@ def extract_video_and_title(page, post_url):
             title = "Unknown Title"
 
         title = html.unescape(title)
+        title = clean_jp_title(title)
 
         # Check DOM video tag as fallback
         for video in soup.find_all("video"):

@@ -5,12 +5,10 @@ import json
 import os
 import re
 import time
-from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-DEFAULT_KRX_URL = "https://krx18.com/genre/korea/"
-BASE_URL = "https://krx18.com"
+BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
 
 
 def sanitize_filename(name):
@@ -22,7 +20,26 @@ def sanitize_filename(name):
     return sanitized[:100]
 
 
-def save_checkpoint(output_file, saved_data):
+def clean_krx_title(title):
+    """
+    Cleans title by removing bracketed tags and leading video code prefixes
+    (e.g., [REMOVE]FC2PPV-4920167ULA, FC2-PPV-12345) to preserve clean title text.
+    """
+    if not title:
+        return ""
+    # Remove bracketed tags like [REMOVE], [자막], [HD], etc.
+    cleaned = re.sub(r"\[.*?\]", "", title)
+    # Remove leading video codes (e.g. FC2PPV-4920167ULA, FC2-PPV-123456, etc.)
+    cleaned = re.sub(r"^[A-Za-z0-9_\-]+(?:\s*[-:]\s*|\s+)", "", cleaned.strip())
+    # Clean whitespace and leading/trailing separators
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"^\s*[-:/]\s*", "", cleaned)
+    cleaned = re.sub(r"\s*[-:/]\s*$", "", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned if cleaned else title.strip()
+
+
+def save_checkpoint(output_file, saved_data, board="javleak"):
     """Saves checkpoint data immediately to both JSON and CSV."""
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
@@ -31,7 +48,14 @@ def save_checkpoint(output_file, saved_data):
     with open(csv_file, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["title", "mp4_download_url", "post_url", "page", "category"],
+            fieldnames=[
+                "title",
+                "mp4_download_url",
+                "post_url",
+                "page",
+                "category",
+                "board",
+            ],
         )
         writer.writeheader()
         for v in saved_data.values():
@@ -42,237 +66,133 @@ def save_checkpoint(output_file, saved_data):
                     "post_url": v.get("post_url", ""),
                     "page": v.get("page", ""),
                     "category": "18+",
+                    "board": v.get("board", board),
                 }
             )
 
 
-def extract_video_and_title(page, post_url):
+def extract_video_and_title(page, post_url, max_retries=2):
     """
-    Visits a KRX18 video post page using Playwright,
-    extracts the clean title, and captures direct .mp4 / .m3u8 stream URLs.
+    Visits a post page, extracts the clean video title,
+    and intercepts/extracts the direct CDN token MP4 download URL.
     """
-    stream_urls = []
+    for attempt in range(1, max_retries + 1):
+        cdn_video_urls = []
 
-    def is_valid_media_url(url):
-        url_lower = url.lower()
-        if any(
-            bad in url_lower
-            for bad in [
-                ".css",
-                ".js",
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".gif",
-                ".svg",
-                ".webp",
-                ".woff",
-                ".ttf",
-                "challenge-platform",
-                "speculation",
-                "analytics",
-                "google",
-                "doubleclick",
-                "preview",
-                "thumb",
-                "banner",
-                "favicon",
-            ]
-        ):
-            return False
-        if url.startswith("blob:"):
-            return False
-        return (
-            ".m3u8" in url_lower
-            or ".mp4" in url_lower
-            or "bkcdn.net" in url_lower
-            or "bxcdn.net" in url_lower
-            or "sacdnssedge.com" in url_lower
-            or "/video/" in url_lower
-            or "/stream/" in url_lower
-        )
+        def handle_request(request):
+            url = request.url
+            if "data.cdn.avsee.is" in url and ".mp4" in url:
+                clean_u = html.unescape(url)
+                if clean_u not in cdn_video_urls:
+                    cdn_video_urls.append(clean_u)
 
-    def handle_request(request):
-        url = request.url
-        if is_valid_media_url(url):
-            if url not in stream_urls:
-                stream_urls.append(url)
+        page.on("request", handle_request)
 
-    page.on("request", handle_request)
-
-    try:
-        page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
-
-        # Wait for Cloudflare clearance if present
-        for _ in range(10):
-            if "Just a moment" not in page.title():
-                break
-            page.wait_for_timeout(1000)
-
-        # Allow player initialization
         try:
-            page.wait_for_selector(
-                "video, iframe, .player, #player, .video-player", timeout=8000
-            )
-        except Exception:
-            pass
+            page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
 
-        # Try to interact with player if stream not immediately fired
-        page.wait_for_timeout(2000)
-        if not stream_urls:
+            # Wait for Cloudflare clearance
+            for _ in range(25):
+                if "Just a moment" not in page.title():
+                    break
+                page.wait_for_timeout(1000)
+
             try:
-                for selector in [
-                    "video",
-                    "iframe",
-                    ".play-btn",
-                    ".jw-display-icon-container",
-                    ".vjs-big-play-button",
-                ]:
-                    elem = page.query_selector(selector)
-                    if elem:
-                        elem.click(timeout=1500)
-                        page.wait_for_timeout(1500)
-                        break
+                page.wait_for_selector(
+                    "#bo_v_title, .bo_v_tit, #bo_v_subj, video, .jw-media, iframe",
+                    timeout=12000,
+                )
             except Exception:
                 pass
 
-        soup = BeautifulSoup(page.content(), "html.parser")
+            page.wait_for_timeout(2500)
 
-        # 1. Title Extraction
-        title = ""
-        title_tag = (
-            soup.select_one("h1.entry-title")
-            or soup.select_one("h1.post-title")
-            or soup.select_one("h1.title")
-            or soup.select_one("h1")
-            or soup.select_one("meta[property='og:title']")
-            or soup.select_one("meta[name='twitter:title']")
-        )
+            page_html = page.content()
+            soup = BeautifulSoup(page_html, "html.parser")
 
-        if title_tag:
-            if title_tag.name == "meta":
-                title = title_tag.get("content", "").strip()
-            else:
+            # Extract title from on-page elements
+            title = ""
+            title_tag = (
+                soup.select_one("#bo_v_title")
+                or soup.select_one(".bo_v_tit")
+                or soup.select_one("#bo_v_subj")
+                or soup.select_one("h1.bo_v_tit")
+                or soup.select_one("h2.bo_v_tit")
+                or soup.select_one("article header h1")
+            )
+
+            if title_tag:
                 title = title_tag.get_text(strip=True)
-        elif soup.title and soup.title.string:
-            title = soup.title.string.strip().split(" - ")[0].split(" | ")[0].strip()
-        else:
-            title = "Untitled Video"
+            elif soup.title and soup.title.string:
+                title = soup.title.string.strip().split(">")[0].strip()
+            else:
+                title = "Unknown Title"
 
-        title = html.unescape(title)
+            title = html.unescape(title)
 
-        # 2. Direct Video URL Extraction
-        video_url_found = None
+            # Check if Cloudflare blocked
+            if "Just a moment" in title or title.strip() in ["a moment...", "Just a moment..."]:
+                if attempt < max_retries:
+                    page.remove_listener("request", handle_request)
+                    page.wait_for_timeout(3000)
+                    continue
 
-        # Check intercepted video stream requests
-        if stream_urls:
-            # Prefer direct .mp4 or .m3u8
-            m3u8_mp4 = [u for u in stream_urls if ".mp4" in u or ".m3u8" in u]
-            video_url_found = m3u8_mp4[0] if m3u8_mp4 else stream_urls[0]
+            title = clean_krx_title(title)
 
-        # Check frames
-        if not video_url_found:
+            # Check DOM video tag as fallback
+            for video in soup.find_all("video"):
+                src = video.get("src", "")
+                if "data.cdn.avsee.is" in src and ".mp4" in src:
+                    clean_src = html.unescape(src)
+                    if clean_src not in cdn_video_urls:
+                        cdn_video_urls.append(clean_src)
+
+            # Check page content and all frames with regex
+            all_htmls = [page_html]
             for frame in page.frames:
                 try:
-                    f_soup = BeautifulSoup(frame.content(), "html.parser")
-                    for source in f_soup.find_all(["source", "video"]):
-                        src = source.get("src", "")
-                        if (
-                            src
-                            and not src.startswith("blob:")
-                            and (".mp4" in src or ".m3u8" in src)
-                        ):
-                            video_url_found = urljoin(BASE_URL, src)
-                            break
-                    if video_url_found:
-                        break
+                    all_htmls.append(frame.content())
                 except Exception:
                     pass
 
-        # Check DOM <video> and <source>
-        if not video_url_found:
-            for source in soup.find_all(["source", "video"]):
-                src = source.get("src", "")
-                if (
-                    src
-                    and not src.startswith("blob:")
-                    and (".mp4" in src or ".m3u8" in src)
-                ):
-                    video_url_found = urljoin(BASE_URL, src)
-                    break
+            for content_str in all_htmls:
+                matches = re.findall(
+                    r'(?:src=[\'"])?(https://data\.cdn\.avsee\.is/[^\'"\s<>]+?\.mp4)',
+                    content_str,
+                )
+                for m in matches:
+                    clean_m = html.unescape(m)
+                    if clean_m not in cdn_video_urls:
+                        cdn_video_urls.append(clean_m)
 
-        # Check iframe src if embedded player
-        if not video_url_found:
-            for iframe in soup.select("iframe"):
-                src = iframe.get("src", "")
-                if (
-                    src
-                    and "disqus.com" not in src
-                    and "facebook.com" not in src
-                    and "twitter.com" not in src
-                    and is_valid_media_url(src)
-                ):
-                    video_url_found = urljoin(BASE_URL, src)
-                    break
+            mp4_url = cdn_video_urls[0] if cdn_video_urls else None
 
-        # Check script player configurations
-        if not video_url_found:
-            script_patterns = [
-                r'["\'](https?://[^"\']+\.(?:mp4|m3u8)[^"\']*)["\']',
-                r'(?:file|source|src|video_url|videoUrl|hls)\s*:\s*["\'](https?://[^"\']+)["\']',
-            ]
-            for script in soup.find_all("script"):
-                script_text = script.string or script.get_text() or ""
-                for pattern in script_patterns:
-                    match = re.search(pattern, script_text)
-                    if match:
-                        raw_url = match.group(1)
-                        if (
-                            "thumb" not in raw_url
-                            and "preview" not in raw_url
-                            and is_valid_media_url(raw_url)
-                        ):
-                            video_url_found = urljoin(BASE_URL, raw_url)
-                            break
-                if video_url_found:
-                    break
-
-        return {
-            "title": title,
-            "mp4_download_url": video_url_found,
-            "post_url": post_url,
-        }
-
-    except Exception as e:
-        return {
-            "title": "Error",
-            "mp4_download_url": None,
-            "post_url": post_url,
-            "error": str(e),
-        }
-    finally:
-        page.remove_listener("request", handle_request)
-
-
-def get_krx_page_url(base_url, page_num):
-    """Constructs pagination URL (e.g. /page/2/ or ?page=2)."""
-    base_clean = base_url.rstrip("/")
-    if page_num <= 1:
-        return f"{base_clean}/"
-    if re.search(r"/page/\d+$", base_clean):
-        base_clean = re.sub(r"/page/\d+$", "", base_clean)
-    return f"{base_clean}/page/{page_num}/"
+            return {"title": title, "mp4_download_url": mp4_url, "post_url": post_url}
+        except Exception as e:
+            if attempt == max_retries:
+                return {
+                    "title": "Error",
+                    "mp4_download_url": None,
+                    "post_url": post_url,
+                    "error": str(e),
+                }
+            page.wait_for_timeout(2000)
+        finally:
+            try:
+                page.remove_listener("request", handle_request)
+            except Exception:
+                pass
 
 
 def run_krx_scraper(
-    target_url=DEFAULT_KRX_URL,
+    board="javleak",
     start_page=1,
     end_page=None,
     output_file="krx_videos.json",
     refresh=False,
 ):
     saved_data = {}
-    if os.path.exists(output_file):
+    if os.path.exists(output_file) and not refresh:
         try:
             with open(output_file, "r", encoding="utf-8") as f:
                 for item in json.load(f):
@@ -294,41 +214,34 @@ def run_krx_scraper(
         page = context.new_page()
 
         if end_page is None:
-            print(f"[*] Detecting total pages from {target_url}...")
-            try:
-                page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
-                for _ in range(10):
-                    if "Just a moment" not in page.title():
-                        break
-                    page.wait_for_timeout(1000)
-                soup = BeautifulSoup(page.content(), "html.parser")
-                detected_pages = [1]
-                for a in soup.find_all("a", href=True):
-                    href = a.get("href", "")
-                    m = re.search(r"/page/(\d+)/?", href) or re.search(
-                        r"page=(\d+)", href
-                    )
-                    if m:
-                        detected_pages.append(int(m.group(1)))
-                end_page = max(detected_pages)
-                print(f"[+] Total pages detected: {end_page}")
-            except Exception as e:
-                print(f"[!] Warning detecting total pages: {e}. Defaulting to 1.")
-                end_page = 1
+            url = f"{BASE_URL}{board}&page=1"
+            print(f"[*] Detecting total board pages from {url}...")
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            for _ in range(10):
+                if "Just a moment" not in page.title():
+                    break
+                page.wait_for_timeout(1000)
+            soup = BeautifulSoup(page.content(), "html.parser")
+            page_numbers = [1]
+            for a in soup.find_all("a", href=True):
+                href = a.get("href", "")
+                m = re.search(r"page=(\d+)", href)
+                if m:
+                    page_numbers.append(int(m.group(1)))
+            end_page = max(page_numbers)
+            print(f"[+] Total pages detected: {end_page}")
 
         print(f"\n=======================================================")
-        print(f"[*] Starting 18+ (KRX18) Scraper (Pages {start_page} to {end_page})")
-        print(f"[*] Target URL: {target_url}")
+        print(f"[*] Starting KRX/18+ Scraper (Pages {start_page} to {end_page})")
+        print(f"[*] Board: {board}")
         print(f"=======================================================\n")
 
         try:
             for page_num in range(start_page, end_page + 1):
-                current_page_url = get_krx_page_url(target_url, page_num)
-                print(f"[*] [Page {page_num}/{end_page}] Loading: {current_page_url}")
+                page_board_url = f"{BASE_URL}{board}&page={page_num}"
+                print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
 
-                page.goto(
-                    current_page_url, wait_until="domcontentloaded", timeout=45000
-                )
+                page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
                 for _ in range(10):
                     if "Just a moment" not in page.title():
                         break
@@ -336,63 +249,20 @@ def run_krx_scraper(
 
                 soup = BeautifulSoup(page.content(), "html.parser")
                 post_links = []
-
-                # Excluded navigational patterns
-                excluded_patterns = [
-                    "/genre/",
-                    "/tag/",
-                    "/category/",
-                    "/page/",
-                    "/about",
-                    "/contact",
-                    "/terms",
-                    "/privacy",
-                    "/dmca",
-                    "/search",
-                ]
-
-                for a in soup.find_all("a", href=True):
-                    href = a.get("href", "").strip()
-                    if (
+                for a in soup.find_all(
+                    "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
+                ):
+                    href = a.get("href", "")
+                    full_url = (
                         href
-                        and not href.startswith("#")
-                        and href.rstrip("/")
-                        not in [
-                            "/movies",
-                            "https://krx18.com/movies",
-                            "http://krx18.com/movies",
-                        ]
-                        and not any(x in href for x in excluded_patterns)
-                        and (
-                            re.search(r"/movies/[a-zA-Z0-9_-]+/?$", href)
-                            or re.search(r"/[a-zA-Z0-9_-]+\.html$", href)
-                            or "/video/" in href
-                        )
-                    ):
-                        full_url = urljoin(BASE_URL, href)
-                        if full_url not in post_links and full_url.rstrip("/") not in [
-                            f"{BASE_URL}/movies",
-                            target_url.rstrip("/"),
-                            BASE_URL,
-                        ]:
-                            post_links.append(full_url)
+                        if href.startswith("http")
+                        else f"https://02.avsee.is{href}"
+                    )
+                    clean_url = full_url.split("&page=")[0]
+                    if clean_url not in post_links:
+                        post_links.append(clean_url)
 
-                # Fallback video card selectors (article links)
-                if not post_links:
-                    for article in soup.select(
-                        "article a, .video-item a, .thumb a, .item-video a"
-                    ):
-                        href = article.get("href", "")
-                        if (
-                            href
-                            and not href.startswith("#")
-                            and not any(x in href for x in excluded_patterns)
-                        ):
-                            full_url = urljoin(BASE_URL, href)
-                            if full_url not in post_links and full_url != target_url:
-                                post_links.append(full_url)
-
-                print(f"    -> Found {len(post_links)} video posts on page {page_num}.")
+                print(f"    -> Found {len(post_links)} posts on page {page_num}.")
 
                 for idx, post_url in enumerate(post_links, 1):
                     if (
@@ -401,7 +271,7 @@ def run_krx_scraper(
                         and saved_data[post_url].get("mp4_download_url")
                     ):
                         print(
-                            f"    [{idx}/{len(post_links)}] (Cached) {saved_data[post_url].get('title', 'Video')}"
+                            f"    [{idx}/{len(post_links)}] (Cached) {saved_data[post_url]['title']}"
                         )
                         continue
 
@@ -409,16 +279,16 @@ def run_krx_scraper(
                     item = extract_video_and_title(page, post_url)
                     item["page"] = page_num
                     item["category"] = "18+"
+                    item["board"] = board
                     saved_data[post_url] = item
 
                     print(f"        Title:   {item['title']}")
                     print(
-                        f"        Stream:  {item['mp4_download_url'] or 'Not found'}\n"
+                        f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n"
                     )
 
                     # Immediate per-item checkpoint save
-                    save_checkpoint(output_file, saved_data)
-                    time.sleep(0.3)
+                    save_checkpoint(output_file, saved_data, board=board)
 
                 print(
                     f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
@@ -429,7 +299,7 @@ def run_krx_scraper(
                 "\n[!] Scraping paused by user. Saving current checkpoint...",
                 flush=True,
             )
-            save_checkpoint(output_file, saved_data)
+            save_checkpoint(output_file, saved_data, board=board)
             print(
                 f"[+] Saved {len(saved_data)} items to '{output_file}'. You can resume anytime!"
             )
@@ -439,21 +309,17 @@ def run_krx_scraper(
         browser.close()
 
     print(
-        f"\n[+] 18+ Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"
+        f"\n[+] KRX Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"
     )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="18+ (KRX18) Video Scraper")
+    parser = argparse.ArgumentParser(description="KRX (javleak) Video Scraper")
     parser.add_argument(
-        "--url",
-        default=DEFAULT_KRX_URL,
-        help=f"Target URL (default: {DEFAULT_KRX_URL})",
+        "--board", default="javleak", help="Board name (default: javleak)"
     )
-    parser.add_argument(
-        "--start", type=int, default=1, help="Start page number (default: 1)"
-    )
-    parser.add_argument("--end", type=int, default=None, help="End page number")
+    parser.add_argument("--start", type=int, default=1, help="Start page")
+    parser.add_argument("--end", type=int, default=None, help="End page")
     parser.add_argument(
         "--output",
         default="krx_videos.json",
@@ -466,7 +332,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     run_krx_scraper(
-        target_url=args.url,
+        board=args.board,
         start_page=args.start,
         end_page=args.end,
         output_file=args.output,
