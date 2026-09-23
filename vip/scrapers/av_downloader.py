@@ -55,7 +55,7 @@ def download_single_video(
     }
 
     start_time = time.time()
-    chunk_size = 1024 * 256  # 256 KB chunks
+    chunk_size = 1024 * 1024  # 1 MB chunks for optimized streaming throughput
 
     for attempt in range(1, max_retries + 1):
         try:

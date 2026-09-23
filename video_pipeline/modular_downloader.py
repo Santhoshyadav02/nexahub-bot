@@ -151,7 +151,7 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                     }
 
                 total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
-                chunk_size = 1024 * 256  # 256 KB chunks
+                chunk_size = 1024 * 1024  # 1 MB chunks for optimized I/O throughput
                 downloaded = 0
                 last_log_time = time.time()
                 prefix = None
