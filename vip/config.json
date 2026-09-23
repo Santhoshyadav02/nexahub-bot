@@ -66,5 +66,14 @@
     "postToGeneralTopic": true,
     "postToAllTopic": true,
     "autoDiscoverTopicIds": true
+  },
+  "pipeline": {
+    "enabled": true,
+    "dailyQuotaPerChannel": 5,
+    "maxDailyTotal": 30,
+    "workers": 2,
+    "scrapeIntervalHours": 3,
+    "cleanupThresholdHours": 1,
+    "roundRobinOrder": ["BJ", "JP", "CN", "KR", "18", "AV"]
   }
 }
