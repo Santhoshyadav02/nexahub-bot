@@ -2,19 +2,9 @@
  * ============================================================
  * 👑 VIP CHANNEL FORWARDER & TOPIC HUB BOT (@INFINITY_121_bot)
  * ============================================================
- * Automatically monitors 6 VIP Telegram channels and forwards / publishes
- * rich notification cards to corresponding VIP Group Forum Topics + General / ALL threads.
- *
- * Source Channels (6):
- *  1. VIP-18 (-1003845130520) ➔ VIP Forum Topic: 18+ (🔞) & General/ALL
- *  2. VIP-CN (-1004304488687) ➔ VIP Forum Topic: CN (🇨🇳) & General/ALL
- *  3. VIP-JP (-1004484964035) ➔ VIP Forum Topic: JP (🇯🇵) & General/ALL
- *  4. VIP-KR (-1004435999618) ➔ VIP Forum Topic: KR (🇰🇷) & General/ALL
- *  5. VIP-BJ (-1003977934133) ➔ VIP Forum Topic: BJ (📺) & General/ALL
- *  6. VIP-AV (-1004352512630) ➔ VIP Forum Topic: AV (🎬) & General/ALL
- *
- * Target Supergroup:
- *  - VIP Group (-1003983458986) with Forum Topics enabled
+ * Automatically monitors 6 VIP Telegram channels, maintains a 40-video catalog (8x5 pages)
+ * with blue clickable hyperlinks, and publishes rich notification cards + interactive
+ * paginated menus to VIP Group Forum Topics + General / ALL threads.
  */
 
 const fs = require('fs');
@@ -22,12 +12,14 @@ const path = require('path');
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
+const { CatalogManager } = require('./catalog_manager');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
 class VipForwarder {
   constructor(configPath = CONFIG_PATH) {
     this.configPath = configPath;
     this.config = this._loadConfig();
+    this.catalogManager = new CatalogManager(path.resolve(__dirname, 'channel_catalogs.json'));
     this.processedPosts = new Set();
     this.bot = null;
   }
@@ -53,10 +45,6 @@ class VipForwarder {
     }
   }
 
-  /**
-   * Generates clean direct jump link to a Telegram channel post.
-   * e.g. -1004435999618 -> https://t.me/c/4435999618/123
-   */
   getChannelPostLink(chatId, messageId, username = null) {
     if (username) {
       const cleanUser = username.replace(/^@/, '');
@@ -66,9 +54,6 @@ class VipForwarder {
     return `https://t.me/c/${cleanId}/${messageId}`;
   }
 
-  /**
-   * Generates jump link to VIP group General / ALL topic.
-   */
   getVipGroupAllLink() {
     const vipChatId = this.config.vipGroup.chatId;
     const cleanId = String(vipChatId).replace(/^-100/, '').replace(/^-/, '');
@@ -76,18 +61,12 @@ class VipForwarder {
     return `https://t.me/c/${cleanId}/${threadId}`;
   }
 
-  /**
-   * Extracts clean display title from a Telegram message or video caption.
-   */
   extractTitle(msg) {
     const raw = (msg.caption || msg.text || (msg.video && msg.video.file_name) || (msg.document && msg.document.file_name) || '신규 동영상 콘텐츠').trim();
     const firstLine = raw.split('\n')[0].trim();
     return firstLine.length > 90 ? firstLine.substring(0, 87) + '...' : firstLine;
   }
 
-  /**
-   * Formats the rich notification card for the General / ALL feed.
-   */
   formatAllCard(channelConfig, title) {
     return (
       `🌐 <b>[ALL / 전체] 신규 업데이트 (${channelConfig.tag})</b>\n\n` +
@@ -96,9 +75,6 @@ class VipForwarder {
     );
   }
 
-  /**
-   * Formats the rich notification card for the dedicated topic.
-   */
   formatCategoryCard(channelConfig, title) {
     return (
       `${channelConfig.emoji} <b>[${channelConfig.tag} / 전용] 신규 업데이트</b>\n\n` +
@@ -107,9 +83,6 @@ class VipForwarder {
     );
   }
 
-  /**
-   * Builds the dual action buttons (All & Dedicated Channel jump links).
-   */
   buildKeyboard(channelConfig, postLink) {
     const allLink = this.getVipGroupAllLink();
     const channelBtnText = `${channelConfig.buttonLabel || channelConfig.tag} ↗️`;
@@ -132,7 +105,6 @@ class VipForwarder {
     const channelConfig = this.config.channels[chatIdStr];
 
     if (!channelConfig) {
-      // Not one of the 6 tracked VIP channels
       return false;
     }
 
@@ -147,13 +119,20 @@ class VipForwarder {
     const postLink = this.getChannelPostLink(msg.chat.id, msg.message_id, msg.chat.username);
     const vipChatId = this.config.vipGroup.chatId;
 
+    // Save to channel catalog (40-video rolling history)
+    this.catalogManager.addVideo(channelConfig.key, {
+      messageId: msg.message_id,
+      title: title,
+      link: postLink
+    });
+
     console.log(`\n📢 [VIP_FORWARDER] New Update Detected from [${channelConfig.name}] (${channelConfig.tag})`);
     console.log(`   📌 Title: ${title}`);
     console.log(`   🔗 Post Link: ${postLink}`);
 
     const keyboard = this.buildKeyboard(channelConfig, postLink);
 
-    // 1. Post to Dedicated Category Topic (if thread ID is bound)
+    // 1. Post to Dedicated Category Topic
     if (this.config.settings.postToCategoryTopic && channelConfig.topicThreadId) {
       try {
         const catText = this.formatCategoryCard(channelConfig, title);
@@ -190,21 +169,50 @@ class VipForwarder {
   }
 
   /**
-   * Binds a topic thread ID to a specific channel key (e.g. KR, AV, 18, BJ, JP, CN).
+   * Handles interactive callback queries for pagination (e.g. cat_pg:KR:2).
    */
-  bindTopicThread(channelKey, threadId) {
-    for (const [chId, conf] of Object.entries(this.config.channels)) {
-      if (conf.key.toLowerCase() === channelKey.toLowerCase() || conf.tag.toLowerCase() === channelKey.toLowerCase()) {
-        conf.topicThreadId = Number(threadId);
-        this._saveConfig();
-        return { success: true, channel: conf };
+  async handleCallbackQuery(query) {
+    if (!query.data || !query.data.startsWith('cat_pg:')) return;
+
+    const parts = query.data.split(':');
+    const channelKey = parts[1];
+    const page = parseInt(parts[2], 10) || 1;
+
+    // Find channel configuration
+    const channelConfig = Object.values(this.config.channels).find(
+      c => c.key.toLowerCase() === channelKey.toLowerCase()
+    );
+
+    if (!channelConfig) {
+      try {
+        await this.bot.answerCallbackQuery(query.id, { text: '채널을 찾을 수 없습니다.' });
+      } catch (e) {}
+      return;
+    }
+
+    const pageData = this.catalogManager.getPage(channelConfig.key, page);
+    const text = this.catalogManager.formatCatalogText(channelConfig, pageData);
+    const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
+
+    try {
+      await this.bot.answerCallbackQuery(query.id);
+      await this.bot.editMessageText(text, {
+        chat_id: query.message.chat.id,
+        message_id: query.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup,
+        disable_web_page_preview: true
+      });
+    } catch (err) {
+      // Ignore if content is identical on refresh
+      if (!err.message.includes('message is not modified')) {
+        console.error('❌ [VIP_FORWARDER] Failed to edit catalog page:', err.message);
       }
     }
-    return { success: false, error: 'CHANNEL_KEY_NOT_FOUND' };
   }
 
   /**
-   * Helper command handlers for topic management in VIP group.
+   * Helper command handlers for topic management and catalog display.
    */
   async handleGroupMessage(msg) {
     if (!msg.text) return;
@@ -212,11 +220,45 @@ class VipForwarder {
     const chatIdStr = String(msg.chat.id);
     const vipChatId = this.config.vipGroup.chatId;
 
-    // Check if command is issued in VIP group
     if (chatIdStr === String(vipChatId)) {
       const threadId = msg.message_thread_id || null;
 
-      // Command: /settopic <key> (e.g. /settopic KR, /settopic AV, /settopic 18)
+      // Command: /catalog or /list (Shows 8x5 paginated list for this topic)
+      if (text.startsWith('/catalog') || text.startsWith('/list') || text.startsWith('/videos')) {
+        const parts = text.split(/\s+/);
+        let requestedKey = parts[1];
+
+        // If no key provided, detect from bound threadId
+        let channelConfig = null;
+        if (requestedKey) {
+          channelConfig = Object.values(this.config.channels).find(
+            c => c.key.toLowerCase() === requestedKey.toLowerCase() || c.tag.toLowerCase() === requestedKey.toLowerCase()
+          );
+        } else if (threadId) {
+          channelConfig = Object.values(this.config.channels).find(
+            c => c.topicThreadId === threadId
+          );
+        }
+
+        if (!channelConfig) {
+          // Default to first channel or show selector
+          channelConfig = Object.values(this.config.channels)[0];
+        }
+
+        const pageData = this.catalogManager.getPage(channelConfig.key, 1);
+        const catalogText = this.catalogManager.formatCatalogText(channelConfig, pageData);
+        const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
+
+        await this.bot.sendMessage(msg.chat.id, catalogText, {
+          parse_mode: 'HTML',
+          message_thread_id: threadId,
+          reply_markup: replyMarkup,
+          disable_web_page_preview: true
+        });
+        return;
+      }
+
+      // Command: /settopic <key>
       if (text.startsWith('/settopic')) {
         const parts = text.split(/\s+/);
         const key = parts[1];
@@ -257,21 +299,33 @@ class VipForwarder {
       // Command: /topics or /status
       if (text === '/topics' || text === '/status') {
         let statusMsg =
-          `👑 <b>VIP 포워더 토픽 연결 현황</b>\n` +
+          `👑 <b>VIP 포워더 & 카탈로그 현황</b>\n` +
           `━━━━━━━━━━━━━━━━\n` +
           `🌐 <b>VIP Group:</b> <code>${vipChatId}</code>\n` +
           `📌 <b>General / ALL Topic Thread:</b> <code>${this.config.vipGroup.allTopicThreadId || 1}</code>\n` +
           `━━━━━━━━━━━━━━━━\n` +
-          `<b>연결된 6개 채널 목록:</b>\n\n`;
+          `<b>연결된 6개 채널 목록 및 카탈로그 현황:</b>\n\n`;
 
         for (const [chId, c] of Object.entries(this.config.channels)) {
-          const boundThread = c.topicThreadId ? `Thread ID: <code>${c.topicThreadId}</code>` : `<i>⚠️ 미지정 (토픽에서 /settopic ${c.key} 입력)</i>`;
-          statusMsg += `• ${c.emoji} <b>${c.name} (${c.tag})</b>\n  ID: <code>${chId}</code> ➔ ${boundThread}\n`;
+          const boundThread = c.topicThreadId ? `Thread ID: <code>${c.topicThreadId}</code>` : `<i>⚠️ 미지정 (/settopic ${c.key})</i>`;
+          const count = (this.catalogManager.catalogs[c.key] || []).length;
+          statusMsg += `• ${c.emoji} <b>${c.name} (${c.tag})</b> [${count}/40개 수집됨]\n  ID: <code>${chId}</code> ➔ ${boundThread}\n`;
         }
 
         await this.bot.sendMessage(msg.chat.id, statusMsg, { parse_mode: 'HTML', message_thread_id: threadId });
       }
     }
+  }
+
+  bindTopicThread(channelKey, threadId) {
+    for (const [chId, conf] of Object.entries(this.config.channels)) {
+      if (conf.key.toLowerCase() === channelKey.toLowerCase() || conf.tag.toLowerCase() === channelKey.toLowerCase()) {
+        conf.topicThreadId = Number(threadId);
+        this._saveConfig();
+        return { success: true, channel: conf };
+      }
+    }
+    return { success: false, error: 'CHANNEL_KEY_NOT_FOUND' };
   }
 
   _escapeHTML(str) {
@@ -283,14 +337,10 @@ class VipForwarder {
       .replace(/"/g, '&quot;');
   }
 
-  /**
-   * Start the VIP bot listener.
-   */
   start() {
     const token = process.env.VIP_BOT_TOKEN || process.env.BOT_TOKEN;
     if (!token) {
       console.error('❌ [VIP_FORWARDER] VIP_BOT_TOKEN is missing in vip/.env!');
-      console.log('ℹ️ Please set VIP_BOT_TOKEN in vip/.env to start live forwarding.');
       return;
     }
 
@@ -308,8 +358,13 @@ class VipForwarder {
       });
     });
 
+    this.bot.on('callback_query', (query) => {
+      this.handleCallbackQuery(query).catch(err => {
+        console.error('❌ [VIP_FORWARDER] Error in handleCallbackQuery:', err.message);
+      });
+    });
+
     console.log('🚀 [VIP_FORWARDER] VIP Channel Forwarder & Topic Hub is LIVE!');
-    console.log(`   Tracking 6 channels -> Target VIP Supergroup: ${this.config.vipGroup.chatId}`);
   }
 }
 
