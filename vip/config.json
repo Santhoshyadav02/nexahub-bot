@@ -12,8 +12,8 @@
       "name": "VIP-18",
       "buttonLabel": "🔞 18+ 전용",
       "emoji": "🔞",
-      "topicThreadId": null,
-      "topicName": "18+"
+      "topicThreadId": 16,
+      "topicName": "🔞 18+"
     },
     "-1004304488687": {
       "key": "CN",
@@ -21,7 +21,7 @@
       "name": "VIP-CN",
       "buttonLabel": "🇨🇳 CN",
       "emoji": "🇨🇳",
-      "topicThreadId": null,
+      "topicThreadId": 18,
       "topicName": "CN"
     },
     "-1004484964035": {
@@ -30,7 +30,7 @@
       "name": "VIP-JP",
       "buttonLabel": "🇯🇵 JP",
       "emoji": "🇯🇵",
-      "topicThreadId": null,
+      "topicThreadId": 19,
       "topicName": "JP"
     },
     "-1004435999618": {
@@ -39,7 +39,7 @@
       "name": "VIP-KR",
       "buttonLabel": "🇰🇷 KR (로맨틱한 분위기 💥)",
       "emoji": "🇰🇷",
-      "topicThreadId": null,
+      "topicThreadId": 20,
       "topicName": "KR"
     },
     "-1003977934133": {
@@ -48,7 +48,7 @@
       "name": "VIP-BJ",
       "buttonLabel": "📺 BJ. (토끼 소녀 코스프레 데...)",
       "emoji": "📺",
-      "topicThreadId": null,
+      "topicThreadId": 23,
       "topicName": "BJ."
     },
     "-1004352512630": {
@@ -57,7 +57,7 @@
       "name": "VIP-AV",
       "buttonLabel": "🎬 AV (사키 미즈미)",
       "emoji": "🎬",
-      "topicThreadId": null,
+      "topicThreadId": 12,
       "topicName": "AV"
     }
   },
