@@ -152,14 +152,18 @@ class VipForwarder {
     if (this.config.settings.postToGeneralTopic || this.config.settings.postToAllTopic) {
       try {
         const allText = this.formatAllCard(channelConfig, title);
-        const allThreadId = this.config.vipGroup.allTopicThreadId || 1;
-        await this.bot.sendMessage(vipChatId, allText, {
+        const sendOpts = {
           parse_mode: 'HTML',
-          message_thread_id: allThreadId,
           reply_markup: keyboard,
           disable_web_page_preview: true
-        });
-        console.log(`   ✅ Posted to General / ALL Topic (Thread: ${allThreadId})`);
+        };
+        const allThreadId = this.config.vipGroup.allTopicThreadId;
+        if (allThreadId && allThreadId !== 1) {
+          sendOpts.message_thread_id = allThreadId;
+        }
+
+        await this.bot.sendMessage(vipChatId, allText, sendOpts);
+        console.log(`   ✅ Posted to General / ALL Feed (VIP Group: ${vipChatId})`);
       } catch (err) {
         console.error(`   ❌ Failed to post to General/ALL topic:`, err.message);
       }
