@@ -76,6 +76,14 @@ async function startDaemon() {
   setInterval(triggerScraper, SCRAPE_INTERVAL_MS);
   setInterval(triggerCleanup, CLEANUP_INTERVAL_MS);
 
+  // Graceful shutdown handling
+  const shutdown = () => {
+    console.log(`\n🛑 [VIP_DAEMON] Graceful shutdown signal received. Stopping timers...`);
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
   console.log(`[VIP_DAEMON] All recurring background timers active.`);
 }
 
