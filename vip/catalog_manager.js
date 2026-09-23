@@ -127,7 +127,12 @@ class CatalogManager {
     } else {
       pageData.items.forEach((item, index) => {
         const itemNumber = (pageData.currentPage - 1) * ITEMS_PER_PAGE + (index + 1);
-        const safeTitle = this._escapeHTML(item.title);
+        const cleanT = (item.title || '')
+          .replace(/<[^>]*>/g, '')
+          .replace(/\[REMOVE\]/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const safeTitle = this._escapeHTML(cleanT);
         // Blue clickable hyperlink wrapping title
         text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n\n`;
       });
