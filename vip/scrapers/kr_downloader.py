@@ -246,6 +246,19 @@ def download_single_video(
         print(f"[*] [Already Downloaded] {filename} ({size_mb:.1f} MB)\n", flush=True)
         return {"status": "exists", "title": title, "filepath": filepath}
 
+    if ".m3u8" in url.lower():
+        print(f"[+] Downloading m3u8 stream: {filename}", flush=True)
+        success, err = download_m3u8_segments(url, filepath)
+        if not success:
+            if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+            print(f"[!] [Download Error] {filename}: {err}\n", flush=True)
+            return {"status": "error", "title": title, "error": err}
+        return {"status": "downloaded", "title": title, "filepath": filepath}
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://www.eporner.com/",
@@ -266,21 +279,12 @@ def download_single_video(
             req_headers = headers.copy()
             if downloaded_bytes > 0:
                 req_headers["Range"] = f"bytes={downloaded_bytes}-"
-    success, err = download_m3u8_segments(url, filepath)
 
             with requests.get(
                 url, headers=req_headers, proxies=proxies, stream=True, timeout=timeout
             ) as response:
                 if response.status_code == 416:
                     break
-    if not success:
-        if os.path.exists(filepath) and os.path.getsize(filepath) < 1024 * 1024:
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
-        print(f"[!] [Download Error] {filename}: {err}\n", flush=True)
-        return {"status": "error", "title": title, "error": err}
 
                 if response.status_code not in [200, 206]:
                     if attempt == max_retries:
