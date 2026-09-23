@@ -539,11 +539,26 @@ class VipPipelineOrchestrator {
       return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
     }
 
+    let targetItem = item;
     try {
-      const downloadResult = await this.downloadVideo(item, channelKey);
-      if (downloadResult.success && downloadResult.filePath) {
-        await this.uploadAndPublish(item, channelKey, downloadResult.filePath);
-        return { channelKey, status: 'PUBLISHED', title: item.title };
+      let downloadResult;
+      try {
+        downloadResult = await this.downloadVideo(targetItem, channelKey);
+      } catch (err) {
+        console.warn(`⚠️ ${LOG_PREFIX} [${def.tag}] Download failed (${err.message}). Refreshing scraper for fresh tokens and retrying...`);
+        await this.runScraper(channelKey, { pages: 1, refresh: true });
+        const freshItem = this.getNextEligibleVideo(channelKey);
+        if (freshItem) {
+          targetItem = freshItem;
+          downloadResult = await this.downloadVideo(targetItem, channelKey);
+        } else {
+          throw err;
+        }
+      }
+
+      if (downloadResult && downloadResult.success && downloadResult.filePath) {
+        await this.uploadAndPublish(targetItem, channelKey, downloadResult.filePath);
+        return { channelKey, status: 'PUBLISHED', title: targetItem.title };
       }
       return { channelKey, status: 'DOWNLOAD_FAILED' };
     } catch (err) {
