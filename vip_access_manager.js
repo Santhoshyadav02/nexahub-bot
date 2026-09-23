@@ -13,7 +13,7 @@ const path = require("path");
 const { dataPath, writeJsonAtomicSync, quarantineCorruptFile } = require("./runtime_paths");
 
 const REGISTRY_FILE = dataPath("vip_access_registry.json");
-const AUTHORIZED_ADMIN_USERNAMES = new Set(["cse_006", "cse_06", "cse06", "cse006"]);
+const AUTHORIZED_ADMIN_USERNAMES = new Set(["ooalw", "cse_006", "cse_06", "cse06", "cse006"]);
 
 // In-memory set of numeric admin IDs
 const authorizedAdminIds = new Set(["8781836301"]);
@@ -169,7 +169,7 @@ class VipAccessManager {
     this.users.set(userIdStr, newRecord);
     this._save();
 
-    // Send notifications to authorized admin account (@CSE_006)
+    // Send notifications to authorized admin account (@ooalw / @CSE_006)
     if (bot) {
       await this._notifyAdminsOfRequest(bot, newRecord);
     }
@@ -200,7 +200,7 @@ class VipAccessManager {
 
     const targetAdmins = Array.from(authorizedAdminIds);
     if (targetAdmins.length === 0) {
-      console.warn(`⚠️ [VIP_ACCESS] No numeric Telegram chat ID registered for @CSE_006 yet. Admin must send /start or /admin to the bot to receive notifications.`);
+      console.warn(`⚠️ [VIP_ACCESS] No numeric Telegram chat ID registered for @ooalw / @CSE_006 yet. Admin must send /start or /admin to the bot to receive notifications.`);
       return;
     }
 
@@ -229,7 +229,7 @@ class VipAccessManager {
       return { success: false, error: "UNAUTHORIZED_ADMIN" };
     }
 
-    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `@CSE_006`;
+    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `@ooalw`;
     const isApproved = decision === "APPROVE" || decision === "approve";
 
     if (isApproved) {
@@ -264,7 +264,7 @@ class VipAccessManager {
     if (!this.isAuthorizedAdmin(adminUser)) {
       return { success: false, error: "UNAUTHORIZED_ADMIN", count: 0, approvedIds: [] };
     }
-    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `@CSE_006`;
+    const adminName = adminUser.username ? `@${adminUser.username.replace(/^@/, "")}` : `@ooalw`;
     const pendingUsers = this.getUsersByStatus("PENDING");
     const now = new Date().toISOString();
     const approvedIds = [];

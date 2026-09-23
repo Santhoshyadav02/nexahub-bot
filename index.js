@@ -2679,7 +2679,7 @@ async function getCategoryHubKeyboard() {
 function getVipLockedText() {
   return (
     `🔒 <b>VIP 접근 승인이 필요합니다.</b>\n\n` +
-    `VIP 카드 상세 안내 및 전용 그룹에 접근하려면 관리자(@CSE_006)의 승인이 필요합니다.\n\n` +
+    `VIP 카드 상세 안내 및 전용 그룹에 접근하려면 관리자(@ooalw)의 승인이 필요합니다.\n\n` +
     `아래 버튼을 눌러 승인을 요청하세요. 👇`
   );
 }
@@ -2739,7 +2739,7 @@ const getVipApprovedKeyboard = getVipInstructionKeyboard;
 function getVipPendingText() {
   return (
     `⏳ <b>VIP 접근 승인 대기 중입니다.</b>\n\n` +
-    `관리자(@CSE_006) 확인 후 승인되면 VIP 카드 상세 정보 및 그룹 링크가 잠금 해제됩니다.`
+    `관리자(@ooalw) 확인 후 승인되면 VIP 카드 상세 정보 및 그룹 링크가 잠금 해제됩니다.`
   );
 }
 
@@ -2760,7 +2760,7 @@ function getVipRejectedText() {
   return (
     `❌ <b>VIP 접근 권한이 거절되었습니다.</b>\n\n` +
     `관리자의 확인 결과 승인되지 않았습니다.\n` +
-    `문의 사항은 관리자(@CSE_006)에게 연락해주세요.`
+    `문의 사항은 관리자(@ooalw)에게 연락해주세요.`
   );
 }
 
@@ -3409,7 +3409,7 @@ bot.on("callback_query", async (query) => {
           `🆔 <b>Telegram ID:</b> <code>${targetUserId}</code>\n` +
           `━━━━━━━━━━━━━━━━\n` +
           `결과: <b>${action === "approve" ? "✅ 승인 완료" : "❌ 거절 완료"}</b>\n` +
-          `처리 관리자: <b>@CSE_006</b>`;
+          `처리 관리자: <b>${result.adminName || "@ooalw"}</b>`;
 
         if (messageId) {
           await editMessageTextSafe(chatId, messageId, adminResultText, { parse_mode: "HTML" });
@@ -3434,7 +3434,7 @@ bot.on("callback_query", async (query) => {
         try {
           await bot.sendMessage(targetUserId,
             `❌ <b>VIP 접근 요청이 거절되었습니다.</b>\n\n` +
-            `자세한 문의는 관리자(@CSE_006)에게 연락해주세요.`,
+            `자세한 문의는 관리자(@ooalw)에게 연락해주세요.`,
             {
               parse_mode: "HTML",
               reply_markup: getVipRejectedKeyboard()
@@ -3946,7 +3946,7 @@ if (isMainModule) {
     console.error("❌ [MODULAR_PIPELINE] Startup failed:", modErr.message);
   }
 
-  // 📊 Daily Admin Reporter (24-Hour Automated Report to @CSE_006)
+  // 📊 Daily Admin Reporter (24-Hour Automated Report to @ooalw / @CSE_006)
   try {
     dailyAdminReporter.startDailyReportScheduler(bot, 24 * 60 * 60 * 1000);
   } catch (repErr) {
