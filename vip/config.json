@@ -1,0 +1,70 @@
+{
+  "vipGroup": {
+    "chatId": "-1003983458986",
+    "name": "V.I.P 정보공유",
+    "allTopicThreadId": 1,
+    "generalTopicThreadId": 1
+  },
+  "channels": {
+    "-1003845130520": {
+      "key": "18",
+      "tag": "18+",
+      "name": "VIP-18",
+      "buttonLabel": "🔞 18+ 전용",
+      "emoji": "🔞",
+      "topicThreadId": null,
+      "topicName": "18+"
+    },
+    "-1004304488687": {
+      "key": "CN",
+      "tag": "CN",
+      "name": "VIP-CN",
+      "buttonLabel": "🇨🇳 CN",
+      "emoji": "🇨🇳",
+      "topicThreadId": null,
+      "topicName": "CN"
+    },
+    "-1004484964035": {
+      "key": "JP",
+      "tag": "JP",
+      "name": "VIP-JP",
+      "buttonLabel": "🇯🇵 JP",
+      "emoji": "🇯🇵",
+      "topicThreadId": null,
+      "topicName": "JP"
+    },
+    "-1004435999618": {
+      "key": "KR",
+      "tag": "KR",
+      "name": "VIP-KR",
+      "buttonLabel": "🇰🇷 KR (로맨틱한 분위기 💥)",
+      "emoji": "🇰🇷",
+      "topicThreadId": null,
+      "topicName": "KR"
+    },
+    "-1003977934133": {
+      "key": "BJ",
+      "tag": "BJ",
+      "name": "VIP-BJ",
+      "buttonLabel": "📺 BJ. (토끼 소녀 코스프레 데...)",
+      "emoji": "📺",
+      "topicThreadId": null,
+      "topicName": "BJ."
+    },
+    "-1004352512630": {
+      "key": "AV",
+      "tag": "AV",
+      "name": "VIP-AV",
+      "buttonLabel": "🎬 AV (사키 미즈미)",
+      "emoji": "🎬",
+      "topicThreadId": null,
+      "topicName": "AV"
+    }
+  },
+  "settings": {
+    "postToCategoryTopic": true,
+    "postToGeneralTopic": true,
+    "postToAllTopic": true,
+    "autoDiscoverTopicIds": true
+  }
+}
