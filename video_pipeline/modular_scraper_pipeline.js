@@ -662,7 +662,22 @@ class ModularScraperPipeline {
               const batchLimit = Math.min(2, chRemaining);
               if (nonDupes.length > 0 && batchLimit > 0) {
                 console.log(`${LOG_PREFIX} 📥 [DOWNLOAD] Channel "${conf.name}" -> Downloading ${batchLimit} video(s) in parallel (Workers: 2)...`);
-                const downloadResults = await this.runDownloader(conf, batchLimit);
+                let downloadResults = await this.runDownloader(conf, batchLimit);
+                let completedItems = downloadResults.filter(i => i.status === 'completed' || i.status === 'exists');
+
+                // If candidate links failed due to expired 403 tokens, scrape fresh links immediately and retry
+                if (completedItems.length === 0 && downloadResults.some(i => i.expired_token)) {
+                  console.log(`${LOG_PREFIX} 🔄 Expired links detected for "${conf.name}". Scraping fresh links now...`);
+                  await this.runScraper(conf, options);
+                  if (fs.existsSync(dbPath)) {
+                    try { items = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
+                    nonDupes = this._getNonDuplicateCandidates(conf, items);
+                    if (nonDupes.length > 0) {
+                      downloadResults = await this.runDownloader(conf, batchLimit);
+                    }
+                  }
+                }
+
                 for (const item of downloadResults) {
                   if (item.status === 'completed' || item.status === 'exists') {
                     // 3. Publish to Telegram

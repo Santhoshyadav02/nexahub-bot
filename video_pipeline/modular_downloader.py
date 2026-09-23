@@ -14,12 +14,13 @@ import os
 import re
 import sys
 import time
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
+import requests
 
 # Ensure unbuffered terminal output
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
+
+MAX_ALLOWED_FILE_BYTES = int(1.95 * 1024 * 1024 * 1024)  # 1.95 GB ceiling
 
 
 def sanitize_filename(name):
@@ -31,7 +32,8 @@ def sanitize_filename(name):
 
 def download_video_worker(item, output_dir, timeout=180, worker_id=1):
     """
-    Downloads a single video file using chunked HTTP streaming with retry and backoff.
+    Downloads a single video file using chunked HTTP streaming with retry, backoff,
+    and a strict 1.95 GB size ceiling.
     """
     title = item.get("title", "untitled")
     url = item.get("mp4_download_url")
@@ -77,72 +79,87 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
     # Stagger thread start slightly to prevent synchronized burst rate-limiting (429)
     time.sleep(0.15 * worker_id)
 
-    headers_attempts = [
-        {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Referer": post_url if post_url else "https://02.avsee.is/",
-            "Origin": "https://02.avsee.is",
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
-        },
-        {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
-                " (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
-            ),
-            "Accept": "*/*",
-        },
-    ]
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://02.avsee.is/",
+        "Origin": "https://02.avsee.is",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+    }
 
     part_filepath = os.path.join(
         output_dir, f".part_{safe_title}{suffix}_{worker_id}_{int(time.time()*1000)}.tmp"
     )
 
-    for attempt, headers in enumerate(headers_attempts):
+    max_retries = 2
+    for attempt in range(1, max_retries + 1):
         try:
-            if attempt == 0:
+            if attempt == 1:
                 print(f"[Worker {worker_id}] [+] Starting download: {filename}", flush=True)
             start_time = time.time()
 
-            req = Request(url, headers=headers)
-            with urlopen(req, timeout=timeout) as response:
-                status_code = getattr(response, "status", 200)
-                if status_code in [403, 429] and attempt < len(headers_attempts) - 1:
-                    time.sleep(1.2)
-                    continue
+            with requests.get(url, headers=headers, stream=True, timeout=timeout) as response:
+                status_code = response.status_code
 
-                if status_code != 200:
+                if status_code in [403, 404, 410]:
                     print(
-                        f"[Worker {worker_id}] [!] [HTTP {status_code}] Failed: {filename}",
+                        f"[Worker {worker_id}] [!] [HTTP {status_code}] Expired/Forbidden: {filename}",
                         flush=True,
                     )
-                    is_expired = status_code == 403
                     return {
                         "status": "failed",
                         "title": title,
                         "error": f"HTTP {status_code}",
-                        "expired_token": is_expired,
+                        "expired_token": True,
                         "post_url": post_url,
                     }
 
-                try:
-                    total_size = int(response.headers.get("Content-Length", 0) or 0)
-                except (ValueError, TypeError):
-                    total_size = 0
+                if status_code == 429 and attempt < max_retries:
+                    time.sleep(2.0)
+                    continue
+
+                if status_code not in [200, 206]:
+                    print(
+                        f"[Worker {worker_id}] [!] [HTTP {status_code}] Failed: {filename}",
+                        flush=True,
+                    )
+                    return {
+                        "status": "failed",
+                        "title": title,
+                        "error": f"HTTP {status_code}",
+                        "expired_token": status_code in [401, 403],
+                        "post_url": post_url,
+                    }
+
+                total_size = int(response.headers.get("content-length", 0) or 0)
+
+                # 1.95 GB Safety Ceiling Check
+                if total_size > MAX_ALLOWED_FILE_BYTES:
+                    total_gb = total_size / (1024 * 1024 * 1024)
+                    print(
+                        f"[Worker {worker_id}] [!] [SKIPPED - OVERSIZED] {filename} ({total_gb:.2f} GB > 1.95 GB Telegram Limit)",
+                        flush=True,
+                    )
+                    return {
+                        "status": "skipped_oversized",
+                        "title": title,
+                        "size_bytes": total_size,
+                        "error": f"Oversized: {total_gb:.2f} GB > 1.95 GB limit",
+                    }
+
                 total_mb = (total_size / (1024 * 1024)) if total_size > 0 else 0
-                chunk_size = 1024 * 512  # 512 KB chunks for high throughput
+                chunk_size = 1024 * 256  # 256 KB chunks
                 downloaded = 0
                 last_log_time = time.time()
-
                 prefix = None
+
                 with open(part_filepath, "wb") as f:
-                    while True:
-                        chunk = response.read(chunk_size)
+                    for chunk in response.iter_content(chunk_size=chunk_size):
                         if not chunk:
-                            break
+                            continue
                         if prefix is None:
                             prefix = chunk[:32]
                             if len(prefix) >= 12 and prefix[4:8] != b"ftyp" and b"moov" not in prefix and b"<!DOCTYPE" in prefix:
@@ -199,26 +216,6 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                 "source_video_url": url,
             }
 
-        except HTTPError as http_err:
-            if os.path.exists(part_filepath):
-                try:
-                    os.remove(part_filepath)
-                except Exception:
-                    pass
-
-            if http_err.code in [403, 429] and attempt < len(headers_attempts) - 1:
-                time.sleep(1.2)
-                continue
-
-            print(f"[Worker {worker_id}] [!] [HTTP {http_err.code}] Failed: {filename}", flush=True)
-            return {
-                "status": "failed",
-                "title": title,
-                "error": f"HTTP {http_err.code}",
-                "expired_token": http_err.code == 403,
-                "post_url": post_url,
-            }
-
         except Exception as e:
             if os.path.exists(part_filepath):
                 try:
@@ -226,7 +223,7 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                 except Exception:
                     pass
 
-            if attempt < len(headers_attempts) - 1:
+            if attempt < max_retries:
                 time.sleep(1.0)
                 continue
 
