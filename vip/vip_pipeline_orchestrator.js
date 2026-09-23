@@ -302,14 +302,13 @@ class VipPipelineOrchestrator {
       proc.stdout.on('data', d => {
         const text = d.toString();
         stdout += text;
-        const line = text.trim();
-        if (line && (line.includes('Extracting:') || line.includes('Saved') || line.includes('Checkpoint'))) {
-          console.log(`   [${def.tag}] ${line.split('\n').pop()}`);
-        }
+        process.stdout.write(text);
       });
 
       proc.stderr.on('data', d => {
-        stderr += d.toString();
+        const text = d.toString();
+        stderr += text;
+        process.stderr.write(text);
       });
 
       const timer = setTimeout(() => {
@@ -415,10 +414,14 @@ class VipPipelineOrchestrator {
       });
 
       proc.stdout.on('data', d => {
-        stdout += d.toString();
+        const text = d.toString();
+        stdout += text;
+        process.stdout.write(text);
       });
       proc.stderr.on('data', d => {
-        stderr += d.toString();
+        const text = d.toString();
+        stderr += text;
+        process.stderr.write(text);
       });
 
       const timer = setTimeout(() => {
@@ -534,7 +537,13 @@ class VipPipelineOrchestrator {
       return { channelKey, status: 'QUOTA_REACHED', count: todayCount };
     }
 
-    const item = this.getNextEligibleVideo(channelKey);
+    let item = this.getNextEligibleVideo(channelKey);
+    if (!item) {
+      console.log(`🔍 ${LOG_PREFIX} [${def.tag}] No pending fresh links in queue. Scraping new links...`);
+      await this.runScraper(channelKey, { pages: 1, refresh: true });
+      item = this.getNextEligibleVideo(channelKey);
+    }
+
     if (!item) {
       return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
     }
