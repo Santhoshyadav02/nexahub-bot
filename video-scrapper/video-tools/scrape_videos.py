@@ -25,7 +25,7 @@ POST_TITLE_SELECTORS = ['h1', '.bo_v_tit', '.view_title', '.subject', '.post-tit
 # System browser names probed on PATH, in order (Debian/Ubuntu, Fedora, Chrome).
 CHROMIUM_EXECUTABLE_NAMES = ('chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome')
 # /dev/shm is tiny on many VPS/container setups; without this Chromium tabs crash.
-CHROMIUM_LAUNCH_ARGS = ['--disable-dev-shm-usage']
+CHROMIUM_LAUNCH_ARGS = ['--disable-dev-shm-usage', '--no-sandbox', '--disable-gpu']
 
 
 def find_chromium_executable():
