@@ -77,12 +77,20 @@ async function startDaemon() {
   setInterval(triggerCleanup, CLEANUP_INTERVAL_MS);
 
   // Graceful shutdown handling
-  const shutdown = () => {
-    console.log(`\n🛑 [VIP_DAEMON] Graceful shutdown signal received. Stopping timers...`);
+  const shutdown = (signal) => {
+    console.log(`\n🛑 [VIP_DAEMON] Graceful shutdown signal (${signal}) received. Stopping daemon...`);
     process.exit(0);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error(`⚠️ [VIP_DAEMON] Unhandled Rejection at:`, promise, `reason:`, reason);
+  });
+
+  process.on('uncaughtException', (err) => {
+    console.error(`💥 [VIP_DAEMON] Uncaught Exception:`, err);
+  });
 
   console.log(`[VIP_DAEMON] All recurring background timers active.`);
 }

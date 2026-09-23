@@ -109,6 +109,7 @@ class VipPipelineOrchestrator {
     this.isRunning = false;
     this.activeWorkers = 0;
     this._mtprotoUploader = null;
+    this._cachedPythonRunner = null;
   }
 
   _loadConfig() {
@@ -233,6 +234,10 @@ class VipPipelineOrchestrator {
   }
 
   _resolvePythonRunner() {
+    if (this._cachedPythonRunner) {
+      return this._cachedPythonRunner;
+    }
+
     // 1. Check if uv is in PATH or known location
     const uvCandidates = [
       process.env.UV_PATH,
@@ -244,7 +249,8 @@ class VipPipelineOrchestrator {
 
     for (const p of uvCandidates) {
       if (fs.existsSync(p)) {
-        return { cmd: p, prefixArgs: ['run', 'python'] };
+        this._cachedPythonRunner = { cmd: p, prefixArgs: ['run', 'python'] };
+        return this._cachedPythonRunner;
       }
     }
 
@@ -262,13 +268,15 @@ class VipPipelineOrchestrator {
 
     for (const p of venvPythonCandidates) {
       if (fs.existsSync(p)) {
-        return { cmd: p, prefixArgs: [] };
+        this._cachedPythonRunner = { cmd: p, prefixArgs: [] };
+        return this._cachedPythonRunner;
       }
     }
 
     // 3. Fallback to system python3 or python
     const isWin = process.platform === 'win32';
-    return { cmd: isWin ? 'python' : 'python3', prefixArgs: [] };
+    this._cachedPythonRunner = { cmd: isWin ? 'python' : 'python3', prefixArgs: [] };
+    return this._cachedPythonRunner;
   }
 
   /**
