@@ -55,6 +55,17 @@ class CatalogManager {
     }
   }
 
+  _sort(channelKey) {
+    if (this.catalogs[channelKey]) {
+      this.catalogs[channelKey].sort((a, b) => {
+        const idA = Number(a.messageId) || 0;
+        const idB = Number(b.messageId) || 0;
+        if (idB !== idA) return idB - idA;
+        return new Date(b.date || 0) - new Date(a.date || 0);
+      });
+    }
+  }
+
   /**
    * Adds a new video post to the channel's catalog (keeps latest 40).
    */
@@ -66,19 +77,22 @@ class CatalogManager {
     // Check if already exists
     const existsIndex = this.catalogs[channelKey].findIndex(v => v.messageId === messageId || v.link === link);
     if (existsIndex >= 0) {
-      // Update title/date if needed
       this.catalogs[channelKey][existsIndex].title = title;
+      this._sort(channelKey);
       this._save();
       return false;
     }
 
-    // Insert newest at beginning
-    this.catalogs[channelKey].unshift({
-      messageId,
+    // Insert item
+    this.catalogs[channelKey].push({
+      messageId: Number(messageId) || messageId,
       title: title.trim(),
       link,
       date
     });
+
+    // Sort descending so the latest update is always at the top (#1)
+    this._sort(channelKey);
 
     // Cap at 40 items
     if (this.catalogs[channelKey].length > MAX_ITEMS_PER_CHANNEL) {
@@ -93,6 +107,7 @@ class CatalogManager {
    * Returns paginated list of videos for a given channel.
    */
   getPage(channelKey, page = 1) {
+    this._sort(channelKey);
     const list = this.catalogs[channelKey] || [];
     const totalItems = list.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
