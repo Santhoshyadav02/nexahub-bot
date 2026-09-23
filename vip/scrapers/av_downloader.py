@@ -111,8 +111,21 @@ def download_single_video(
                     downloaded_bytes = 0
                     mode = "wb"
 
+                total_mb = total_size / (1024 * 1024) if total_size > 0 else 0
+
+                # Telegram MTProto non-premium file upload limit is 2000 MB
+                if total_size > 1950 * 1024 * 1024:
+                    print(
+                        f"[!] [Skipped] {filename} is {total_mb:.1f} MB (exceeds Telegram 1.95GB limit). Skipping to next video.\n",
+                        flush=True,
+                    )
+                    return {
+                        "status": "skipped",
+                        "title": title,
+                        "error": "Exceeds 1.95GB Telegram limit",
+                    }
+
                 if downloaded_bytes >= total_size and total_size > 0:
-                    total_mb = downloaded_bytes / (1024 * 1024)
                     print(
                         f"[*] [Already Complete] {filename} ({total_mb:.1f} MB)\n",
                         flush=True,

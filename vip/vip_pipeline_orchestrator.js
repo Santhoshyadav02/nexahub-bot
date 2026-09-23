@@ -208,6 +208,22 @@ class VipPipelineOrchestrator {
     this._saveState();
   }
 
+  recordSkipped(item, channelKey, reason = 'skipped') {
+    const mediaId = this.getMediaId(item, channelKey);
+    this.state.publishedLedger[mediaId] = {
+      mediaId,
+      channelKey,
+      chatId: CHANNEL_DEFS[channelKey].chatId,
+      title: item.title,
+      post_url: item.post_url,
+      timestamp: new Date().toISOString(),
+      date: this.getTodayKey(),
+      skipped: true,
+      reason
+    };
+    this._saveState();
+  }
+
   _getOrInitUploader() {
     if (this.uploader) return this.uploader;
     if (this._mtprotoUploader) return this._mtprotoUploader;
@@ -443,6 +459,12 @@ class VipPipelineOrchestrator {
         if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
 
         if (code === 0) {
+          if (stdout.includes('[!] [Skipped]') || stdout.includes('exceeds Telegram')) {
+            console.log(`⏩ ${LOG_PREFIX} [${def.tag}] Video "${item.title}" skipped: exceeds Telegram 1.95GB limit.`);
+            resolve({ skipped: true, reason: 'exceeds_telegram_1.95gb_limit' });
+            return;
+          }
+
           const afterFiles = fs.readdirSync(targetDir);
           const newFiles = afterFiles.filter(f => !beforeFiles.has(f) && f.endsWith('.mp4'));
 
@@ -545,43 +567,52 @@ class VipPipelineOrchestrator {
       return { channelKey, status: 'QUOTA_REACHED', count: todayCount };
     }
 
-    let item = this.getNextEligibleVideo(channelKey);
-    if (!item) {
-      console.log(`🔍 ${LOG_PREFIX} [${def.tag}] No pending fresh links in queue. Scraping new links...`);
-      await this.runScraper(channelKey, { pages: 1, refresh: true });
-      item = this.getNextEligibleVideo(channelKey);
-    }
-
-    if (!item) {
-      return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
-    }
-
-    let targetItem = item;
-    try {
-      let downloadResult;
-      try {
-        downloadResult = await this.downloadVideo(targetItem, channelKey);
-      } catch (err) {
-        console.warn(`⚠️ ${LOG_PREFIX} [${def.tag}] Download failed (${err.message}). Refreshing scraper for fresh tokens and retrying...`);
+    for (let candidateAttempt = 0; candidateAttempt < 4; candidateAttempt++) {
+      let item = this.getNextEligibleVideo(channelKey);
+      if (!item && candidateAttempt === 0) {
+        console.log(`🔍 ${LOG_PREFIX} [${def.tag}] No pending fresh links in queue. Scraping new links...`);
         await this.runScraper(channelKey, { pages: 1, refresh: true });
-        const freshItem = this.getNextEligibleVideo(channelKey);
-        if (freshItem) {
-          targetItem = freshItem;
-          downloadResult = await this.downloadVideo(targetItem, channelKey);
-        } else {
-          throw err;
-        }
+        item = this.getNextEligibleVideo(channelKey);
       }
 
-      if (downloadResult && downloadResult.success && downloadResult.filePath) {
-        await this.uploadAndPublish(targetItem, channelKey, downloadResult.filePath);
-        return { channelKey, status: 'PUBLISHED', title: targetItem.title };
+      if (!item) {
+        return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
       }
-      return { channelKey, status: 'DOWNLOAD_FAILED' };
-    } catch (err) {
-      console.error(`❌ ${LOG_PREFIX} [${def.tag}] Pipeline error: ${err.message}`);
-      return { channelKey, status: 'ERROR', error: err.message };
+
+      let targetItem = item;
+      try {
+        let downloadResult;
+        try {
+          downloadResult = await this.downloadVideo(targetItem, channelKey);
+        } catch (err) {
+          console.warn(`⚠️ ${LOG_PREFIX} [${def.tag}] Download failed (${err.message}). Refreshing scraper for fresh tokens and retrying...`);
+          await this.runScraper(channelKey, { pages: 1, refresh: true });
+          const freshItem = this.getNextEligibleVideo(channelKey);
+          if (freshItem) {
+            targetItem = freshItem;
+            downloadResult = await this.downloadVideo(targetItem, channelKey);
+          } else {
+            throw err;
+          }
+        }
+
+        if (downloadResult && downloadResult.skipped) {
+          this.recordSkipped(targetItem, channelKey, downloadResult.reason);
+          console.log(`⏩ ${LOG_PREFIX} [${def.tag}] Skipped candidate, fetching next eligible video...`);
+          continue;
+        }
+
+        if (downloadResult && downloadResult.success && downloadResult.filePath) {
+          await this.uploadAndPublish(targetItem, channelKey, downloadResult.filePath);
+          return { channelKey, status: 'PUBLISHED', title: targetItem.title };
+        }
+        return { channelKey, status: 'DOWNLOAD_FAILED' };
+      } catch (err) {
+        console.error(`❌ ${LOG_PREFIX} [${def.tag}] Pipeline error: ${err.message}`);
+        return { channelKey, status: 'ERROR', error: err.message };
+      }
     }
+    return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
   }
 
   /**
