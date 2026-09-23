@@ -94,6 +94,7 @@ def download_single_video(
                         )
                     )
                     mode = "ab"
+                else:
                     total_size = int(response.headers.get("content-length", 0))
                     mode = "wb"
                     downloaded_bytes = 0
