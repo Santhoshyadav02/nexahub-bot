@@ -289,15 +289,28 @@ class VipForwarder {
         const res = this.bindTopicThread(key, threadId);
         if (res.success) {
           await this.bot.sendMessage(msg.chat.id,
-            `✅ <b>[${res.channel.name}] (${res.channel.tag})</b> 채널이 이 토픽(Thread ID: <code>${threadId}</code>)에 성공적으로 연결되었습니다!`,
+            `✅ <b>[${res.channel.name}] (${res.channel.tag})</b> 채널이 이 토픽(Thread ID: <code>${threadId}</code>)에 성공적으로 연결되었습니다!\n\n` +
+            `📌 이제 이 토픽에서 유저가 메시지를 보내면 최신 8x5 동영상 목록이 자동으로 표시됩니다.`,
             { parse_mode: 'HTML', message_thread_id: threadId }
           );
+
+          // Post initial 8-item catalog immediately
+          const pageData = this.catalogManager.getPage(res.channel.key, 1);
+          const catalogText = this.catalogManager.formatCatalogText(res.channel, pageData);
+          const replyMarkup = this.catalogManager.buildPaginationKeyboard(res.channel.key, pageData);
+          await this.bot.sendMessage(msg.chat.id, catalogText, {
+            parse_mode: 'HTML',
+            message_thread_id: threadId,
+            reply_markup: replyMarkup,
+            disable_web_page_preview: true
+          });
         } else {
           await this.bot.sendMessage(msg.chat.id,
             `❌ 알 수 없는 채널 키: <code>${key}</code>\n사용 가능한 키: 18, CN, JP, KR, BJ, AV`,
             { parse_mode: 'HTML', message_thread_id: threadId }
           );
         }
+        return;
       }
 
       // Command: /topics or /status
@@ -317,6 +330,28 @@ class VipForwarder {
         }
 
         await this.bot.sendMessage(msg.chat.id, statusMsg, { parse_mode: 'HTML', message_thread_id: threadId });
+        return;
+      }
+
+      // General message from any user in a topic thread:
+      // Auto-reply with the channel's 8x5 paginated video list!
+      if (threadId) {
+        const channelConfig = Object.values(this.config.channels).find(
+          c => c.topicThreadId === threadId
+        );
+
+        if (channelConfig) {
+          const pageData = this.catalogManager.getPage(channelConfig.key, 1);
+          const catalogText = this.catalogManager.formatCatalogText(channelConfig, pageData);
+          const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
+
+          await this.bot.sendMessage(msg.chat.id, catalogText, {
+            parse_mode: 'HTML',
+            message_thread_id: threadId,
+            reply_markup: replyMarkup,
+            disable_web_page_preview: true
+          });
+        }
       }
     }
   }
