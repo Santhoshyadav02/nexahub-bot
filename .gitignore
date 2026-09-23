@@ -1,5 +1,7 @@
 node_modules/
 .env
+vip/.env
+vip/channel_catalogs.json
 trending.json
 breaking.json
 user_preferences.json
