@@ -232,6 +232,45 @@ class VipPipelineOrchestrator {
     return null;
   }
 
+  _resolvePythonRunner() {
+    // 1. Check if uv is in PATH or known location
+    const uvCandidates = [
+      process.env.UV_PATH,
+      '/root/.cargo/bin/uv',
+      '/root/.local/bin/uv',
+      '/usr/local/bin/uv',
+      '/usr/bin/uv'
+    ].filter(Boolean);
+
+    for (const p of uvCandidates) {
+      if (fs.existsSync(p)) {
+        return { cmd: p, prefixArgs: ['run', 'python'] };
+      }
+    }
+
+    // 2. Check virtualenvs
+    const venvPythonCandidates = [
+      process.env.PYTHON_PATH,
+      '/opt/nexahub-bot/.venv/bin/python',
+      '/opt/nexahub-bot/.venv/bin/python3',
+      '/opt/nexahub-bot/venv/bin/python',
+      path.resolve(__dirname, '..', '.venv', 'bin', 'python'),
+      path.resolve(__dirname, '..', '.venv', 'Scripts', 'python.exe'),
+      path.resolve(__dirname, '.venv', 'bin', 'python'),
+      path.resolve(__dirname, '.venv', 'Scripts', 'python.exe'),
+    ].filter(Boolean);
+
+    for (const p of venvPythonCandidates) {
+      if (fs.existsSync(p)) {
+        return { cmd: p, prefixArgs: [] };
+      }
+    }
+
+    // 3. Fallback to system python3 or python
+    const isWin = process.platform === 'win32';
+    return { cmd: isWin ? 'python' : 'python3', prefixArgs: [] };
+  }
+
   /**
    * Executes a scraper script via python
    */
@@ -241,12 +280,13 @@ class VipPipelineOrchestrator {
 
     console.log(`\n🔍 ${LOG_PREFIX} [${def.tag}] Launching scraper: ${def.scraperScript} (Pages: 1..${pages}, refresh: ${refresh})`);
 
+    const runner = this._resolvePythonRunner();
     const scriptPath = path.join(this.scrapersDir, def.scraperScript);
-    const args = ['run', 'python', scriptPath, '--start', '1', '--end', String(pages)];
+    const args = [...runner.prefixArgs, scriptPath, '--start', '1', '--end', String(pages)];
     if (refresh) args.push('--refresh');
 
     return new Promise((resolve, reject) => {
-      const proc = spawn('uv', args, {
+      const proc = spawn(runner.cmd, args, {
         cwd: this.scrapersDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: process.platform === 'win32'
@@ -254,6 +294,10 @@ class VipPipelineOrchestrator {
 
       let stdout = '';
       let stderr = '';
+
+      proc.on('error', err => {
+        reject(new Error(`Failed to spawn ${runner.cmd}: ${err.message}`));
+      });
 
       proc.stdout.on('data', d => {
         const text = d.toString();
@@ -351,11 +395,12 @@ class VipPipelineOrchestrator {
     const tempJsonPath = path.join(this.scrapersDir, `_temp_${channelKey}_task.json`);
     fs.writeFileSync(tempJsonPath, JSON.stringify([item]), 'utf8');
 
+    const runner = this._resolvePythonRunner();
     const scriptPath = path.join(this.scrapersDir, def.downloaderScript);
-    const args = ['run', 'python', scriptPath, '--json', tempJsonPath, '--limit', '1'];
+    const args = [...runner.prefixArgs, scriptPath, '--json', tempJsonPath, '--limit', '1'];
 
     return new Promise((resolve, reject) => {
-      const proc = spawn('uv', args, {
+      const proc = spawn(runner.cmd, args, {
         cwd: this.scrapersDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: process.platform === 'win32'
@@ -363,6 +408,11 @@ class VipPipelineOrchestrator {
 
       let stdout = '';
       let stderr = '';
+
+      proc.on('error', err => {
+        if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
+        reject(new Error(`Failed to spawn ${runner.cmd}: ${err.message}`));
+      });
 
       proc.stdout.on('data', d => {
         stdout += d.toString();
