@@ -116,7 +116,7 @@ class CatalogManager {
   }
 
   /**
-   * Formats the 8-item catalog text with HTML blue hyperlinks matching reference UI.
+   * Formats the 8-item catalog text with HTML blue hyperlinks and compact spacing.
    */
   formatCatalogText(channelConfig, pageData) {
     const channelName = channelConfig.name || channelConfig.buttonLabel || 'VIP 채널';
@@ -136,9 +136,10 @@ class CatalogManager {
           .replace(/\s+/g, ' ')
           .trim();
         const safeTitle = this._escapeHTML(cleanT);
-        // Blue clickable hyperlink wrapping title
-        text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n\n`;
+        // Compact single-line spacing between links
+        text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n`;
       });
+      text += `\n`;
     }
 
     text += `<b>페이지 ${pageData.currentPage}/${pageData.totalPages}</b>`;
