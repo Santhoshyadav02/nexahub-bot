@@ -22,6 +22,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
+const { translateToKorean } = require('../korean_caption_generator');
+const { extractTitleAndDescription } = require('./vip_channel_source_pipeline');
 const config = require('./config.json');
 
 const apiId = Number(process.env.TELEGRAM_API_ID);
@@ -66,20 +68,40 @@ async function syncAllChannels() {
 
       let addedCount = 0;
       for (const msg of messages) {
-        const text = (msg.message || '').trim();
+        const rawMsg = (msg.message || '').trim();
         const hasMedia = Boolean(msg.media);
 
-        if (!text && !hasMedia) continue;
+        if (!rawMsg && !hasMedia) continue;
 
-        const firstLine = (text.split('\n')[0] || (hasMedia ? `${channelConfig.tag} 신규 영상` : '')).trim();
-        if (!firstLine) continue;
+        let title = '';
+        if (channelConfig.key === '18') {
+          const ext = extractTitleAndDescription(rawMsg);
+          title = ext.title;
+          if (ext.description && ext.description !== title) {
+            title = `${title} ${ext.description}`;
+          }
+        } else {
+          title = rawMsg.split('\n')[0] || '';
+        }
+
+        if (!title && hasMedia) {
+          title = `${channelConfig.tag} 신규 영상`;
+        }
+
+        title = title.replace(/<[^>]*>/g, '').replace(/\[REMOVE\]/gi, '').trim();
+        if (!title) continue;
+
+        try {
+          const tr = await translateToKorean(title);
+          if (tr) title = tr;
+        } catch (e) {}
 
         const cleanId = String(chId).replace(/^-100/, '').replace(/^-/, '');
         const postLink = `https://t.me/c/${cleanId}/${msg.id}`;
 
         const added = catalogManager.addVideo(channelConfig.key, {
           messageId: msg.id,
-          title: firstLine.length > 90 ? firstLine.substring(0, 87) + '...' : firstLine,
+          title: title.length > 120 ? title.substring(0, 117) + '...' : title,
           link: postLink,
           date: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
         });
