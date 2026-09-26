@@ -660,19 +660,7 @@ class VipForwarder {
       return;
     }
 
-    this.bot = new TelegramBot(token, {
-      polling: {
-        params: {
-          allowed_updates: [
-            "message",
-            "edited_message",
-            "channel_post",
-            "edited_channel_post",
-            "callback_query"
-          ]
-        }
-      }
-    });
+    this.bot = new TelegramBot(token, { polling: true });
 
     // Ensure bot commands are registered
     this.bot.setMyCommands([

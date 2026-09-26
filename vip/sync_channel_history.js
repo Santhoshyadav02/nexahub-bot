@@ -10,19 +10,18 @@
  *  - VIP-BJ (-1003977934133)
  *  - VIP-AV (-1004352512630)
  *
- * Populates vip/channel_catalogs.json with rich, natural Korean titles & descriptions,
- * keeping unique video items sorted latest-on-top.
+ * Populates vip/channel_catalogs.json with the latest videos so the 8x5
+ * catalog is immediately full and available for all topics.
  */
 
 const path = require('path');
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { Api } = require('telegram');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
-const { translateToKorean } = require('../korean_caption_generator');
-const { extractTitleAndDescription } = require('./vip_channel_source_pipeline');
 const config = require('./config.json');
 
 const apiId = Number(process.env.TELEGRAM_API_ID);
@@ -31,7 +30,7 @@ const sessionStr = process.env.TELEGRAM_SESSION_STRING || '';
 
 async function syncAllChannels() {
   console.log('============================================================');
-  console.log('🔄 Syncing Latest Rich Korean Videos from 6 VIP Channels');
+  console.log('🔄 Syncing Existing Videos from 6 VIP Channels');
   console.log('============================================================\n');
 
   if (!apiId || !apiHash || !sessionStr) {
@@ -52,132 +51,44 @@ async function syncAllChannels() {
     console.log(`🔍 Scanning channel: ${channelConfig.name} (${channelConfig.tag}) [${chId}]...`);
 
     try {
+      // Parse chat entity
       let entity;
       try {
         entity = await client.getEntity(chId);
       } catch (e) {
+        // Try BigInt or numeric ID format
         const cleanNumeric = chId.replace(/^-100/, '-').replace(/^-/, '');
         entity = await client.getEntity(cleanNumeric);
       }
 
-      // Fetch up to 100 messages to ensure full coverage
-      const messages = await client.getMessages(entity, { limit: 100 });
+      const messages = await client.getMessages(entity, { limit: 40 });
       console.log(`   Found ${messages.length} recent messages in ${channelConfig.name}`);
 
-      // Pass 1: Build album grouped map for shared captions
-      const groupCaptionMap = new Map();
+      let addedCount = 0;
       for (const msg of messages) {
-        if (msg.groupedId && msg.message) {
-          const gid = msg.groupedId.toString();
-          if (!groupCaptionMap.has(gid)) {
-            groupCaptionMap.set(gid, msg.message.trim());
-          }
-        }
-      }
-
-      // Pass 2: Extract videos and their clean Korean titles + descriptions
-      const channelVideos = [];
-      const seenTitles = new Set();
-
-      for (const msg of messages) {
+        const text = (msg.message || '').trim();
         const hasMedia = Boolean(msg.media);
-        let rawText = (msg.message || '').trim();
 
-        // If message in group has no caption, borrow from groupedId
-        if (!rawText && msg.groupedId) {
-          const gid = msg.groupedId.toString();
-          rawText = groupCaptionMap.get(gid) || '';
-        }
+        if (!text && !hasMedia) continue;
 
-        if (!rawText && !hasMedia) continue;
-
-        let title = '';
-        let description = '';
-
-        if (channelConfig.key === '18') {
-          const ext = extractTitleAndDescription(rawText);
-          title = ext.title;
-          description = ext.description;
-        } else {
-          const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-          title = lines[0] || '';
-          if (lines.length > 1) {
-            description = lines.slice(1).join(' ');
-          }
-        }
-
-        if (!title || title === `${channelConfig.tag} 신규 영상`) {
-          if (rawText) {
-            title = rawText.split('\n')[0];
-          } else {
-            title = `${channelConfig.name} 신규 영상 (#${msg.id})`;
-          }
-        }
-
-        // Clean formatting artifacts
-        title = title
-          .replace(/<[^>]*>/g, '')
-          .replace(/\[REMOVE\]/gi, '')
-          .replace(/#\w+/g, '')
-          .replace(/✨\s*VIP-.*$/gi, '')
-          .trim();
-
-        description = (description || '')
-          .replace(/<[^>]*>/g, '')
-          .replace(/\[REMOVE\]/gi, '')
-          .replace(/#\w+/g, '')
-          .replace(/✨\s*VIP-.*$/gi, '')
-          .trim();
-
-        if (!title) {
-          title = `${channelConfig.name} 신규 영상 (#${msg.id})`;
-        }
-
-        // Combine title and description for rich catalog entry
-        let combinedKorean = title;
-        if (description && description !== title) {
-          combinedKorean = `${title} - ${description}`;
-        }
-
-        // Translate to natural Korean if foreign text is present
-        if (/[\u4e00-\u9fa5\u3040-\u30ff]/.test(combinedKorean) || /^[A-Za-z0-9\s,.:;'"!?-]{5,}$/.test(combinedKorean)) {
-          try {
-            const tr = await translateToKorean(combinedKorean);
-            if (tr) combinedKorean = tr;
-          } catch (e) {}
-        }
-
-        // Clean single line presentation
-        combinedKorean = combinedKorean.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-
-        // Normalization key for deduplicating identical batch posts
-        const normKey = combinedKorean.toLowerCase().replace(/[^\w\s\uac00-\ud7a3]/g, '').slice(0, 40);
-        if (normKey && seenTitles.has(normKey)) {
-          // Skip exact duplicate text from consecutive batch uploads
-          continue;
-        }
-        if (normKey) seenTitles.add(normKey);
+        const firstLine = (text.split('\n')[0] || (hasMedia ? `${channelConfig.tag} 신규 영상` : '')).trim();
+        if (!firstLine) continue;
 
         const cleanId = String(chId).replace(/^-100/, '').replace(/^-/, '');
         const postLink = `https://t.me/c/${cleanId}/${msg.id}`;
 
-        channelVideos.push({
-          messageId: Number(msg.id),
-          title: combinedKorean.length > 130 ? combinedKorean.substring(0, 127) + '...' : combinedKorean,
+        const added = catalogManager.addVideo(channelConfig.key, {
+          messageId: msg.id,
+          title: firstLine.length > 90 ? firstLine.substring(0, 87) + '...' : firstLine,
           link: postLink,
           date: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
         });
 
-        if (channelVideos.length >= 40) break;
+        if (added) addedCount++;
       }
 
-      // Sort descending (latest message ID on top)
-      channelVideos.sort((a, b) => b.messageId - a.messageId);
-
-      catalogManager.catalogs[channelConfig.key] = channelVideos;
-      catalogManager._save();
-
-      console.log(`   ✅ Synced ${channelVideos.length} distinct videos into catalog for ${channelConfig.name}\n`);
+      const currentTotal = (catalogManager.catalogs[channelConfig.key] || []).length;
+      console.log(`   ✅ Synced ${addedCount} new videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
     } catch (err) {
       console.error(`   ❌ Failed to sync channel ${channelConfig.name}:`, err.message);
     }
@@ -185,7 +96,7 @@ async function syncAllChannels() {
 
   await client.disconnect();
   console.log('============================================================');
-  console.log('🎉 CHANNEL SYNC COMPLETE: ALL 6 CHANNELS UPDATED WITH RICH KOREAN TITLES');
+  console.log('🎉 CHANNEL SYNC COMPLETE');
   console.log('============================================================\n');
 }
 

@@ -24,8 +24,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const { CatalogManager } = require('./catalog_manager');
-const { translateToKorean } = require('../korean_caption_generator');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
@@ -102,7 +100,6 @@ class VipPipelineOrchestrator {
 
     this.config = this._loadConfig();
     this.state = this._loadState();
-    this.catalogManager = new CatalogManager(path.resolve(__dirname, 'channel_catalogs.json'));
 
     this.maxWorkers = (this.config.pipeline && this.config.pipeline.workers) || 2;
     this.dailyQuotaPerChannel = (this.config.pipeline && this.config.pipeline.dailyQuotaPerChannel) || 5;
@@ -523,38 +520,21 @@ class VipPipelineOrchestrator {
     try {
       const fileSize = fs.statSync(filePath).size;
       const cleanTitle = item.title || '신규 동영상';
-      let koreanTitle = cleanTitle;
-      try {
-        const tr = await translateToKorean(cleanTitle);
-        if (tr) koreanTitle = tr;
-      } catch (e) {}
 
       const result = await uploader.publish({
         destinationId: def.chatId,
         chatId: def.chatId,
         filePath: filePath,
-        caption: koreanTitle,
-        title: koreanTitle,
+        caption: cleanTitle,
+        title: cleanTitle,
         expectedSizeBytes: fileSize
       });
 
       console.log(`🎉 ${LOG_PREFIX} [${def.tag}] Successfully uploaded to ${def.chatId}!`);
-      const msgId = result && (result.messageId || (result.message && result.message.id) || result.id);
       this.recordPublished(item, channelKey, {
         fileSize,
-        telegramMessageId: msgId
+        telegramMessageId: result && result.messageId
       });
-
-      if (msgId) {
-        const cleanId = String(def.chatId).replace(/^-100/, '').replace(/^-/, '');
-        const postLink = `https://t.me/c/${cleanId}/${msgId}`;
-        this.catalogManager.addVideo(channelKey, {
-          messageId: msgId,
-          title: koreanTitle,
-          link: postLink
-        });
-        console.log(`📚 ${LOG_PREFIX} [${def.tag}] Added video #${msgId} ("${koreanTitle}") to VIP Catalog!`);
-      }
 
       // Immediate file deletion
       this._deleteFileSafely(filePath);

@@ -151,28 +151,6 @@ function cleanRawCaption(rawText) {
   return cleaned;
 }
 
-function preProcessAdultTerms(text) {
-  if (!text || typeof text !== 'string') return '';
-  let s = text;
-  s = s.replace(/母狗/g, '암캐');
-  s = s.replace(/小母狗/g, '암캐');
-  s = s.replace(/被操哭了/g, '절정 애원');
-  s = s.replace(/双通/g, '투홀 삽입');
-  s = s.replace(/肥逼/g, '명기');
-  s = s.replace(/巨乳/g, '거유');
-  s = s.replace(/骚萌/g, '섹시 귀요미');
-  s = s.replace(/女大/g, '여대생');
-  s = s.replace(/跳蛋/g, '바이브레이터');
-  s = s.replace(/塞穴/g, '삽입');
-  s = s.replace(/肥臀/g, '글래머 힙');
-  s = s.replace(/喷水/g, '분수 절정');
-  s = s.replace(/对镜自慰/g, '거울 앞 자위');
-  s = s.replace(/孤男寡女/g, '단둘이');
-  s = s.replace(/拿来操的/g, '박히기 위한');
-  s = s.replace(/说话好紧啊/g, '너무 조이네');
-  return s;
-}
-
 /**
  * Translates source text into natural Korean
  * @param {string} text 
@@ -191,11 +169,8 @@ async function translateToKorean(text) {
     return captionTranslationCache.get(cacheKey);
   }
 
-  // Pre-process adult domain slang for natural Korean phrasing
-  const prepped = preProcessAdultTerms(trimmed);
-
   // Truncate to reasonable title length for translation APIs
-  const cleanForTranslation = prepped.length > 220 ? prepped.substring(0, 220).trim() : prepped;
+  const cleanForTranslation = trimmed.length > 180 ? trimmed.substring(0, 180).trim() : trimmed;
 
   // Helper to validate clean translated text
   const isValidTranslation = (t) => {
