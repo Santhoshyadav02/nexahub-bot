@@ -10,8 +10,8 @@
  *  - VIP-BJ (-1003977934133)
  *  - VIP-AV (-1004352512630)
  *
- * Populates vip/channel_catalogs.json with the latest 40 videos
- * (8 items x 5 pages = 40 videos), sorted latest-on-top.
+ * Populates vip/channel_catalogs.json with rich, natural Korean titles & descriptions,
+ * keeping unique video items sorted latest-on-top.
  */
 
 const path = require('path');
@@ -31,7 +31,7 @@ const sessionStr = process.env.TELEGRAM_SESSION_STRING || '';
 
 async function syncAllChannels() {
   console.log('============================================================');
-  console.log('🔄 Syncing Latest 40 Videos from 6 VIP Channels');
+  console.log('🔄 Syncing Latest Rich Korean Videos from 6 VIP Channels');
   console.log('============================================================\n');
 
   if (!apiId || !apiHash || !sessionStr) {
@@ -60,7 +60,7 @@ async function syncAllChannels() {
         entity = await client.getEntity(cleanNumeric);
       }
 
-      // Fetch up to 100 messages to ensure we get 40 videos
+      // Fetch up to 100 messages to ensure full coverage
       const messages = await client.getMessages(entity, { limit: 100 });
       console.log(`   Found ${messages.length} recent messages in ${channelConfig.name}`);
 
@@ -75,8 +75,10 @@ async function syncAllChannels() {
         }
       }
 
-      // Pass 2: Extract videos and their clean Korean titles
+      // Pass 2: Extract videos and their clean Korean titles + descriptions
       const channelVideos = [];
+      const seenTitles = new Set();
+
       for (const msg of messages) {
         const hasMedia = Boolean(msg.media);
         let rawText = (msg.message || '').trim();
@@ -90,14 +92,18 @@ async function syncAllChannels() {
         if (!rawText && !hasMedia) continue;
 
         let title = '';
+        let description = '';
+
         if (channelConfig.key === '18') {
           const ext = extractTitleAndDescription(rawText);
           title = ext.title;
-          if (ext.description && ext.description !== title) {
-            title = `${title} ${ext.description}`;
-          }
+          description = ext.description;
         } else {
-          title = rawText.split('\n')[0] || '';
+          const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+          title = lines[0] || '';
+          if (lines.length > 1) {
+            description = lines.slice(1).join(' ');
+          }
         }
 
         if (!title || title === `${channelConfig.tag} 신규 영상`) {
@@ -108,7 +114,15 @@ async function syncAllChannels() {
           }
         }
 
+        // Clean formatting artifacts
         title = title
+          .replace(/<[^>]*>/g, '')
+          .replace(/\[REMOVE\]/gi, '')
+          .replace(/#\w+/g, '')
+          .replace(/✨\s*VIP-.*$/gi, '')
+          .trim();
+
+        description = (description || '')
           .replace(/<[^>]*>/g, '')
           .replace(/\[REMOVE\]/gi, '')
           .replace(/#\w+/g, '')
@@ -119,43 +133,51 @@ async function syncAllChannels() {
           title = `${channelConfig.name} 신규 영상 (#${msg.id})`;
         }
 
-        // Translate to Korean if foreign characters detected
-        if (/[\u4e00-\u9fa5\u3040-\u30ff]/.test(title) || /^[A-Za-z0-9\s,.:;'"!?-]{5,}$/.test(title)) {
+        // Combine title and description for rich catalog entry
+        let combinedKorean = title;
+        if (description && description !== title) {
+          combinedKorean = `${title} - ${description}`;
+        }
+
+        // Translate to natural Korean if foreign text is present
+        if (/[\u4e00-\u9fa5\u3040-\u30ff]/.test(combinedKorean) || /^[A-Za-z0-9\s,.:;'"!?-]{5,}$/.test(combinedKorean)) {
           try {
-            const tr = await translateToKorean(title);
-            if (tr) title = tr;
+            const tr = await translateToKorean(combinedKorean);
+            if (tr) combinedKorean = tr;
           } catch (e) {}
         }
+
+        // Clean single line presentation
+        combinedKorean = combinedKorean.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+        // Normalization key for deduplicating identical batch posts
+        const normKey = combinedKorean.toLowerCase().replace(/[^\w\s\uac00-\ud7a3]/g, '').slice(0, 40);
+        if (normKey && seenTitles.has(normKey)) {
+          // Skip exact duplicate text from consecutive batch uploads
+          continue;
+        }
+        if (normKey) seenTitles.add(normKey);
 
         const cleanId = String(chId).replace(/^-100/, '').replace(/^-/, '');
         const postLink = `https://t.me/c/${cleanId}/${msg.id}`;
 
         channelVideos.push({
           messageId: Number(msg.id),
-          title: title.length > 120 ? title.substring(0, 117) + '...' : title,
+          title: combinedKorean.length > 130 ? combinedKorean.substring(0, 127) + '...' : combinedKorean,
           link: postLink,
           date: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
         });
+
+        if (channelVideos.length >= 40) break;
       }
 
       // Sort descending (latest message ID on top)
       channelVideos.sort((a, b) => b.messageId - a.messageId);
 
-      // Keep up to 40 unique videos
-      const final40 = [];
-      const seenIds = new Set();
-      for (const v of channelVideos) {
-        if (!seenIds.has(v.messageId)) {
-          seenIds.add(v.messageId);
-          final40.push(v);
-          if (final40.length >= 40) break;
-        }
-      }
-
-      catalogManager.catalogs[channelConfig.key] = final40;
+      catalogManager.catalogs[channelConfig.key] = channelVideos;
       catalogManager._save();
 
-      console.log(`   ✅ Synced ${final40.length}/40 videos into catalog for ${channelConfig.name}\n`);
+      console.log(`   ✅ Synced ${channelVideos.length} distinct videos into catalog for ${channelConfig.name}\n`);
     } catch (err) {
       console.error(`   ❌ Failed to sync channel ${channelConfig.name}:`, err.message);
     }
@@ -163,7 +185,7 @@ async function syncAllChannels() {
 
   await client.disconnect();
   console.log('============================================================');
-  console.log('🎉 CHANNEL SYNC COMPLETE: ALL 6 CHANNELS UPDATED (40 ITEMS/EACH)');
+  console.log('🎉 CHANNEL SYNC COMPLETE: ALL 6 CHANNELS UPDATED WITH RICH KOREAN TITLES');
   console.log('============================================================\n');
 }
 

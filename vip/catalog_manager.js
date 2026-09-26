@@ -67,30 +67,6 @@ class CatalogManager {
   }
 
   /**
-   * Deduplicates by messageId and link, keeping latest items up to 40.
-   */
-  getUniqueItems(channelKey) {
-    this._sort(channelKey);
-    const list = this.catalogs[channelKey] || [];
-    const seenIds = new Set();
-    const seenLinks = new Set();
-    const unique = [];
-
-    for (const item of list) {
-      const msgId = String(item.messageId || '');
-      const link = String(item.link || '');
-
-      if (msgId && seenIds.has(msgId)) continue;
-      if (link && seenLinks.has(link)) continue;
-
-      if (msgId) seenIds.add(msgId);
-      if (link) seenLinks.add(link);
-      unique.push(item);
-    }
-    return unique;
-  }
-
-  /**
    * Adds a new video post to the channel's catalog (keeps latest 40).
    */
   addVideo(channelKey, { messageId, title, link, date = new Date().toISOString() }) {
@@ -98,17 +74,10 @@ class CatalogManager {
       this.catalogs[channelKey] = [];
     }
 
-    const cleanTitle = (title || '').trim() || '신규 동영상';
-    const numId = Number(messageId) || messageId;
-
-    // Check if messageId or link already exists
-    const existsIndex = this.catalogs[channelKey].findIndex(
-      v => String(v.messageId) === String(numId) || (link && v.link === link)
-    );
-
+    // Check if already exists
+    const existsIndex = this.catalogs[channelKey].findIndex(v => v.messageId === messageId || v.link === link);
     if (existsIndex >= 0) {
-      this.catalogs[channelKey][existsIndex].title = cleanTitle;
-      if (date) this.catalogs[channelKey][existsIndex].date = date;
+      this.catalogs[channelKey][existsIndex].title = title;
       this._sort(channelKey);
       this._save();
       return false;
@@ -116,8 +85,8 @@ class CatalogManager {
 
     // Insert item
     this.catalogs[channelKey].push({
-      messageId: numId,
-      title: cleanTitle,
+      messageId: Number(messageId) || messageId,
+      title: title.trim(),
       link,
       date
     });
@@ -125,18 +94,21 @@ class CatalogManager {
     // Sort descending so the latest update is always at the top (#1)
     this._sort(channelKey);
 
-    // Keep unique and cap at 40 items
-    this.catalogs[channelKey] = this.getUniqueItems(channelKey).slice(0, MAX_ITEMS_PER_CHANNEL);
+    // Cap at 40 items
+    if (this.catalogs[channelKey].length > MAX_ITEMS_PER_CHANNEL) {
+      this.catalogs[channelKey] = this.catalogs[channelKey].slice(0, MAX_ITEMS_PER_CHANNEL);
+    }
 
     this._save();
     return true;
   }
 
   /**
-   * Returns paginated list of videos for a given channel (8 per page, up to 5 pages = 40 items).
+   * Returns paginated list of videos for a given channel.
    */
   getPage(channelKey, page = 1) {
-    const list = this.getUniqueItems(channelKey);
+    this._sort(channelKey);
+    const list = this.catalogs[channelKey] || [];
     const totalItems = list.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
     const safePage = Math.max(1, Math.min(page, totalPages));
@@ -175,7 +147,7 @@ class CatalogManager {
           .replace(/\[REMOVE\]/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
-        const safeTitle = this._escapeHTML(cleanT || `${channelName} 신규 영상`);
+        const safeTitle = this._escapeHTML(cleanT);
         // Blue clickable hyperlink wrapping title
         text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n\n`;
       });
@@ -188,14 +160,7 @@ class CatalogManager {
   /**
    * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️]).
    */
-  buildPaginationKeyboard(channelOrKey, pageData) {
-    const channelKey = (typeof channelOrKey === 'object' && channelOrKey !== null)
-      ? (channelOrKey.key || channelOrKey.tag || '18')
-      : channelOrKey;
-    const inviteLink = (typeof channelOrKey === 'object' && channelOrKey !== null)
-      ? channelOrKey.inviteLink
-      : null;
-
+  buildPaginationKeyboard(channelKey, pageData) {
     const row = [];
 
     if (pageData.hasPrev) {
@@ -217,15 +182,9 @@ class CatalogManager {
       keyboard.push(row);
     }
 
-    const actionRow = [];
-    if (inviteLink) {
-      actionRow.push({ text: '📢 채널 입장', url: inviteLink });
-    }
-    actionRow.push({ text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` });
-    keyboard.push(actionRow);
-
+    // Refresh row
     keyboard.push([
-      { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' }
+      { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
     ]);
 
     return { inline_keyboard: keyboard };
