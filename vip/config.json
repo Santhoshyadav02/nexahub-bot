@@ -13,7 +13,8 @@
       "buttonLabel": "🔞 18+ 전용",
       "emoji": "🔞",
       "topicThreadId": 16,
-      "topicName": "🔞 18+"
+      "topicName": "🔞 18+",
+      "inviteLink": "https://t.me/+E1vLuoAQHco2YzUx"
     },
     "-1004304488687": {
       "key": "CN",
@@ -22,7 +23,8 @@
       "buttonLabel": "🇨🇳 CN",
       "emoji": "🇨🇳",
       "topicThreadId": 18,
-      "topicName": "CN"
+      "topicName": "CN",
+      "inviteLink": "https://t.me/+OHTEzdbZIBk2NmRh"
     },
     "-1004484964035": {
       "key": "JP",
@@ -31,7 +33,8 @@
       "buttonLabel": "🇯🇵 JP",
       "emoji": "🇯🇵",
       "topicThreadId": 19,
-      "topicName": "JP"
+      "topicName": "JP",
+      "inviteLink": "https://t.me/+NNXeURep8eljMjkx"
     },
     "-1004435999618": {
       "key": "KR",
@@ -40,7 +43,8 @@
       "buttonLabel": "🇰🇷 KR (로맨틱한 분위기 💥)",
       "emoji": "🇰🇷",
       "topicThreadId": 20,
-      "topicName": "KR"
+      "topicName": "KR",
+      "inviteLink": "https://t.me/+_fNAo_9h88A5OGNh"
     },
     "-1003977934133": {
       "key": "BJ",
@@ -49,7 +53,8 @@
       "buttonLabel": "📺 BJ. (토끼 소녀 코스프레 데...)",
       "emoji": "📺",
       "topicThreadId": 23,
-      "topicName": "BJ."
+      "topicName": "BJ.",
+      "inviteLink": "https://t.me/+JXRqjuVezYI0NmI5"
     },
     "-1004352512630": {
       "key": "AV",
@@ -58,13 +63,15 @@
       "buttonLabel": "🎬 AV (사키 미즈미)",
       "emoji": "🎬",
       "topicThreadId": 12,
-      "topicName": "AV"
+      "topicName": "AV",
+      "inviteLink": "https://t.me/+9rb8uMULuNkwZDAx"
     }
   },
   "settings": {
     "postToCategoryTopic": true,
     "postToGeneralTopic": true,
     "postToAllTopic": true,
+    "postToSubscribedUsers": true,
     "autoDiscoverTopicIds": true
   },
   "pipeline": {
@@ -74,6 +81,13 @@
     "workers": 2,
     "scrapeIntervalHours": 3,
     "cleanupThresholdHours": 1,
-    "roundRobinOrder": ["BJ", "JP", "CN", "KR", "18", "AV"]
+    "roundRobinOrder": [
+      "BJ",
+      "JP",
+      "CN",
+      "KR",
+      "18",
+      "AV"
+    ]
   }
 }

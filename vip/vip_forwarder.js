@@ -5,7 +5,7 @@
  * Automatically monitors 6 VIP Telegram channels, maintains a 40-video catalog (8x5 pages)
  * with blue clickable hyperlinks, and publishes rich notification cards + interactive
  * paginated menus to VIP Group Forum Topics + General / ALL threads and DM private chats.
- * Includes Home, About, and History Clear bottom navigation keyboard + Back button support.
+ * Includes real-time subscriber broadcast with video preview + Join Channel links.
  */
 
 const fs = require('fs');
@@ -15,8 +15,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
-const { cleanCatalogTitle, syncAllChannels } = require('./sync_channel_history');
+const { cleanCatalogTitle } = require('./sync_channel_history');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
+const SUBSCRIBERS_PATH = path.resolve(__dirname, 'state', 'bot_subscribers.json');
 
 function getPersistentNavigationKeyboard() {
   return {
@@ -40,6 +41,7 @@ class VipForwarder {
     this.catalogManager = new CatalogManager(path.resolve(__dirname, 'channel_catalogs.json'));
     this.processedPosts = new Set();
     this.userMessageHistory = new Map(); // chatId -> Set(messageIds)
+    this.subscribers = this._loadSubscribers();
     this.bot = null;
   }
 
@@ -61,6 +63,47 @@ class VipForwarder {
       console.log('💾 [VIP_FORWARDER] Configuration saved successfully.');
     } catch (err) {
       console.error('❌ [VIP_FORWARDER] Failed to save config:', err.message);
+    }
+  }
+
+  _loadSubscribers() {
+    try {
+      if (fs.existsSync(SUBSCRIBERS_PATH)) {
+        const raw = fs.readFileSync(SUBSCRIBERS_PATH, 'utf8');
+        const data = JSON.parse(raw);
+        const list = Array.isArray(data) ? data : (data.subscribers || []);
+        return new Set(list.map(Number).filter(Boolean));
+      }
+    } catch (err) {
+      console.warn('⚠️ [VIP_FORWARDER] Failed to load subscribers:', err.message);
+    }
+    return new Set();
+  }
+
+  _saveSubscribers() {
+    try {
+      const stateDir = path.dirname(SUBSCRIBERS_PATH);
+      if (!fs.existsSync(stateDir)) {
+        fs.mkdirSync(stateDir, { recursive: true });
+      }
+      const data = {
+        updatedAt: new Date().toISOString(),
+        totalSubscribers: this.subscribers.size,
+        subscribers: Array.from(this.subscribers)
+      };
+      fs.writeFileSync(SUBSCRIBERS_PATH, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      console.error('❌ [VIP_FORWARDER] Failed to save subscribers:', err.message);
+    }
+  }
+
+  addSubscriber(chatId) {
+    const numericId = Number(chatId);
+    if (!numericId) return;
+    if (!this.subscribers.has(numericId)) {
+      this.subscribers.add(numericId);
+      this._saveSubscribers();
+      console.log(`👤 [VIP_FORWARDER] New Bot Subscriber registered: ${numericId} (Total: ${this.subscribers.size})`);
     }
   }
 
@@ -135,7 +178,7 @@ class VipForwarder {
 
     if (channelConfig.inviteLink) {
       keyboard.push([
-        { text: `📢 ${channelConfig.buttonLabel || channelConfig.tag} 채널 입장하기 ↗️`, url: channelConfig.inviteLink }
+        { text: `📢 ${channelConfig.name || channelConfig.buttonLabel || channelConfig.tag} 채널 입장하기 ↗️`, url: channelConfig.inviteLink }
       ]);
     }
 
@@ -150,7 +193,7 @@ class VipForwarder {
       `👑 <b>V.I.P 정보공유!</b>\n\n` +
       `프리미엄 정보와 최신 소식을 확인하세요.\n` +
       `✨ <b>V.I.P 정보공유와 함께하세요!</b>\n\n` +
-      `👇 아래 버튼을 눌러주세요.`
+      `👇 아래 카테고리를 선택하세요.`
     );
   }
 
@@ -195,7 +238,8 @@ class VipForwarder {
       `\n✨ <b>주요 기능:</b>\n` +
       `• 실시간 6채널 신규 비디오 포워딩\n` +
       `• 40개 최신 영상 8x5 페이징 카탈로그\n` +
-      `• Telegram 내 다이렉트 동영상 바로 재생\n\n` +
+      `• Telegram 내 다이렉트 동영상 바로 재생\n` +
+      `• 채널 다이렉트 입장 링크 제공\n\n` +
       `👇 <i>아래 버튼을 눌러 홈으로 이동하세요.</i>`;
 
     return text;
@@ -236,7 +280,7 @@ class VipForwarder {
 
     const keyboard = this.buildKeyboard(channelConfig, postLink);
 
-    // 1. Post to Dedicated Category Topic
+    // 1. Post to Dedicated Category Topic in VIP Group
     if (this.config.settings.postToCategoryTopic && channelConfig.topicThreadId) {
       try {
         const catText = this.formatCategoryCard(channelConfig, title);
@@ -252,7 +296,7 @@ class VipForwarder {
       }
     }
 
-    // 2. Post to General / ALL Topic
+    // 2. Post to General / ALL Topic in VIP Group
     if (this.config.settings.postToGeneralTopic || this.config.settings.postToAllTopic) {
       try {
         const allText = this.formatAllCard(channelConfig, title);
@@ -271,6 +315,62 @@ class VipForwarder {
       } catch (err) {
         console.error(`   ❌ Failed to post to General/ALL topic:`, err.message);
       }
+    }
+
+    // 3. Real-time Push to all Bot DM Users (Video Preview + Join Channel Link)
+    if (this.config.settings.postToSubscribedUsers !== false && this.subscribers.size > 0) {
+      const dmKeyboard = {
+        inline_keyboard: [
+          [
+            { text: '🎬 영상 바로보기 ↗️', url: postLink }
+          ],
+          channelConfig.inviteLink ? [
+            { text: `📢 ${channelConfig.name || channelConfig.buttonLabel || channelConfig.tag} 채널 입장하기 ↗️`, url: channelConfig.inviteLink }
+          ] : [],
+          [
+            { text: '👑 VIP 메인 메뉴', callback_data: 'vip_main_menu' }
+          ]
+        ].filter(r => r.length > 0)
+      };
+
+      const dmText =
+        `✨ <b>[VIP 신규 업데이트 알림]</b>\n\n` +
+        `${channelConfig.emoji} <b>${this._escapeHTML(channelConfig.name)} (${channelConfig.tag})</b>\n` +
+        `📌 <b>${this._escapeHTML(title)}</b>\n\n` +
+        `👇 <i>아래 버튼을 눌러 채널에 입장하거나 영상을 바로 시청하세요!</i>`;
+
+      for (const subChatId of Array.from(this.subscribers)) {
+        try {
+          if (msg.video || msg.document || msg.photo || msg.animation) {
+            try {
+              const copyRes = await this.bot.copyMessage(subChatId, msg.chat.id, msg.message_id, {
+                reply_markup: dmKeyboard
+              });
+              if (copyRes && copyRes.message_id) {
+                this.trackMessage(subChatId, copyRes.message_id);
+                continue;
+              }
+            } catch (copyErr) {
+              // fallback to text message if copyMessage fails
+            }
+          }
+
+          const sent = await this.bot.sendMessage(subChatId, dmText, {
+            parse_mode: 'HTML',
+            reply_markup: dmKeyboard,
+            disable_web_page_preview: false
+          });
+          if (sent && sent.message_id) {
+            this.trackMessage(subChatId, sent.message_id);
+          }
+        } catch (subErr) {
+          if (subErr.message && (subErr.message.includes('bot was blocked') || subErr.message.includes('chat not found') || subErr.message.includes('user is deactivated'))) {
+            this.subscribers.delete(subChatId);
+            this._saveSubscribers();
+          }
+        }
+      }
+      console.log(`   ✅ Sent real-time notification to ${this.subscribers.size} bot subscribers.`);
     }
 
     return true;
@@ -389,6 +489,7 @@ class VipForwarder {
 
     // 1. Private Chat / DM Interaction:
     if (chatType === 'private') {
+      this.addSubscriber(msg.chat.id);
       this.trackMessage(msg.chat.id, msg.message_id);
 
       // Command: /start (Activates persistent navigation keyboard + clean greeting)
