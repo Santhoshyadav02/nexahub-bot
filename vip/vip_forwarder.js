@@ -15,6 +15,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
+const BANNER_PATH = path.resolve(__dirname, 'assets', 'vip_banner.jpg');
 
 class VipForwarder {
   constructor(configPath = CONFIG_PATH) {
@@ -103,8 +104,9 @@ class VipForwarder {
    */
   formatMainMenuText() {
     let text =
-      `👑 <b>V.I.P 프리미엄 동영상 허브</b>\n\n` +
-      `원하시는 그룹 카드를 선택하여 최신 업데이트 영상을 확인하세요.\n\n` +
+      `👑 <b>V.I.P 정보공유!</b>\n\n` +
+      `프리미엄 정보와 최신 소식을 한곳에서 확인하세요.\n` +
+      `✨ <b>V.I.P 정보공유와 함께하세요!</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n`;
 
     const channelKeys = ['18', 'CN', 'JP', 'KR', 'BJ', 'AV'];
@@ -228,13 +230,23 @@ class VipForwarder {
         await this.bot.answerCallbackQuery(query.id);
         const text = this.formatMainMenuText();
         const replyMarkup = this.buildMainMenuKeyboard();
-        await this.bot.editMessageText(text, {
-          chat_id: query.message.chat.id,
-          message_id: query.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: replyMarkup,
-          disable_web_page_preview: true
-        });
+
+        if (query.message.photo) {
+          await this.bot.editMessageCaption(text, {
+            chat_id: query.message.chat.id,
+            message_id: query.message.message_id,
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup
+          });
+        } else {
+          await this.bot.editMessageText(text, {
+            chat_id: query.message.chat.id,
+            message_id: query.message.message_id,
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup,
+            disable_web_page_preview: true
+          });
+        }
       } catch (err) {
         if (!err.message.includes('message is not modified')) {
           console.error('❌ [VIP_FORWARDER] Failed to return to main menu:', err.message);
@@ -266,13 +278,22 @@ class VipForwarder {
 
       try {
         await this.bot.answerCallbackQuery(query.id);
-        await this.bot.editMessageText(text, {
-          chat_id: query.message.chat.id,
-          message_id: query.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: replyMarkup,
-          disable_web_page_preview: true
-        });
+        if (query.message.photo) {
+          await this.bot.editMessageCaption(text, {
+            chat_id: query.message.chat.id,
+            message_id: query.message.message_id,
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup
+          });
+        } else {
+          await this.bot.editMessageText(text, {
+            chat_id: query.message.chat.id,
+            message_id: query.message.message_id,
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup,
+            disable_web_page_preview: true
+          });
+        }
       } catch (err) {
         if (!err.message.includes('message is not modified')) {
           console.error('❌ [VIP_FORWARDER] Failed to edit catalog page:', err.message);
@@ -293,9 +314,22 @@ class VipForwarder {
 
     // 1. Private Chat / DM Interaction:
     if (chatType === 'private') {
-      // Any text or command in DM displays the 6 Group Cards
       const menuText = this.formatMainMenuText();
       const menuMarkup = this.buildMainMenuKeyboard();
+
+      if (fs.existsSync(BANNER_PATH)) {
+        try {
+          await this.bot.sendPhoto(msg.chat.id, fs.createReadStream(BANNER_PATH), {
+            caption: menuText,
+            parse_mode: 'HTML',
+            reply_markup: menuMarkup
+          });
+          return;
+        } catch (err) {
+          console.warn('⚠️ [VIP_FORWARDER] Could not send banner photo, falling back to text:', err.message);
+        }
+      }
+
       await this.bot.sendMessage(msg.chat.id, menuText, {
         parse_mode: 'HTML',
         reply_markup: menuMarkup,
