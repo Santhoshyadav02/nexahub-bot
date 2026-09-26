@@ -5,36 +5,30 @@
  * Runs continuously in the background on VPS:
  *   - Scrapes fresh dynamic stream tokens every 3 hours.
  *   - Performs round-robin downloading & uploading (2 parallel workers) to 6 channels.
- *   - Telegram Channel Source Feed: Ingests new native videos from @zzkbraxk -> VIP-🔞.
  *   - Enforces 5 uploads/day per channel quota.
  *   - Sweeps old/stale downloads every 1 hour.
  */
 
 const { VipPipelineOrchestrator } = require('./vip_pipeline_orchestrator');
-const { ZzkbraxkPipeline } = require('./vip_channel_source_pipeline');
 
-const SCRAPE_INTERVAL_MS = 3 * 60 * 60 * 1000;          // 3 Hours
-const PIPELINE_INTERVAL_MS = 15 * 60 * 1000;             // 15 Minutes
-const CHANNEL_SOURCE_INTERVAL_MS = 15 * 60 * 1000;       // 15 Minutes
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;              // 1 Hour
+const SCRAPE_INTERVAL_MS = 3 * 60 * 60 * 1000;   // 3 Hours
+const PIPELINE_INTERVAL_MS = 15 * 60 * 1000;      // 15 Minutes
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;       // 1 Hour
 
 async function startDaemon() {
   console.log(`\n=======================================================`);
-  console.log(`👑 VIP PIPELINE DAEMON INITIALIZING (DUAL PIPELINE)`);
+  console.log(`👑 VIP PIPELINE DAEMON INITIALIZING`);
   console.log(`=======================================================`);
   console.log(`• Scrape Link Refresh:  Every 3 Hours`);
   console.log(`• Download & Upload:    Every 15 Minutes (2 Parallel Workers)`);
-  console.log(`• Telegram Source Feed: Every 15 Minutes (@zzkbraxk -> VIP-🔞)`);
   console.log(`• Quota Limit:          5 Videos / Channel / Day`);
   console.log(`• Auto Disk Cleanup:    Every 1 Hour (Stale files > 1h)`);
   console.log(`=======================================================\n`);
 
   const orchestrator = new VipPipelineOrchestrator();
-  const zzkbraxkPipeline = new ZzkbraxkPipeline();
 
   let isScraping = false;
   let isProcessing = false;
-  let isChannelSyncing = false;
 
   async function triggerScraper() {
     if (isScraping) return;
@@ -60,18 +54,6 @@ async function startDaemon() {
     }
   }
 
-  async function triggerChannelSourceSync() {
-    if (isChannelSyncing) return;
-    isChannelSyncing = true;
-    try {
-      await zzkbraxkPipeline.runSync(10);
-    } catch (e) {
-      console.error(`[VIP_DAEMON] Channel source sync error (@zzkbraxk):`, e.message);
-    } finally {
-      isChannelSyncing = false;
-    }
-  }
-
   function triggerCleanup() {
     try {
       const deleted = orchestrator.cleanupOldDownloads(1);
@@ -83,17 +65,15 @@ async function startDaemon() {
     }
   }
 
-  // Initial execution: run pipeline dispatch and channel source sync immediately
-  console.log(`[VIP_DAEMON] Running initial pipeline dispatch & channel source sync...`);
+  // Initial execution: run pipeline dispatch immediately
+  console.log(`[VIP_DAEMON] Running initial pipeline dispatch...`);
   triggerPipeline().catch(e => console.error(`[VIP_DAEMON] Pipeline error:`, e.message));
-  triggerChannelSourceSync().catch(e => console.error(`[VIP_DAEMON] Channel source sync error:`, e.message));
 
   // Run initial full scraper in background without blocking pipeline
   triggerScraper().catch(e => console.error(`[VIP_DAEMON] Background scraper error:`, e.message));
 
   // Set recurring timers
   setInterval(triggerPipeline, PIPELINE_INTERVAL_MS);
-  setInterval(triggerChannelSourceSync, CHANNEL_SOURCE_INTERVAL_MS);
   setInterval(triggerScraper, SCRAPE_INTERVAL_MS);
   setInterval(triggerCleanup, CLEANUP_INTERVAL_MS);
 
@@ -118,11 +98,9 @@ async function startDaemon() {
 
 if (require.main === module) {
   startDaemon().catch(err => {
-    console.error(`💥 [VIP_DAEMON] Fatal startup error:`, err);
+    console.error(`[VIP_DAEMON] Fatal daemon crash:`, err);
     process.exit(1);
   });
 }
 
-module.exports = {
-  startDaemon
-};
+module.exports = { startDaemon };

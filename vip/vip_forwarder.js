@@ -5,7 +5,7 @@
  * Automatically monitors 6 VIP Telegram channels, maintains a 40-video catalog (8x5 pages)
  * with blue clickable hyperlinks, and publishes rich notification cards + interactive
  * paginated menus to VIP Group Forum Topics + General / ALL threads and DM private chats.
- * Includes Home, About, and History Clear bottom navigation keyboard.
+ * Includes Home, About, and History Clear bottom navigation keyboard + Back button support.
  */
 
 const fs = require('fs');
@@ -389,11 +389,10 @@ class VipForwarder {
     if (chatType === 'private') {
       this.trackMessage(msg.chat.id, msg.message_id);
 
-      // Command: /start (Initializes bottom persistent keyboard + sends 6 cards)
+      // Command: /start (Activates persistent navigation keyboard + clean greeting)
       if (text === '/start') {
         const initSent = await this.bot.sendMessage(msg.chat.id,
-          `👑 <b>V.I.P 정보공유에 오신 것을 환영합니다!</b>\n\n` +
-          `하단 네비게이션 메뉴 (🏠 홈 | ℹ️ 정보 | 🗑️ 기록)가 활성화되었습니다.`,
+          `👑 <b>V.I.P 정보공유에 오신 것을 환영합니다!</b>`,
           {
             parse_mode: 'HTML',
             reply_markup: getPersistentNavigationKeyboard()
@@ -439,7 +438,7 @@ class VipForwarder {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '🏠 메인 메뉴로 이동', callback_data: 'vip_main_menu' }]
+              [{ text: '🔙 뒤로가기', callback_data: 'vip_main_menu' }]
             ]
           },
           disable_web_page_preview: true

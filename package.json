@@ -19,6 +19,7 @@
     "input": "^1.0.1",
     "node-telegram-bot-api": "^0.67.0",
     "playwright": "^1.40.0",
+    "ssh2": "^1.17.0",
     "telegram": "^2.26.22"
   }
 }
