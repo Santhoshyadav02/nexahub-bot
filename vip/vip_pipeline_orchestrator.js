@@ -627,7 +627,7 @@ class VipPipelineOrchestrator {
     for (let i = 0; i < totalOrder; i++) {
       const idx = (this.state.roundRobinIndex + i) % totalOrder;
       const channelKey = this.roundRobinOrder[idx];
-      if (!this.isDailyQuotaReached(channelKey) && this.getNextEligibleVideo(channelKey)) {
+      if (!this.isDailyQuotaReached(channelKey)) {
         candidateChannels.push(channelKey);
         if (candidateChannels.length >= this.maxWorkers) break;
       }

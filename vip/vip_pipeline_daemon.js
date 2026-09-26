@@ -65,11 +65,12 @@ async function startDaemon() {
     }
   }
 
-  // Initial execution: refresh scrapers first so we have fresh valid tokens, then start pipeline
-  console.log(`[VIP_DAEMON] Performing startup scraper refresh to fetch fresh stream tokens...`);
-  await triggerScraper();
-  console.log(`[VIP_DAEMON] Startup scraper refresh complete. Running initial pipeline dispatch...`);
-  await triggerPipeline();
+  // Initial execution: run pipeline dispatch immediately
+  console.log(`[VIP_DAEMON] Running initial pipeline dispatch...`);
+  triggerPipeline().catch(e => console.error(`[VIP_DAEMON] Pipeline error:`, e.message));
+
+  // Run initial full scraper in background without blocking pipeline
+  triggerScraper().catch(e => console.error(`[VIP_DAEMON] Background scraper error:`, e.message));
 
   // Set recurring timers
   setInterval(triggerPipeline, PIPELINE_INTERVAL_MS);
