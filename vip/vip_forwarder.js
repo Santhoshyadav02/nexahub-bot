@@ -15,8 +15,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
-const { cleanCatalogTitle } = require('./sync_channel_history');
-const { translateToKorean } = require('../korean_caption_generator');
+const { cleanCatalogTitle, syncAllChannels } = require('./sync_channel_history');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
 function getPersistentNavigationKeyboard() {
@@ -104,14 +103,9 @@ class VipForwarder {
     return `https://t.me/c/${cleanId}/${threadId}`;
   }
 
-  async extractTitle(msg, defaultTag = 'VIP') {
+  extractTitle(msg, defaultTag = 'VIP') {
     const raw = (msg.caption || msg.text || (msg.video && msg.video.file_name) || (msg.document && msg.document.file_name) || `${defaultTag} 신규 영상`).trim();
-    const clean = cleanCatalogTitle(raw, defaultTag);
-    try {
-      const translated = await translateToKorean(clean);
-      if (translated) return translated;
-    } catch (e) {}
-    return clean;
+    return cleanCatalogTitle(raw, defaultTag);
   }
 
   formatAllCard(channelConfig, title) {
@@ -225,7 +219,7 @@ class VipForwarder {
     }
     this.processedPosts.add(postKey);
 
-    const title = await this.extractTitle(msg, channelConfig.tag);
+    const title = this.extractTitle(msg, channelConfig.tag);
     const postLink = this.getChannelPostLink(msg.chat.id, msg.message_id, msg.chat.username);
     const vipChatId = this.config.vipGroup.chatId;
 
@@ -666,7 +660,19 @@ class VipForwarder {
       return;
     }
 
-    this.bot = new TelegramBot(token, { polling: true });
+    this.bot = new TelegramBot(token, {
+      polling: {
+        params: {
+          allowed_updates: [
+            "message",
+            "edited_message",
+            "channel_post",
+            "edited_channel_post",
+            "callback_query"
+          ]
+        }
+      }
+    });
 
     // Ensure bot commands are registered
     this.bot.setMyCommands([

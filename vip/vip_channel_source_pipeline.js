@@ -5,7 +5,7 @@
  * Secondary pipeline for the "VIP-🔞" category:
  *   1. Scans the public source channel: https://t.me/zzkbraxk (@zzkbraxk).
  *   2. Extracts ONLY valid video messages (strictly skips text ads, photos, stickers).
- *   3. Translates full album titles and descriptions into natural Korean.
+ *   3. Resolves full album titles and descriptions from media groups.
  *   4. Posts native videos with bold title + full descriptive text to VIP-🔞 (-1003845130520).
  *   5. Automatically updates CatalogManager for instant VIP-Bot viewing.
  */
@@ -16,7 +16,6 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
-const { translateToKorean } = require('../korean_caption_generator');
 const MTProtoChannelReader = require('../mtproto_reader');
 
 const SOURCE_CHANNEL_USERNAME = 'zzkbraxk';
@@ -27,7 +26,7 @@ const STATE_DIR = path.resolve(__dirname, 'state');
 const PROCESSED_FILE = path.join(STATE_DIR, 'zzkbraxk_processed.json');
 const LOG_PREFIX = '[ZZKBRAXK_PIPELINE]';
 
-async function extractTitleAndDescription(rawText) {
+function extractTitleAndDescription(rawText) {
   if (!rawText || typeof rawText !== 'string') {
     return { title: 'VIP-18 신규 영상', description: '', fullCaption: '🔞 <b>VIP-18 신규 영상</b>\n\n✨ <b>VIP-🔞 정보공유</b>' };
   }
@@ -54,16 +53,6 @@ async function extractTitleAndDescription(rawText) {
 
   let title = lines[0].replace(/^[\s\-_:=*•▶▷►🎬🔞]+/, '').replace(/[\s\-_:=*•]+$/, '').trim();
   let description = lines.slice(1).join('\n').trim();
-
-  // End-to-end Korean Translation
-  try {
-    const trTitle = await translateToKorean(title);
-    if (trTitle) title = trTitle;
-    if (description) {
-      const trDesc = await translateToKorean(description);
-      if (trDesc) description = trDesc;
-    }
-  } catch (e) {}
 
   let caption = `🔞 <b>${escapeHTML(title)}</b>\n`;
   if (description) {
