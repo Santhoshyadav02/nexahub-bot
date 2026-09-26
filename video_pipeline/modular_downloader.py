@@ -30,77 +30,6 @@ def sanitize_filename(name):
     return sanitized[:100]
 
 
-def extract_fresh_token_jit(post_url, timeout=35):
-    """
-    Extracts a fresh streaming token for a single post URL just-in-time
-    using Playwright headless browser.
-    """
-    if not post_url or not post_url.startswith("http"):
-        return None
-    try:
-        from playwright.sync_api import sync_playwright
-        from bs4 import BeautifulSoup
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                channel="chrome",
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                    " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                )
-            )
-            page = context.new_page()
-            cdn_urls = []
-
-            def handle_req(req):
-                u = req.url
-                if (
-                    "data.cdn.avsee.is" in u
-                    or "surrit.com" in u
-                    or ".m3u8" in u
-                    or ".mp4" in u
-                ) and not any(x in u for x in [".png", ".jpg", ".css", ".js", ".svg"]):
-                    if u not in cdn_urls:
-                        cdn_urls.append(u)
-
-            page.on("request", handle_req)
-            page.goto(post_url, wait_until="domcontentloaded", timeout=timeout * 1000)
-
-            for _ in range(6):
-                if "Just a moment" not in page.title():
-                    break
-                page.wait_for_timeout(1000)
-
-            try:
-                page.wait_for_selector("video, .jw-media, iframe", timeout=6000)
-            except Exception:
-                pass
-            page.wait_for_timeout(2000)
-
-            soup = BeautifulSoup(page.content(), "html.parser")
-            for video in soup.find_all("video"):
-                src = video.get("src", "")
-                if src and (".mp4" in src or ".m3u8" in src) and src not in cdn_urls:
-                    cdn_urls.append(src)
-
-            browser.close()
-            return cdn_urls[0] if cdn_urls else None
-    except Exception as e:
-        print(
-            f"[JIT Warning] Failed to extract fresh token for {post_url}: {e}",
-            flush=True,
-        )
-        return None
-
-
 def download_video_worker(item, output_dir, timeout=180, worker_id=1):
     """
     Downloads a single video file using chunked HTTP streaming with retry, backoff,
@@ -115,13 +44,6 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
         elif isinstance(urls, str):
             url = urls
     post_url = item.get("post_url") or item.get("page_url") or ""
-
-    if not url and post_url:
-        print(
-            f"[Worker {worker_id}] [⚡ JIT] No pre-saved token for '{title}'. Resolving fresh token...",
-            flush=True,
-        )
-        url = extract_fresh_token_jit(post_url)
 
     if not url:
         return {"status": "skipped", "title": title, "reason": "No MP4 URL"}
@@ -182,22 +104,7 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
             with requests.get(url, headers=headers, stream=True, timeout=timeout) as response:
                 status_code = response.status_code
 
-                if status_code in [401, 403, 404, 410]:
-                    if post_url and attempt == 1:
-                        print(
-                            f"[Worker {worker_id}] [!] [HTTP {status_code}] Token expired for {filename}. Resolving fresh JIT token...",
-                            flush=True,
-                        )
-                        fresh_url = extract_fresh_token_jit(post_url)
-                        if fresh_url:
-                            print(
-                                f"[Worker {worker_id}] [✅ JIT] Fresh token acquired! Retrying download...",
-                                flush=True,
-                            )
-                            url = fresh_url
-                            time.sleep(1.0)
-                            continue
-
+                if status_code in [403, 404, 410]:
                     print(
                         f"[Worker {worker_id}] [!] [HTTP {status_code}] Expired/Forbidden: {filename}",
                         flush=True,
@@ -209,7 +116,6 @@ def download_video_worker(item, output_dir, timeout=180, worker_id=1):
                         "expired_token": True,
                         "post_url": post_url,
                     }
-
 
                 if status_code == 429 and attempt < max_retries:
                     time.sleep(2.0)

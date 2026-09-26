@@ -4,7 +4,7 @@
  * ============================================================
  * Automatically monitors 6 VIP Telegram channels, maintains a 40-video catalog (8x5 pages)
  * with blue clickable hyperlinks, and publishes rich notification cards + interactive
- * paginated menus to VIP Group Forum Topics + General / ALL threads.
+ * paginated menus to VIP Group Forum Topics + General / ALL threads and DM private chats.
  */
 
 const fs = require('fs');
@@ -99,6 +99,50 @@ class VipForwarder {
   }
 
   /**
+   * Main Menu Layout (Dashboard showing all 6 Group Cards)
+   */
+  formatMainMenuText() {
+    let text =
+      `👑 <b>V.I.P 프리미엄 동영상 허브</b>\n\n` +
+      `원하시는 그룹 카드를 선택하여 최신 업데이트 영상을 확인하세요.\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    const channelKeys = ['18', 'CN', 'JP', 'KR', 'BJ', 'AV'];
+    for (const key of channelKeys) {
+      const ch = Object.values(this.config.channels).find(c => c.key.toLowerCase() === key.toLowerCase());
+      if (ch) {
+        const count = (this.catalogManager.catalogs[ch.key] || []).length;
+        text += `${ch.emoji} <b>${ch.name || ch.buttonLabel}</b> (영상 ${count}개)\n`;
+      }
+    }
+
+    text +=
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `👇 <i>아래 버튼을 눌러 각 채널의 최신 동영상 목록을 확인하세요.</i>`;
+
+    return text;
+  }
+
+  buildMainMenuKeyboard() {
+    return {
+      inline_keyboard: [
+        [
+          { text: '🔞 18+', callback_data: 'cat_pg:18:1' },
+          { text: '🇨🇳 CN', callback_data: 'cat_pg:CN:1' }
+        ],
+        [
+          { text: '🇯🇵 JP', callback_data: 'cat_pg:JP:1' },
+          { text: '🇰🇷 KR', callback_data: 'cat_pg:KR:1' }
+        ],
+        [
+          { text: '📺 BJ.', callback_data: 'cat_pg:BJ:1' },
+          { text: '🎬 AV', callback_data: 'cat_pg:AV:1' }
+        ]
+      ]
+    };
+  }
+
+  /**
    * Core Handler: Triggered on every channel post event.
    */
   async handleChannelPost(msg) {
@@ -174,66 +218,114 @@ class VipForwarder {
   }
 
   /**
-   * Handles interactive callback queries for pagination (e.g. cat_pg:KR:2).
+   * Handles interactive callback queries for pagination and main menu.
    */
   async handleCallbackQuery(query) {
-    if (!query.data || !query.data.startsWith('cat_pg:')) return;
+    if (!query.data) return;
 
-    const parts = query.data.split(':');
-    const channelKey = parts[1];
-    const page = parseInt(parts[2], 10) || 1;
-
-    // Find channel configuration
-    const channelConfig = Object.values(this.config.channels).find(
-      c => c.key.toLowerCase() === channelKey.toLowerCase()
-    );
-
-    if (!channelConfig) {
+    if (query.data === 'vip_main_menu') {
       try {
-        await this.bot.answerCallbackQuery(query.id, { text: '채널을 찾을 수 없습니다.' });
-      } catch (e) {}
+        await this.bot.answerCallbackQuery(query.id);
+        const text = this.formatMainMenuText();
+        const replyMarkup = this.buildMainMenuKeyboard();
+        await this.bot.editMessageText(text, {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
+          disable_web_page_preview: true
+        });
+      } catch (err) {
+        if (!err.message.includes('message is not modified')) {
+          console.error('❌ [VIP_FORWARDER] Failed to return to main menu:', err.message);
+        }
+      }
       return;
     }
 
-    const pageData = this.catalogManager.getPage(channelConfig.key, page);
-    const text = this.catalogManager.formatCatalogText(channelConfig, pageData);
-    const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
+    if (query.data.startsWith('cat_pg:')) {
+      const parts = query.data.split(':');
+      const channelKey = parts[1];
+      const page = parseInt(parts[2], 10) || 1;
 
-    try {
-      await this.bot.answerCallbackQuery(query.id);
-      await this.bot.editMessageText(text, {
-        chat_id: query.message.chat.id,
-        message_id: query.message.message_id,
-        parse_mode: 'HTML',
-        reply_markup: replyMarkup,
-        disable_web_page_preview: true
-      });
-    } catch (err) {
-      // Ignore if content is identical on refresh
-      if (!err.message.includes('message is not modified')) {
-        console.error('❌ [VIP_FORWARDER] Failed to edit catalog page:', err.message);
+      // Find channel configuration
+      const channelConfig = Object.values(this.config.channels).find(
+        c => c.key.toLowerCase() === channelKey.toLowerCase()
+      );
+
+      if (!channelConfig) {
+        try {
+          await this.bot.answerCallbackQuery(query.id, { text: '채널을 찾을 수 없습니다.' });
+        } catch (e) {}
+        return;
+      }
+
+      const pageData = this.catalogManager.getPage(channelConfig.key, page);
+      const text = this.catalogManager.formatCatalogText(channelConfig, pageData);
+      const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
+
+      try {
+        await this.bot.answerCallbackQuery(query.id);
+        await this.bot.editMessageText(text, {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
+          disable_web_page_preview: true
+        });
+      } catch (err) {
+        if (!err.message.includes('message is not modified')) {
+          console.error('❌ [VIP_FORWARDER] Failed to edit catalog page:', err.message);
+        }
       }
     }
   }
 
   /**
-   * Helper command handlers for topic management and catalog display.
+   * Message handler for both Direct Messages (Private) and Group / Topics.
    */
-  async handleGroupMessage(msg) {
+  async handleIncomingMessage(msg) {
     if (!msg.text) return;
     const text = msg.text.trim();
     const chatIdStr = String(msg.chat.id);
+    const chatType = msg.chat.type; // 'private', 'group', 'supergroup', 'channel'
     const vipChatId = this.config.vipGroup.chatId;
 
+    // 1. Private Chat / DM Interaction:
+    if (chatType === 'private') {
+      // Any text or command in DM displays the 6 Group Cards
+      const menuText = this.formatMainMenuText();
+      const menuMarkup = this.buildMainMenuKeyboard();
+      await this.bot.sendMessage(msg.chat.id, menuText, {
+        parse_mode: 'HTML',
+        reply_markup: menuMarkup,
+        disable_web_page_preview: true
+      });
+      return;
+    }
+
+    // 2. VIP Group / Supergroup Interaction:
     if (chatIdStr === String(vipChatId)) {
       const threadId = msg.message_thread_id || null;
+
+      // Command: /start or /menu in group
+      if (text.startsWith('/start') || text.startsWith('/menu')) {
+        const menuText = this.formatMainMenuText();
+        const menuMarkup = this.buildMainMenuKeyboard();
+        await this.bot.sendMessage(msg.chat.id, menuText, {
+          parse_mode: 'HTML',
+          message_thread_id: threadId,
+          reply_markup: menuMarkup,
+          disable_web_page_preview: true
+        });
+        return;
+      }
 
       // Command: /catalog or /list (Shows 8x5 paginated list for this topic)
       if (text.startsWith('/catalog') || text.startsWith('/list') || text.startsWith('/videos')) {
         const parts = text.split(/\s+/);
         let requestedKey = parts[1];
 
-        // If no key provided, detect from bound threadId
         let channelConfig = null;
         if (requestedKey) {
           channelConfig = Object.values(this.config.channels).find(
@@ -246,7 +338,6 @@ class VipForwarder {
         }
 
         if (!channelConfig) {
-          // Default to first channel or show selector
           channelConfig = Object.values(this.config.channels)[0];
         }
 
@@ -334,8 +425,8 @@ class VipForwarder {
         return;
       }
 
-      // General message from any user in a topic thread:
-      // Auto-reply with the channel's 8x5 paginated video list!
+      // General message in a topic thread:
+      // Auto-reply with the channel's 8x5 paginated video list
       if (threadId) {
         const channelConfig = Object.values(this.config.channels).find(
           c => c.topicThreadId === threadId
@@ -400,8 +491,8 @@ class VipForwarder {
     });
 
     this.bot.on('message', (msg) => {
-      this.handleGroupMessage(msg).catch(err => {
-        console.error('❌ [VIP_FORWARDER] Error in handleGroupMessage:', err.message);
+      this.handleIncomingMessage(msg).catch(err => {
+        console.error('❌ [VIP_FORWARDER] Error in handleIncomingMessage:', err.message);
       });
     });
 

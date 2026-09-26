@@ -158,7 +158,7 @@ class CatalogManager {
   }
 
   /**
-   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️]).
+   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️] + [🏠 메인 메뉴로 돌아가기]).
    */
   buildPaginationKeyboard(channelKey, pageData) {
     const row = [];
@@ -182,9 +182,9 @@ class CatalogManager {
       keyboard.push(row);
     }
 
-    // Refresh row
+    // Main Menu Return Button
     keyboard.push([
-      { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
+      { text: '🏠 메인 메뉴로 돌아가기', callback_data: 'vip_main_menu' }
     ]);
 
     return { inline_keyboard: keyboard };

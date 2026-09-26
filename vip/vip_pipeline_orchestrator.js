@@ -557,60 +557,6 @@ class VipPipelineOrchestrator {
   }
 
   /**
-   * Performs Just-In-Time (JIT) extraction of fresh CDN streaming token for a single post
-   */
-  async fetchFreshVideoToken(item, channelKey) {
-    const postUrl = item.post_url || '';
-    if (!postUrl || !postUrl.startsWith('http')) return item;
-
-    const def = CHANNEL_DEFS[channelKey];
-    console.log(`⚡ ${LOG_PREFIX} [${def.tag}] Resolving fresh JIT token for: "${item.title}"...`);
-
-    const runner = this._resolvePythonRunner();
-    const scriptPath = path.join(this.scrapersDir, def.scraperScript);
-    const args = [...runner.prefixArgs, scriptPath, '--url', postUrl];
-
-    return new Promise((resolve) => {
-      const proc = spawn(runner.cmd, args, {
-        cwd: this.scrapersDir,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: process.platform === 'win32'
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout.on('data', d => { stdout += d.toString(); });
-      proc.stderr.on('data', d => { stderr += d.toString(); });
-
-      const timer = setTimeout(() => {
-        try { proc.kill(); } catch (_) {}
-        resolve(item);
-      }, 45000);
-
-      proc.on('close', (code) => {
-        clearTimeout(timer);
-        try {
-          const match = stdout.match(/\[JIT_TOKEN_RESULT\]\s*(\{.*\})/);
-          if (match) {
-            const data = JSON.parse(match[1]);
-            if (data.mp4_download_url) {
-              item.mp4_download_url = data.mp4_download_url;
-              if (data.title && data.title !== 'Unknown' && data.title !== 'Error') {
-                item.title = data.title;
-              }
-              console.log(`✅ ${LOG_PREFIX} [${def.tag}] Fresh JIT token acquired for: "${item.title}"`);
-            }
-          }
-        } catch (e) {
-          console.warn(`${LOG_PREFIX} Failed to parse JIT token output: ${e.message}`);
-        }
-        resolve(item);
-      });
-    });
-  }
-
-  /**
    * Process 1 video for a specific channel with automatic candidate progression
    */
   async processChannel(channelKey) {
@@ -625,8 +571,8 @@ class VipPipelineOrchestrator {
     for (let candidateAttempt = 0; candidateAttempt < 5; candidateAttempt++) {
       let item = this.getNextEligibleVideo(channelKey);
       if (!item && candidateAttempt === 0) {
-        console.log(`🔍 ${LOG_PREFIX} [${def.tag}] No pending candidates in cache. Scraping pages 1..3 for new links...`);
-        await this.runScraper(channelKey, { pages: 3, refresh: true });
+        console.log(`🔍 ${LOG_PREFIX} [${def.tag}] No pending fresh links in queue. Scraping new links...`);
+        await this.runScraper(channelKey, { pages: 1, refresh: true });
         item = this.getNextEligibleVideo(channelKey);
       }
 
@@ -636,11 +582,6 @@ class VipPipelineOrchestrator {
 
       let targetItem = item;
       try {
-        // Just-In-Time fresh token resolution right before download
-        if (targetItem.post_url) {
-          targetItem = await this.fetchFreshVideoToken(targetItem, channelKey);
-        }
-
         const downloadResult = await this.downloadVideo(targetItem, channelKey);
 
         if (downloadResult && downloadResult.skipped) {
@@ -666,7 +607,6 @@ class VipPipelineOrchestrator {
     }
     return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
   }
-
 
   /**
    * Executes 1 round-robin step with 2 worker concurrency
