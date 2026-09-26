@@ -5,10 +5,9 @@
  * Secondary pipeline for the "VIP-🔞" category:
  *   1. Scans the public source channel: https://t.me/zzkbraxk (@zzkbraxk).
  *   2. Extracts ONLY valid video messages (strictly skips text ads, photos, stickers).
- *   3. Resolves album/groupedId titles from media groups so multi-part videos inherit the real title.
- *   4. Formats clean title & caption with exact title from source (no spam ads/links).
- *   5. Posts natively to VIP-🔞 (-1003845130520) with NO "Forwarded from" header.
- *   6. Automatically updates CatalogManager so VIP-Bot immediately shows real titles.
+ *   3. Resolves full album titles and descriptions from media groups.
+ *   4. Posts native videos with bold title + full descriptive text to VIP-🔞 (-1003845130520).
+ *   5. Automatically updates CatalogManager for instant VIP-Bot viewing.
  */
 
 const fs = require('fs');
@@ -27,47 +26,43 @@ const STATE_DIR = path.resolve(__dirname, 'state');
 const PROCESSED_FILE = path.join(STATE_DIR, 'zzkbraxk_processed.json');
 const LOG_PREFIX = '[ZZKBRAXK_PIPELINE]';
 
-function cleanVideoTitle(rawText, defaultTitle = '') {
+function extractTitleAndDescription(rawText) {
   if (!rawText || typeof rawText !== 'string') {
-    return defaultTitle;
+    return { title: 'VIP-18 신규 영상', description: '', fullCaption: '🔞 <b>VIP-18 신규 영상</b>\n\n✨ <b>VIP-🔞 정보공유</b>' };
   }
 
   // Filter out promo ads
   if (rawText.includes('月付') || rawText.includes('年付') || rawText.includes('优惠力度') || rawText.includes('中秋狂欢') || rawText.includes('极搜JISOU')) {
-    return defaultTitle;
+    return { title: 'VIP-18 신규 영상', description: '', fullCaption: '🔞 <b>VIP-18 신규 영상</b>\n\n✨ <b>VIP-🔞 정보공유</b>' };
   }
 
-  // Remove URLs, tg links, mentions
-  let text = rawText
+  // Strip URLs, telegram links, and mentions
+  let clean = rawText
     .replace(/https?:\/\/\S+/gi, '')
     .replace(/t\.me\/\S+/gi, '')
     .replace(/@[a-zA-Z0-9_]+/g, '')
     .trim();
 
-  // If text is only hashtags, clean '#'
-  if (/^#[^\s#]+$/.test(text)) {
-    text = text.replace(/^#+/, '');
-  } else {
-    text = text.replace(/#[^\s#]+/g, '').trim();
-  }
+  // Strip hashtags at the end
+  clean = clean.replace(/#[^\s#]+/g, '').trim();
 
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const lines = clean.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   if (lines.length === 0) {
-    return defaultTitle;
+    return { title: 'VIP-18 신규 영상', description: '', fullCaption: '🔞 <b>VIP-18 신규 영상</b>\n\n✨ <b>VIP-🔞 정보공유</b>' };
   }
 
-  let title = lines[0];
-  title = title.replace(/^[\s\-_:=*•▶▷►]+/, '').replace(/[\s\-_:=*•]+$/, '').trim();
+  let title = lines[0].replace(/^[\s\-_:=*•▶▷►🎬🔞]+/, '').replace(/[\s\-_:=*•]+$/, '').trim();
+  let description = lines.slice(1).join('\n').trim();
 
-  if (title.length > 90) {
-    title = title.substring(0, 87) + '...';
+  let caption = `🔞 <b>${escapeHTML(title)}</b>\n`;
+  if (description) {
+    caption += `${escapeHTML(description)}\n\n`;
+  } else {
+    caption += `\n`;
   }
+  caption += `✨ <b>VIP-🔞 정보공유</b>`;
 
-  return title.length >= 2 ? title : defaultTitle;
-}
-
-function formatCleanCaption(title) {
-  return `🔞 <b>${escapeHTML(title)}</b>\n\n✨ <b>VIP-🔞 정보공유</b>`;
+  return { title, description, fullCaption: caption };
 }
 
 function escapeHTML(str) {
@@ -179,20 +174,15 @@ class ZzkbraxkPipeline {
       return { synced: 0, skipped: 0 };
     }
 
-    // Step 1: Build Album/Group Map to inherit titles for multi-part video albums
-    const groupTitleMap = new Map();
-    const groupVideosMap = new Map(); // groupedId -> [msgId, ...]
+    // Step 1: Build Album/Group Map to inherit titles & descriptions
+    const groupDataMap = new Map(); // groupedId -> { title, description, fullCaption }
 
     for (const msg of messages) {
       if (msg.groupedId) {
         const gid = msg.groupedId.toString();
-        const cleanT = cleanVideoTitle(msg.message);
-        if (cleanT && !groupTitleMap.has(gid)) {
-          groupTitleMap.set(gid, cleanT);
-        }
-        if (this.isVideoMessage(msg)) {
-          if (!groupVideosMap.has(gid)) groupVideosMap.set(gid, []);
-          groupVideosMap.get(gid).push(msg.id);
+        const extracted = extractTitleAndDescription(msg.message);
+        if (extracted.title !== 'VIP-18 신규 영상' && !groupDataMap.has(gid)) {
+          groupDataMap.set(gid, extracted);
         }
       }
     }
@@ -215,39 +205,25 @@ class ZzkbraxkPipeline {
         continue;
       }
 
-      // Step 2: Resolve accurate title from single message or album
-      let rawTitle = cleanVideoTitle(msg.message);
-      let albumTitle = '';
-      let partSuffix = '';
-
-      if (msg.groupedId) {
+      // Step 2: Resolve title & full descriptive caption
+      let extracted = extractTitleAndDescription(msg.message);
+      if (extracted.title === 'VIP-18 신규 영상' && msg.groupedId) {
         const gid = msg.groupedId.toString();
-        albumTitle = groupTitleMap.get(gid) || '';
-        const groupList = (groupVideosMap.get(gid) || []).slice().sort((a, b) => a - b);
-        if (groupList.length > 1) {
-          const idx = groupList.indexOf(msgId);
-          if (idx >= 0) {
-            partSuffix = ` (${idx + 1}/${groupList.length})`;
-          }
+        if (groupDataMap.has(gid)) {
+          extracted = groupDataMap.get(gid);
         }
       }
 
-      let finalTitle = rawTitle || albumTitle;
-      if (!finalTitle) {
-        finalTitle = 'VIP-🔞 신규 영상';
-      } else if (partSuffix && !finalTitle.includes('(')) {
-        finalTitle = `${finalTitle}${partSuffix}`;
-      }
-
-      const caption = formatCleanCaption(finalTitle);
-
       console.log(`\n📹 ${LOG_PREFIX} Posting native video from @${this.sourceUsername} msg #${msgId}`);
-      console.log(`   📌 Title: "${finalTitle}"`);
+      console.log(`   📌 Title: "${extracted.title}"`);
+      if (extracted.description) {
+        console.log(`   📝 Description: "${extracted.description.substring(0, 60)}..."`);
+      }
 
       try {
         const sent = await client.sendFile(destEntity, {
           file: msg.media,
-          caption: caption,
+          caption: extracted.fullCaption,
           parseMode: 'html',
           supportsStreaming: true
         });
@@ -260,7 +236,7 @@ class ZzkbraxkPipeline {
           const postLink = `https://t.me/c/${cleanDestId}/${newMsgId}`;
           this.catalogManager.addVideo(this.destKey, {
             messageId: newMsgId,
-            title: finalTitle,
+            title: extracted.title,
             link: postLink
           });
         }
@@ -285,8 +261,7 @@ class ZzkbraxkPipeline {
 
 module.exports = {
   ZzkbraxkPipeline,
-  cleanVideoTitle,
-  formatCleanCaption
+  extractTitleAndDescription
 };
 
 if (require.main === module) {
