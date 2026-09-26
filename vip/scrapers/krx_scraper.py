@@ -313,6 +313,26 @@ def run_krx_scraper(
     )
 
 
+def run_single_url_extraction(url, board="javleak"):
+    """Extracts a freshly minted CDN token for a single post URL (JIT token resolution)."""
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel="chrome",
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-dev-shm-usage"],
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
+        item = extract_video_and_title(page, url)
+        item["category"] = "18+"
+        item["board"] = board
+        browser.close()
+        print(f"[JIT_TOKEN_RESULT] {json.dumps(item, ensure_ascii=False)}", flush=True)
+        return item
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="KRX (javleak) Video Scraper")
     parser.add_argument(
@@ -330,11 +350,20 @@ if __name__ == "__main__":
         action="store_true",
         help="Force refresh URLs even if already cached in JSON",
     )
-    args = parser.parse_args()
-    run_krx_scraper(
-        board=args.board,
-        start_page=args.start,
-        end_page=args.end,
-        output_file=args.output,
-        refresh=args.refresh,
+    parser.add_argument(
+        "--url",
+        default=None,
+        help="Extract fresh CDN video token for a single post URL (Just-In-Time resolution)",
     )
+    args = parser.parse_args()
+    if args.url:
+        run_single_url_extraction(args.url, board=args.board)
+    else:
+        run_krx_scraper(
+            board=args.board,
+            start_page=args.start,
+            end_page=args.end,
+            output_file=args.output,
+            refresh=args.refresh,
+        )
+
