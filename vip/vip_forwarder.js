@@ -386,6 +386,13 @@ class VipForwarder {
 
     this.bot = new TelegramBot(token, { polling: true });
 
+    this.bot.on('polling_error', (error) => {
+      // Ignore routine network timeouts/502 Bad Gateways from Telegram servers
+      if (error && error.code === 'EFATAL') {
+        console.warn('⚠️ [VIP_FORWARDER] Telegram polling fatal error:', error.message);
+      }
+    });
+
     this.bot.on('channel_post', (msg) => {
       this.handleChannelPost(msg).catch(err => {
         console.error('❌ [VIP_FORWARDER] Error in handleChannelPost:', err.message);
