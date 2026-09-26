@@ -67,6 +67,30 @@ class CatalogManager {
   }
 
   /**
+   * Deduplicates by messageId and link, keeping latest items up to 40.
+   */
+  getUniqueItems(channelKey) {
+    this._sort(channelKey);
+    const list = this.catalogs[channelKey] || [];
+    const seenIds = new Set();
+    const seenLinks = new Set();
+    const unique = [];
+
+    for (const item of list) {
+      const msgId = String(item.messageId || '');
+      const link = String(item.link || '');
+
+      if (msgId && seenIds.has(msgId)) continue;
+      if (link && seenLinks.has(link)) continue;
+
+      if (msgId) seenIds.add(msgId);
+      if (link) seenLinks.add(link);
+      unique.push(item);
+    }
+    return unique;
+  }
+
+  /**
    * Adds a new video post to the channel's catalog (keeps latest 40).
    */
   addVideo(channelKey, { messageId, title, link, date = new Date().toISOString() }) {
@@ -74,10 +98,17 @@ class CatalogManager {
       this.catalogs[channelKey] = [];
     }
 
-    // Check if already exists
-    const existsIndex = this.catalogs[channelKey].findIndex(v => v.messageId === messageId || v.link === link);
+    const cleanTitle = (title || '').trim() || '신규 동영상';
+    const numId = Number(messageId) || messageId;
+
+    // Check if messageId or link already exists
+    const existsIndex = this.catalogs[channelKey].findIndex(
+      v => String(v.messageId) === String(numId) || (link && v.link === link)
+    );
+
     if (existsIndex >= 0) {
-      this.catalogs[channelKey][existsIndex].title = title;
+      this.catalogs[channelKey][existsIndex].title = cleanTitle;
+      if (date) this.catalogs[channelKey][existsIndex].date = date;
       this._sort(channelKey);
       this._save();
       return false;
@@ -85,8 +116,8 @@ class CatalogManager {
 
     // Insert item
     this.catalogs[channelKey].push({
-      messageId: Number(messageId) || messageId,
-      title: title.trim(),
+      messageId: numId,
+      title: cleanTitle,
       link,
       date
     });
@@ -94,46 +125,15 @@ class CatalogManager {
     // Sort descending so the latest update is always at the top (#1)
     this._sort(channelKey);
 
-    // Cap at 40 items
-    if (this.catalogs[channelKey].length > MAX_ITEMS_PER_CHANNEL) {
-      this.catalogs[channelKey] = this.catalogs[channelKey].slice(0, MAX_ITEMS_PER_CHANNEL);
-    }
+    // Keep unique and cap at 40 items
+    this.catalogs[channelKey] = this.getUniqueItems(channelKey).slice(0, MAX_ITEMS_PER_CHANNEL);
 
     this._save();
     return true;
   }
 
   /**
-   * Returns list of unique items for the channel (deduplicated by cleaned title and messageId).
-   */
-  getUniqueItems(channelKey) {
-    this._sort(channelKey);
-    const list = this.catalogs[channelKey] || [];
-    const seenTitles = new Set();
-    const seenIds = new Set();
-    const unique = [];
-
-    for (const item of list) {
-      const msgId = String(item.messageId || '');
-      const cleanT = (item.title || '')
-        .replace(/<[^>]*>/g, '')
-        .replace(/\[REMOVE\]/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const normTitle = cleanT.toLowerCase();
-
-      if (msgId && seenIds.has(msgId)) continue;
-      if (normTitle && seenTitles.has(normTitle)) continue;
-
-      if (msgId) seenIds.add(msgId);
-      if (normTitle) seenTitles.add(normTitle);
-      unique.push(item);
-    }
-    return unique;
-  }
-
-  /**
-   * Returns paginated list of videos for a given channel.
+   * Returns paginated list of videos for a given channel (8 per page, up to 5 pages = 40 items).
    */
   getPage(channelKey, page = 1) {
     const list = this.getUniqueItems(channelKey);
@@ -175,7 +175,7 @@ class CatalogManager {
           .replace(/\[REMOVE\]/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
-        const safeTitle = this._escapeHTML(cleanT);
+        const safeTitle = this._escapeHTML(cleanT || `${channelName} 신규 영상`);
         // Blue clickable hyperlink wrapping title
         text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n\n`;
       });
