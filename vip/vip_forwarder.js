@@ -15,6 +15,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
+const { cleanCatalogTitle, syncAllChannels } = require('./sync_channel_history');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
 function getPersistentNavigationKeyboard() {
@@ -102,10 +103,9 @@ class VipForwarder {
     return `https://t.me/c/${cleanId}/${threadId}`;
   }
 
-  extractTitle(msg) {
-    const raw = (msg.caption || msg.text || (msg.video && msg.video.file_name) || (msg.document && msg.document.file_name) || '신규 동영상 콘텐츠').trim();
-    const firstLine = raw.split('\n')[0].trim();
-    return firstLine.length > 90 ? firstLine.substring(0, 87) + '...' : firstLine;
+  extractTitle(msg, defaultTag = 'VIP') {
+    const raw = (msg.caption || msg.text || (msg.video && msg.video.file_name) || (msg.document && msg.document.file_name) || `${defaultTag} 신규 영상`).trim();
+    return cleanCatalogTitle(raw, defaultTag);
   }
 
   formatAllCard(channelConfig, title) {
@@ -219,11 +219,11 @@ class VipForwarder {
     }
     this.processedPosts.add(postKey);
 
-    const title = this.extractTitle(msg);
+    const title = this.extractTitle(msg, channelConfig.tag);
     const postLink = this.getChannelPostLink(msg.chat.id, msg.message_id, msg.chat.username);
     const vipChatId = this.config.vipGroup.chatId;
 
-    // Save to channel catalog (40-video rolling history)
+    // Save to channel catalog (40-video rolling history, sorted newest first)
     this.catalogManager.addVideo(channelConfig.key, {
       messageId: msg.message_id,
       title: title,
@@ -354,6 +354,8 @@ class VipForwarder {
         return;
       }
 
+      // Reload catalog to ensure latest updates
+      this.catalogManager._load();
       const pageData = this.catalogManager.getPage(channelConfig.key, page);
       const text = this.catalogManager.formatCatalogText(channelConfig, pageData);
       const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig, pageData);

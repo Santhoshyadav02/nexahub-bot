@@ -17,7 +17,6 @@
 const path = require('path');
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
-const { Api } = require('telegram');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
@@ -27,6 +26,35 @@ const config = require('./config.json');
 const apiId = Number(process.env.TELEGRAM_API_ID);
 const apiHash = process.env.TELEGRAM_API_HASH;
 const sessionStr = process.env.TELEGRAM_SESSION_STRING || '';
+
+function cleanCatalogTitle(rawText, defaultTag = 'VIP') {
+  if (!rawText || typeof rawText !== 'string') {
+    return `${defaultTag} 신규 영상`;
+  }
+
+  let cleaned = rawText
+    .replace(/<[^>]*>/g, '')
+    .replace(/\[REMOVE\]/gi, '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/t\.me\/\S+/gi, '')
+    .replace(/@[a-zA-Z0-9_]+/g, '')
+    .replace(/#[^\s#]+/g, '')
+    .trim();
+
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) {
+    return `${defaultTag} 신규 영상`;
+  }
+
+  let title = lines[0];
+  title = title.replace(/^[\s\-_:=*•▶▷►🎬]+/, '').replace(/[\s\-_:=*•]+$/, '').trim();
+
+  if (title.length > 90) {
+    title = title.substring(0, 87) + '...';
+  }
+
+  return title.length >= 2 ? title : `${defaultTag} 신규 영상`;
+}
 
 async function syncAllChannels() {
   console.log('============================================================');
@@ -51,18 +79,19 @@ async function syncAllChannels() {
     console.log(`🔍 Scanning channel: ${channelConfig.name} (${channelConfig.tag}) [${chId}]...`);
 
     try {
-      // Parse chat entity
       let entity;
       try {
         entity = await client.getEntity(chId);
       } catch (e) {
-        // Try BigInt or numeric ID format
         const cleanNumeric = chId.replace(/^-100/, '-').replace(/^-/, '');
         entity = await client.getEntity(cleanNumeric);
       }
 
       const messages = await client.getMessages(entity, { limit: 40 });
       console.log(`   Found ${messages.length} recent messages in ${channelConfig.name}`);
+
+      // Clear existing catalog for this channel to ensure 100% fresh clean sync
+      catalogManager.catalogs[channelConfig.key] = [];
 
       let addedCount = 0;
       for (const msg of messages) {
@@ -71,15 +100,13 @@ async function syncAllChannels() {
 
         if (!text && !hasMedia) continue;
 
-        const firstLine = (text.split('\n')[0] || (hasMedia ? `${channelConfig.tag} 신규 영상` : '')).trim();
-        if (!firstLine) continue;
-
+        const title = cleanCatalogTitle(text, channelConfig.tag);
         const cleanId = String(chId).replace(/^-100/, '').replace(/^-/, '');
         const postLink = `https://t.me/c/${cleanId}/${msg.id}`;
 
         const added = catalogManager.addVideo(channelConfig.key, {
           messageId: msg.id,
-          title: firstLine.length > 90 ? firstLine.substring(0, 87) + '...' : firstLine,
+          title: title,
           link: postLink,
           date: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
         });
@@ -88,7 +115,7 @@ async function syncAllChannels() {
       }
 
       const currentTotal = (catalogManager.catalogs[channelConfig.key] || []).length;
-      console.log(`   ✅ Synced ${addedCount} new videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
+      console.log(`   ✅ Synced ${addedCount} videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
     } catch (err) {
       console.error(`   ❌ Failed to sync channel ${channelConfig.name}:`, err.message);
     }
@@ -101,7 +128,13 @@ async function syncAllChannels() {
 }
 
 if (require.main === module) {
-  syncAllChannels().catch(console.error);
+  syncAllChannels().then(() => process.exit(0)).catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
 }
 
-module.exports = { syncAllChannels };
+module.exports = {
+  syncAllChannels,
+  cleanCatalogTitle
+};
