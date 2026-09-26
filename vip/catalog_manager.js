@@ -55,6 +55,32 @@ class CatalogManager {
   }
 
   /**
+   * Returns a deduplicated list of items for a given channel (newest first).
+   * Prevents repeated album posts with identical titles from cluttering the menu.
+   */
+  getUniqueItems(channelKey) {
+    this._sort(channelKey);
+    const rawList = this.catalogs[channelKey] || [];
+    const seenBaseTitles = new Set();
+    const uniqueList = [];
+
+    for (const item of rawList) {
+      const rawTitle = (item.title || '').trim();
+      if (!rawTitle) continue;
+
+      const firstLine = rawTitle.split(/[\n]/)[0].trim().toLowerCase();
+      const bracketMatch = firstLine.match(/^(\[[^\]]+\]|【[^】]+】)/);
+      const baseKey = bracketMatch ? bracketMatch[1] : firstLine;
+
+      if (!seenBaseTitles.has(baseKey)) {
+        seenBaseTitles.add(baseKey);
+        uniqueList.push(item);
+      }
+    }
+    return uniqueList;
+  }
+
+  /**
    * Adds a new video post to the channel's catalog (keeps latest 40).
    */
   addVideo(channelKey, { messageId, title, link, date = new Date().toISOString() }) {
@@ -62,7 +88,6 @@ class CatalogManager {
       this.catalogs[channelKey] = [];
     }
 
-    // Check if already exists
     const existsIndex = this.catalogs[channelKey].findIndex(v => v.messageId === messageId || v.link === link);
     if (existsIndex >= 0) {
       this.catalogs[channelKey][existsIndex].title = title;
@@ -71,7 +96,6 @@ class CatalogManager {
       return false;
     }
 
-    // Insert item
     this.catalogs[channelKey].push({
       messageId: Number(messageId) || messageId,
       title: title.trim(),
@@ -79,10 +103,8 @@ class CatalogManager {
       date
     });
 
-    // Sort descending so the latest update is always at the top (#1)
     this._sort(channelKey);
 
-    // Cap at 40 items
     if (this.catalogs[channelKey].length > MAX_ITEMS_PER_CHANNEL) {
       this.catalogs[channelKey] = this.catalogs[channelKey].slice(0, MAX_ITEMS_PER_CHANNEL);
     }
@@ -92,11 +114,10 @@ class CatalogManager {
   }
 
   /**
-   * Returns paginated list of videos for a given channel.
+   * Returns paginated list of distinct/unique videos for a given channel.
    */
   getPage(channelKey, page = 1) {
-    this._sort(channelKey);
-    const list = this.catalogs[channelKey] || [];
+    const list = this.getUniqueItems(channelKey);
     const totalItems = list.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
     const safePage = Math.max(1, Math.min(page, totalPages));
@@ -116,7 +137,7 @@ class CatalogManager {
   }
 
   /**
-   * Formats the 8-item catalog text with HTML blue hyperlinks and compact spacing.
+   * Formats the catalog text with clear spacing and HTML blue hyperlinks.
    */
   formatCatalogText(channelConfig, pageData) {
     const channelName = channelConfig.name || channelConfig.buttonLabel || 'VIP 채널';
@@ -136,10 +157,9 @@ class CatalogManager {
           .replace(/\s+/g, ' ')
           .trim();
         const safeTitle = this._escapeHTML(cleanT);
-        // Compact single-line spacing between links
-        text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n`;
+        // Spacious formatting with double newline gap between items
+        text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n\n`;
       });
-      text += `\n`;
     }
 
     text += `<b>페이지 ${pageData.currentPage}/${pageData.totalPages}</b>`;
@@ -175,7 +195,6 @@ class CatalogManager {
       keyboard.push(pageNavRow);
     }
 
-    // Navigation action buttons
     keyboard.push([
       { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' },
       { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
