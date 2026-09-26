@@ -10,60 +10,27 @@
  *  - VIP-BJ (-1003977934133)
  *  - VIP-AV (-1004352512630)
  *
- * Translates all non-Korean titles/descriptions to Korean using the end-to-end
- * Google translation engine and populates vip/channel_catalogs.json.
+ * Populates vip/channel_catalogs.json with the latest videos so the 8x5
+ * catalog is immediately full and available for all topics.
  */
 
 const path = require('path');
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { Api } = require('telegram');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
-const { translateToKorean } = require('../korean_caption_generator');
 const config = require('./config.json');
 
 const apiId = Number(process.env.TELEGRAM_API_ID);
 const apiHash = process.env.TELEGRAM_API_HASH;
 const sessionStr = process.env.TELEGRAM_SESSION_STRING || '';
 
-function cleanCatalogTitle(raw, defaultTag = 'VIP') {
-  if (!raw) return `${defaultTag} 신규 영상`;
-
-  let clean = String(raw)
-    .replace(/<[^>]*>/g, '')
-    .replace(/https?:\/\/[^\s]+/gi, '')
-    .replace(/t\.me\/[^\s]+/gi, '')
-    .replace(/@[a-zA-Z0-9_]+/g, '')
-    .replace(/\[REMOVE\]/gi, '')
-    .replace(/📌\s*Channel:[^\n]*/gi, '')
-    .replace(/✨\s*VIP[^\n]*/gi, '')
-    .replace(/#[^\s#]+/g, '')
-    .trim();
-
-  const lines = clean.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  if (lines.length === 0) return `${defaultTag} 신규 영상`;
-
-  let title = lines[0]
-    .replace(/^[\s\-_:=*•▶▷►🎬🔞📺🇨🇳🇯🇵🇰🇷]+/, '')
-    .replace(/[\s\-_:=*•]+$/, '')
-    .trim();
-
-  if (lines.length > 1) {
-    const desc = lines.slice(1).join(' ').trim();
-    if (desc) {
-      title = `${title} ${desc}`;
-    }
-  }
-
-  title = title.replace(/\s+/g, ' ').trim();
-  return title.length > 120 ? title.substring(0, 117) + '...' : (title || `${defaultTag} 신규 영상`);
-}
-
 async function syncAllChannels() {
   console.log('============================================================');
-  console.log('🔄 Syncing & Translating Existing Videos from 6 VIP Channels');
+  console.log('🔄 Syncing Existing Videos from 6 VIP Channels');
   console.log('============================================================\n');
 
   if (!apiId || !apiHash || !sessionStr) {
@@ -84,10 +51,12 @@ async function syncAllChannels() {
     console.log(`🔍 Scanning channel: ${channelConfig.name} (${channelConfig.tag}) [${chId}]...`);
 
     try {
+      // Parse chat entity
       let entity;
       try {
         entity = await client.getEntity(chId);
       } catch (e) {
+        // Try BigInt or numeric ID format
         const cleanNumeric = chId.replace(/^-100/, '-').replace(/^-/, '');
         entity = await client.getEntity(cleanNumeric);
       }
@@ -102,21 +71,15 @@ async function syncAllChannels() {
 
         if (!text && !hasMedia) continue;
 
-        let rawTitle = cleanCatalogTitle(text || (hasMedia ? `${channelConfig.tag} 신규 영상` : ''), channelConfig.tag);
-        if (!rawTitle) continue;
-
-        // End-to-end translation to natural Korean
-        try {
-          const translated = await translateToKorean(rawTitle);
-          if (translated) rawTitle = translated;
-        } catch (e) {}
+        const firstLine = (text.split('\n')[0] || (hasMedia ? `${channelConfig.tag} 신규 영상` : '')).trim();
+        if (!firstLine) continue;
 
         const cleanId = String(chId).replace(/^-100/, '').replace(/^-/, '');
         const postLink = `https://t.me/c/${cleanId}/${msg.id}`;
 
         const added = catalogManager.addVideo(channelConfig.key, {
           messageId: msg.id,
-          title: rawTitle,
+          title: firstLine.length > 90 ? firstLine.substring(0, 87) + '...' : firstLine,
           link: postLink,
           date: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
         });
@@ -125,7 +88,7 @@ async function syncAllChannels() {
       }
 
       const currentTotal = (catalogManager.catalogs[channelConfig.key] || []).length;
-      console.log(`   ✅ Synced ${addedCount} new/translated videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
+      console.log(`   ✅ Synced ${addedCount} new videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
     } catch (err) {
       console.error(`   ❌ Failed to sync channel ${channelConfig.name}:`, err.message);
     }
@@ -133,7 +96,7 @@ async function syncAllChannels() {
 
   await client.disconnect();
   console.log('============================================================');
-  console.log('🎉 CHANNEL SYNC & TRANSLATION COMPLETE');
+  console.log('🎉 CHANNEL SYNC COMPLETE');
   console.log('============================================================\n');
 }
 
@@ -141,7 +104,4 @@ if (require.main === module) {
   syncAllChannels().catch(console.error);
 }
 
-module.exports = {
-  syncAllChannels,
-  cleanCatalogTitle
-};
+module.exports = { syncAllChannels };

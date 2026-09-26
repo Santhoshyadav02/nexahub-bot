@@ -16,6 +16,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
+const { translateToKorean } = require('../korean_caption_generator');
 const MTProtoChannelReader = require('../mtproto_reader');
 
 const SOURCE_CHANNEL_USERNAME = 'zzkbraxk';
@@ -26,7 +27,7 @@ const STATE_DIR = path.resolve(__dirname, 'state');
 const PROCESSED_FILE = path.join(STATE_DIR, 'zzkbraxk_processed.json');
 const LOG_PREFIX = '[ZZKBRAXK_PIPELINE]';
 
-function extractTitleAndDescription(rawText) {
+async function extractTitleAndDescription(rawText) {
   if (!rawText || typeof rawText !== 'string') {
     return { title: 'VIP-18 신규 영상', description: '', fullCaption: '🔞 <b>VIP-18 신규 영상</b>\n\n✨ <b>VIP-🔞 정보공유</b>' };
   }
@@ -53,6 +54,15 @@ function extractTitleAndDescription(rawText) {
 
   let title = lines[0].replace(/^[\s\-_:=*•▶▷►🎬🔞]+/, '').replace(/[\s\-_:=*•]+$/, '').trim();
   let description = lines.slice(1).join('\n').trim();
+
+  try {
+    const trTitle = await translateToKorean(title);
+    if (trTitle) title = trTitle;
+    if (description) {
+      const trDesc = await translateToKorean(description);
+      if (trDesc) description = trDesc;
+    }
+  } catch (e) {}
 
   let caption = `🔞 <b>${escapeHTML(title)}</b>\n`;
   if (description) {
@@ -180,7 +190,7 @@ class ZzkbraxkPipeline {
     for (const msg of messages) {
       if (msg.groupedId) {
         const gid = msg.groupedId.toString();
-        const extracted = await extractTitleAndDescription(msg.message);
+        const extracted = extractTitleAndDescription(msg.message);
         if (extracted.title !== 'VIP-18 신규 영상' && !groupDataMap.has(gid)) {
           groupDataMap.set(gid, extracted);
         }
@@ -206,7 +216,7 @@ class ZzkbraxkPipeline {
       }
 
       // Step 2: Resolve title & full descriptive caption
-      let extracted = await extractTitleAndDescription(msg.message);
+      let extracted = extractTitleAndDescription(msg.message);
       if (extracted.title === 'VIP-18 신규 영상' && msg.groupedId) {
         const gid = msg.groupedId.toString();
         if (groupDataMap.has(gid)) {

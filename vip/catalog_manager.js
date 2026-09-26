@@ -3,8 +3,22 @@
  * 📚 VIP CHANNEL CATALOG & PAGINATED LIST MANAGER
  * ============================================================
  * Maintains the latest 40 video posts for each of the 6 VIP channels
- * and renders interactive 8-item x 5-page paginated menus with clickable hyperlinks
- * and direct Join Channel links.
+ * and renders interactive 8-item x 5-page paginated menus with clickable hyperlinks.
+ *
+ * Each title is formatted as an HTML hyperlink:
+ * <a href="https://t.me/c/<channel_id>/<message_id>">Title</a>
+ *
+ * Page layout:
+ *   📺 {CHANNEL_NAME}
+ *   이 채널의 최신 동영상 목록입니다.
+ *
+ *   1. Title 1 (Hyperlink)
+ *   2. Title 2 (Hyperlink)
+ *   ...
+ *   8. Title 8 (Hyperlink)
+ *
+ *   페이지 1/5
+ *   [ 다음 ➡️ ]
  */
 
 const fs = require('fs');
@@ -53,32 +67,6 @@ class CatalogManager {
   }
 
   /**
-   * Returns a deduplicated list of items for a given channel (newest first).
-   * Prevents repeated album posts with identical titles from cluttering the menu.
-   */
-  getUniqueItems(channelKey) {
-    this._sort(channelKey);
-    const rawList = this.catalogs[channelKey] || [];
-    const seenBaseTitles = new Set();
-    const uniqueList = [];
-
-    for (const item of rawList) {
-      const rawTitle = (item.title || '').trim();
-      if (!rawTitle) continue;
-
-      const firstLine = rawTitle.split(/[\n]/)[0].trim().toLowerCase();
-      const bracketMatch = firstLine.match(/^(\[[^\]]+\]|【[^】]+】)/);
-      const baseKey = bracketMatch ? bracketMatch[1] : firstLine;
-
-      if (!seenBaseTitles.has(baseKey)) {
-        seenBaseTitles.add(baseKey);
-        uniqueList.push(item);
-      }
-    }
-    return uniqueList;
-  }
-
-  /**
    * Adds a new video post to the channel's catalog (keeps latest 40).
    */
   addVideo(channelKey, { messageId, title, link, date = new Date().toISOString() }) {
@@ -86,6 +74,7 @@ class CatalogManager {
       this.catalogs[channelKey] = [];
     }
 
+    // Check if already exists
     const existsIndex = this.catalogs[channelKey].findIndex(v => v.messageId === messageId || v.link === link);
     if (existsIndex >= 0) {
       this.catalogs[channelKey][existsIndex].title = title;
@@ -94,6 +83,7 @@ class CatalogManager {
       return false;
     }
 
+    // Insert item
     this.catalogs[channelKey].push({
       messageId: Number(messageId) || messageId,
       title: title.trim(),
@@ -101,8 +91,10 @@ class CatalogManager {
       date
     });
 
+    // Sort descending so the latest update is always at the top (#1)
     this._sort(channelKey);
 
+    // Cap at 40 items
     if (this.catalogs[channelKey].length > MAX_ITEMS_PER_CHANNEL) {
       this.catalogs[channelKey] = this.catalogs[channelKey].slice(0, MAX_ITEMS_PER_CHANNEL);
     }
@@ -112,7 +104,36 @@ class CatalogManager {
   }
 
   /**
-   * Returns paginated list of distinct/unique videos for a given channel (newest on top).
+   * Returns list of unique items for the channel (deduplicated by cleaned title and messageId).
+   */
+  getUniqueItems(channelKey) {
+    this._sort(channelKey);
+    const list = this.catalogs[channelKey] || [];
+    const seenTitles = new Set();
+    const seenIds = new Set();
+    const unique = [];
+
+    for (const item of list) {
+      const msgId = String(item.messageId || '');
+      const cleanT = (item.title || '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\[REMOVE\]/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const normTitle = cleanT.toLowerCase();
+
+      if (msgId && seenIds.has(msgId)) continue;
+      if (normTitle && seenTitles.has(normTitle)) continue;
+
+      if (msgId) seenIds.add(msgId);
+      if (normTitle) seenTitles.add(normTitle);
+      unique.push(item);
+    }
+    return unique;
+  }
+
+  /**
+   * Returns paginated list of videos for a given channel.
    */
   getPage(channelKey, page = 1) {
     const list = this.getUniqueItems(channelKey);
@@ -135,7 +156,7 @@ class CatalogManager {
   }
 
   /**
-   * Formats the catalog text with clear spacing and HTML blue hyperlinks.
+   * Formats the 8-item catalog text with HTML blue hyperlinks matching reference UI.
    */
   formatCatalogText(channelConfig, pageData) {
     const channelName = channelConfig.name || channelConfig.buttonLabel || 'VIP 채널';
@@ -155,7 +176,7 @@ class CatalogManager {
           .replace(/\s+/g, ' ')
           .trim();
         const safeTitle = this._escapeHTML(cleanT);
-        // Spacious formatting with double newline gap between items
+        // Blue clickable hyperlink wrapping title
         text += `${itemNumber}. <a href="${item.link}">${safeTitle}</a>\n\n`;
       });
     }
@@ -165,51 +186,46 @@ class CatalogManager {
   }
 
   /**
-   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️], [📢 채널 입장하기], [🔙 뒤로가기] [🔄 새로고침]).
+   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️]).
    */
-  buildPaginationKeyboard(channelKeyOrConfig, pageData) {
-    let channelKey = channelKeyOrConfig;
-    let inviteLink = null;
-    let channelName = '채널';
+  buildPaginationKeyboard(channelOrKey, pageData) {
+    const channelKey = (typeof channelOrKey === 'object' && channelOrKey !== null)
+      ? (channelOrKey.key || channelOrKey.tag || '18')
+      : channelOrKey;
+    const inviteLink = (typeof channelOrKey === 'object' && channelOrKey !== null)
+      ? channelOrKey.inviteLink
+      : null;
 
-    if (channelKeyOrConfig && typeof channelKeyOrConfig === 'object') {
-      channelKey = channelKeyOrConfig.key;
-      inviteLink = channelKeyOrConfig.inviteLink;
-      channelName = channelKeyOrConfig.name || channelKeyOrConfig.buttonLabel || channelKeyOrConfig.tag || '채널';
-    }
-
-    const keyboard = [];
-    const pageNavRow = [];
+    const row = [];
 
     if (pageData.hasPrev) {
-      pageNavRow.push({
+      row.push({
         text: '⬅️ 이전',
         callback_data: `cat_pg:${channelKey}:${pageData.currentPage - 1}`
       });
     }
 
     if (pageData.hasNext) {
-      pageNavRow.push({
+      row.push({
         text: '다음 ➡️',
         callback_data: `cat_pg:${channelKey}:${pageData.currentPage + 1}`
       });
     }
 
-    if (pageNavRow.length > 0) {
-      keyboard.push(pageNavRow);
+    const keyboard = [];
+    if (row.length > 0) {
+      keyboard.push(row);
     }
 
-    // Direct Channel Join Link button
+    const actionRow = [];
     if (inviteLink) {
-      keyboard.push([
-        { text: `📢 ${channelName} 입장하기 ↗️`, url: inviteLink }
-      ]);
+      actionRow.push({ text: '📢 채널 입장', url: inviteLink });
     }
+    actionRow.push({ text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` });
+    keyboard.push(actionRow);
 
-    // Navigation and refresh row
     keyboard.push([
-      { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' },
-      { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
+      { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' }
     ]);
 
     return { inline_keyboard: keyboard };
