@@ -86,20 +86,16 @@ class VipForwarder {
 
   buildKeyboard(channelConfig, postLink) {
     const allLink = this.getVipGroupAllLink();
-    const keyboard = [
-      [
-        { text: '🌐 All ↗️', url: allLink },
-        { text: '🎬 영상 바로보기 ↗️', url: postLink }
+    const channelBtnText = `${channelConfig.buttonLabel || channelConfig.tag} ↗️`;
+
+    return {
+      inline_keyboard: [
+        [
+          { text: '🌐 All ↗️', url: allLink },
+          { text: channelBtnText, url: postLink }
+        ]
       ]
-    ];
-
-    if (channelConfig.inviteLink) {
-      keyboard.push([
-        { text: `📢 ${channelConfig.buttonLabel || channelConfig.tag} 채널 입장하기 ↗️`, url: channelConfig.inviteLink }
-      ]);
-    }
-
-    return { inline_keyboard: keyboard };
+    };
   }
 
   /**
@@ -201,7 +197,7 @@ class VipForwarder {
 
     const pageData = this.catalogManager.getPage(channelConfig.key, page);
     const text = this.catalogManager.formatCatalogText(channelConfig, pageData);
-    const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig, pageData);
+    const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
 
     try {
       await this.bot.answerCallbackQuery(query.id);
@@ -256,7 +252,7 @@ class VipForwarder {
 
         const pageData = this.catalogManager.getPage(channelConfig.key, 1);
         const catalogText = this.catalogManager.formatCatalogText(channelConfig, pageData);
-        const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig, pageData);
+        const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
 
         await this.bot.sendMessage(msg.chat.id, catalogText, {
           parse_mode: 'HTML',
@@ -348,7 +344,7 @@ class VipForwarder {
         if (channelConfig) {
           const pageData = this.catalogManager.getPage(channelConfig.key, 1);
           const catalogText = this.catalogManager.formatCatalogText(channelConfig, pageData);
-          const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig, pageData);
+          const replyMarkup = this.catalogManager.buildPaginationKeyboard(channelConfig.key, pageData);
 
           await this.bot.sendMessage(msg.chat.id, catalogText, {
             parse_mode: 'HTML',

@@ -4,6 +4,21 @@
  * ============================================================
  * Maintains the latest 40 video posts for each of the 6 VIP channels
  * and renders interactive 8-item x 5-page paginated menus with clickable hyperlinks.
+ *
+ * Each title is formatted as an HTML hyperlink:
+ * <a href="https://t.me/c/<channel_id>/<message_id>">Title</a>
+ *
+ * Page layout:
+ *   📺 {CHANNEL_NAME}
+ *   이 채널의 최신 동영상 목록입니다.
+ *
+ *   1. Title 1 (Hyperlink)
+ *   2. Title 2 (Hyperlink)
+ *   ...
+ *   8. Title 8 (Hyperlink)
+ *
+ *   페이지 1/5
+ *   [ 다음 ➡️ ]
  */
 
 const fs = require('fs');
@@ -143,11 +158,9 @@ class CatalogManager {
   }
 
   /**
-   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️] + [📢 채널 입장하기] + [🏠 메인 메뉴로 돌아가기]).
+   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️]).
    */
-  buildPaginationKeyboard(channelConfigOrKey, pageData) {
-    const channelKey = typeof channelConfigOrKey === 'object' ? channelConfigOrKey.key : channelConfigOrKey;
-    const inviteLink = typeof channelConfigOrKey === 'object' ? channelConfigOrKey.inviteLink : null;
+  buildPaginationKeyboard(channelKey, pageData) {
     const row = [];
 
     if (pageData.hasPrev) {
@@ -169,16 +182,9 @@ class CatalogManager {
       keyboard.push(row);
     }
 
-    // Direct Channel Join Link
-    if (inviteLink) {
-      keyboard.push([
-        { text: '📢 채널 입장하기 ↗️', url: inviteLink }
-      ]);
-    }
-
-    // Home / Back to 6 cards
+    // Refresh row
     keyboard.push([
-      { text: '🏠 메인 메뉴로 돌아가기', callback_data: 'vip_main_menu' }
+      { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
     ]);
 
     return { inline_keyboard: keyboard };
