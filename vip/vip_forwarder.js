@@ -5,6 +5,7 @@
  * Automatically monitors 6 VIP Telegram channels, maintains a 40-video catalog (8x5 pages)
  * with blue clickable hyperlinks, and publishes rich notification cards + interactive
  * paginated menus to VIP Group Forum Topics + General / ALL threads and DM private chats.
+ * Includes Home, About, and History Clear bottom navigation keyboard.
  */
 
 const fs = require('fs');
@@ -16,12 +17,28 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { CatalogManager } = require('./catalog_manager');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
+function getPersistentNavigationKeyboard() {
+  return {
+    keyboard: [
+      [
+        { text: '🏠 홈' },
+        { text: 'ℹ️ 정보' },
+        { text: '🗑️ 기록' }
+      ]
+    ],
+    resize_keyboard: true,
+    persistent: true,
+    is_persistent: true
+  };
+}
+
 class VipForwarder {
   constructor(configPath = CONFIG_PATH) {
     this.configPath = configPath;
     this.config = this._loadConfig();
     this.catalogManager = new CatalogManager(path.resolve(__dirname, 'channel_catalogs.json'));
     this.processedPosts = new Set();
+    this.userMessageHistory = new Map(); // chatId -> Set(messageIds)
     this.bot = null;
   }
 
@@ -43,6 +60,29 @@ class VipForwarder {
       console.log('💾 [VIP_FORWARDER] Configuration saved successfully.');
     } catch (err) {
       console.error('❌ [VIP_FORWARDER] Failed to save config:', err.message);
+    }
+  }
+
+  trackMessage(chatId, messageId) {
+    const key = String(chatId);
+    if (!this.userMessageHistory.has(key)) {
+      this.userMessageHistory.set(key, new Set());
+    }
+    this.userMessageHistory.get(key).add(messageId);
+  }
+
+  async clearUserMessages(chatId) {
+    const key = String(chatId);
+    const msgIds = this.userMessageHistory.get(key);
+    if (msgIds && msgIds.size > 0) {
+      for (const msgId of Array.from(msgIds)) {
+        try {
+          await this.bot.deleteMessage(chatId, msgId);
+        } catch (e) {
+          // Ignore if message is older than 48h or already deleted
+        }
+      }
+      this.userMessageHistory.set(key, new Set());
     }
   }
 
@@ -99,7 +139,7 @@ class VipForwarder {
   }
 
   /**
-   * Main Menu Layout (Dashboard showing clean text + 6 Group Cards)
+   * Main Menu Layout (Clean text + 6 Group Cards)
    */
   formatMainMenuText() {
     return (
@@ -127,6 +167,34 @@ class VipForwarder {
         ]
       ]
     };
+  }
+
+  /**
+   * About Screen Layout
+   */
+  formatAboutText() {
+    let text =
+      `👑 <b>V.I.P 정보공유 안내</b>\n\n` +
+      `프리미엄 정보와 최신 비디오 콘텐츠를 실시간으로 제공하는 VIP 전용 봇입니다.\n\n` +
+      `📌 <b>지원 카테고리 (총 6개):</b>\n`;
+
+    const channelKeys = ['18', 'CN', 'JP', 'KR', 'BJ', 'AV'];
+    for (const key of channelKeys) {
+      const ch = Object.values(this.config.channels).find(c => c.key.toLowerCase() === key.toLowerCase());
+      if (ch) {
+        const count = (this.catalogManager.catalogs[ch.key] || []).length;
+        text += `• ${ch.emoji} <b>${ch.name || ch.buttonLabel}</b> (최신 영상 ${count}개 수집됨)\n`;
+      }
+    }
+
+    text +=
+      `\n✨ <b>주요 기능:</b>\n` +
+      `• 실시간 6채널 신규 비디오 포워딩\n` +
+      `• 40개 최신 영상 8x5 페이징 카탈로그\n` +
+      `• Telegram 내 다이렉트 동영상 바로 재생\n\n` +
+      `👇 <i>아래 버튼을 눌러 홈으로 이동하세요.</i>`;
+
+    return text;
   }
 
   /**
@@ -205,7 +273,7 @@ class VipForwarder {
   }
 
   /**
-   * Handles interactive callback queries for pagination and main menu.
+   * Handles interactive callback queries for pagination, main menu, and clear history.
    */
   async handleCallbackQuery(query) {
     if (!query.data) return;
@@ -228,6 +296,40 @@ class VipForwarder {
           console.error('❌ [VIP_FORWARDER] Failed to return to main menu:', err.message);
         }
       }
+      return;
+    }
+
+    if (query.data === 'confirm_clear_history') {
+      try {
+        await this.bot.answerCallbackQuery(query.id, { text: '대화 기록이 정리되었습니다.' });
+        await this.clearUserMessages(query.message.chat.id);
+        try {
+          await this.bot.deleteMessage(query.message.chat.id, query.message.message_id);
+        } catch (e) {}
+
+        const menuText = this.formatMainMenuText();
+        const menuMarkup = this.buildMainMenuKeyboard();
+        const sent = await this.bot.sendMessage(query.message.chat.id, menuText, {
+          parse_mode: 'HTML',
+          reply_markup: menuMarkup,
+          disable_web_page_preview: true
+        });
+        if (sent && sent.message_id) {
+          this.trackMessage(query.message.chat.id, sent.message_id);
+        }
+      } catch (err) {
+        console.error('❌ [VIP_FORWARDER] Failed to clear history:', err.message);
+      }
+      return;
+    }
+
+    if (query.data === 'cancel_clear_history') {
+      try {
+        await this.bot.answerCallbackQuery(query.id, { text: '기록 삭제가 취소되었습니다.' });
+        try {
+          await this.bot.deleteMessage(query.message.chat.id, query.message.message_id);
+        } catch (e) {}
+      } catch (err) {}
       return;
     }
 
@@ -281,14 +383,104 @@ class VipForwarder {
 
     // 1. Private Chat / DM Interaction:
     if (chatType === 'private') {
+      this.trackMessage(msg.chat.id, msg.message_id);
+
+      // Command: /start (Initializes bottom persistent keyboard + sends 6 cards)
+      if (text === '/start') {
+        const initSent = await this.bot.sendMessage(msg.chat.id,
+          `👑 <b>V.I.P 정보공유에 오신 것을 환영합니다!</b>\n\n` +
+          `하단 네비게이션 메뉴 (🏠 홈 | ℹ️ 정보 | 🗑️ 기록)가 활성화되었습니다.`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: getPersistentNavigationKeyboard()
+          }
+        );
+        if (initSent && initSent.message_id) {
+          this.trackMessage(msg.chat.id, initSent.message_id);
+        }
+
+        const menuText = this.formatMainMenuText();
+        const menuMarkup = this.buildMainMenuKeyboard();
+        const sent = await this.bot.sendMessage(msg.chat.id, menuText, {
+          parse_mode: 'HTML',
+          reply_markup: menuMarkup,
+          disable_web_page_preview: true
+        });
+        if (sent && sent.message_id) {
+          this.trackMessage(msg.chat.id, sent.message_id);
+        }
+        return;
+      }
+
+      // Button: 🏠 홈 (Home)
+      if (text === '🏠 홈' || text === '홈' || text === '/menu' || text === '/home') {
+        const menuText = this.formatMainMenuText();
+        const menuMarkup = this.buildMainMenuKeyboard();
+
+        const sent = await this.bot.sendMessage(msg.chat.id, menuText, {
+          parse_mode: 'HTML',
+          reply_markup: menuMarkup,
+          disable_web_page_preview: true
+        });
+        if (sent && sent.message_id) {
+          this.trackMessage(msg.chat.id, sent.message_id);
+        }
+        return;
+      }
+
+      // Button: ℹ️ 정보 (About)
+      if (text === 'ℹ️ 정보' || text === '정보' || text === 'ℹ️ About' || text === 'About' || text === '/about') {
+        const aboutText = this.formatAboutText();
+        const sent = await this.bot.sendMessage(msg.chat.id, aboutText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🏠 메인 메뉴로 이동', callback_data: 'vip_main_menu' }]
+            ]
+          },
+          disable_web_page_preview: true
+        });
+        if (sent && sent.message_id) {
+          this.trackMessage(msg.chat.id, sent.message_id);
+        }
+        return;
+      }
+
+      // Button: 🗑️ 기록 (Clear History)
+      if (text === '🗑️ 기록' || text === '기록' || text === '🗑️ History' || text === 'History' || text === '/clear') {
+        const confirmText =
+          `⚠️ <b>대화 기록을 삭제하시겠습니까?</b>\n\n` +
+          `최근 봇 메시지 기록을 삭제하고 새 세션을 시작합니다.\n\n` +
+          `진행하시겠습니까?`;
+
+        const sent = await this.bot.sendMessage(msg.chat.id, confirmText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '✅ 예, 삭제합니다', callback_data: 'confirm_clear_history' },
+                { text: '❌ 취소', callback_data: 'cancel_clear_history' }
+              ]
+            ]
+          }
+        });
+        if (sent && sent.message_id) {
+          this.trackMessage(msg.chat.id, sent.message_id);
+        }
+        return;
+      }
+
+      // Default message in DM -> Show main menu
       const menuText = this.formatMainMenuText();
       const menuMarkup = this.buildMainMenuKeyboard();
-
-      await this.bot.sendMessage(msg.chat.id, menuText, {
+      const sent = await this.bot.sendMessage(msg.chat.id, menuText, {
         parse_mode: 'HTML',
         reply_markup: menuMarkup,
         disable_web_page_preview: true
       });
+      if (sent && sent.message_id) {
+        this.trackMessage(msg.chat.id, sent.message_id);
+      }
       return;
     }
 
@@ -465,6 +657,14 @@ class VipForwarder {
 
     this.bot = new TelegramBot(token, { polling: true });
 
+    // Ensure bot commands are registered
+    this.bot.setMyCommands([
+      { command: 'start', description: '메인 메뉴 열기' },
+      { command: 'menu', description: '6개 카테고리 카드 보기' },
+      { command: 'about', description: 'VIP 봇 정보 및 안내' },
+      { command: 'clear', description: '대화 기록 삭제' }
+    ]).catch(() => {});
+
     this.bot.on('polling_error', (error) => {
       // Ignore routine network timeouts/502 Bad Gateways from Telegram servers
       if (error && error.code === 'EFATAL') {
@@ -500,5 +700,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  VipForwarder
+  VipForwarder,
+  getPersistentNavigationKeyboard
 };
