@@ -112,7 +112,7 @@ class CatalogManager {
   }
 
   /**
-   * Returns paginated list of distinct/unique videos for a given channel.
+   * Returns paginated list of distinct/unique videos for a given channel (newest on top).
    */
   getPage(channelKey, page = 1) {
     const list = this.getUniqueItems(channelKey);
