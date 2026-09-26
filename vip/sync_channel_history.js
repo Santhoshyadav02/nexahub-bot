@@ -10,8 +10,8 @@
  *  - VIP-BJ (-1003977934133)
  *  - VIP-AV (-1004352512630)
  *
- * Populates vip/channel_catalogs.json with the latest videos so the 8x5
- * catalog is immediately full and available for all topics.
+ * Translates all non-Korean titles/descriptions to Korean using the end-to-end
+ * Google translation engine and populates vip/channel_catalogs.json.
  */
 
 const path = require('path');
@@ -21,6 +21,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
+const { translateToKorean } = require('../korean_caption_generator');
 const config = require('./config.json');
 
 const apiId = Number(process.env.TELEGRAM_API_ID);
@@ -32,8 +33,8 @@ function cleanCatalogTitle(raw, defaultTag = 'VIP') {
 
   let clean = String(raw)
     .replace(/<[^>]*>/g, '')
-    .replace(/https?:\/\/\S+/gi, '')
-    .replace(/t\.me\/\S+/gi, '')
+    .replace(/https?:\/\/[^\s]+/gi, '')
+    .replace(/t\.me\/[^\s]+/gi, '')
     .replace(/@[a-zA-Z0-9_]+/g, '')
     .replace(/\[REMOVE\]/gi, '')
     .replace(/📌\s*Channel:[^\n]*/gi, '')
@@ -62,7 +63,7 @@ function cleanCatalogTitle(raw, defaultTag = 'VIP') {
 
 async function syncAllChannels() {
   console.log('============================================================');
-  console.log('🔄 Syncing Existing Videos from 6 VIP Channels');
+  console.log('🔄 Syncing & Translating Existing Videos from 6 VIP Channels');
   console.log('============================================================\n');
 
   if (!apiId || !apiHash || !sessionStr) {
@@ -101,8 +102,14 @@ async function syncAllChannels() {
 
         if (!text && !hasMedia) continue;
 
-        const rawTitle = cleanCatalogTitle(text || (hasMedia ? `${channelConfig.tag} 신규 영상` : ''), channelConfig.tag);
+        let rawTitle = cleanCatalogTitle(text || (hasMedia ? `${channelConfig.tag} 신규 영상` : ''), channelConfig.tag);
         if (!rawTitle) continue;
+
+        // End-to-end translation to natural Korean
+        try {
+          const translated = await translateToKorean(rawTitle);
+          if (translated) rawTitle = translated;
+        } catch (e) {}
 
         const cleanId = String(chId).replace(/^-100/, '').replace(/^-/, '');
         const postLink = `https://t.me/c/${cleanId}/${msg.id}`;
@@ -118,7 +125,7 @@ async function syncAllChannels() {
       }
 
       const currentTotal = (catalogManager.catalogs[channelConfig.key] || []).length;
-      console.log(`   ✅ Synced ${addedCount} new/updated videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
+      console.log(`   ✅ Synced ${addedCount} new/translated videos into catalog (Total in Catalog: ${currentTotal}/40)\n`);
     } catch (err) {
       console.error(`   ❌ Failed to sync channel ${channelConfig.name}:`, err.message);
     }
@@ -126,7 +133,7 @@ async function syncAllChannels() {
 
   await client.disconnect();
   console.log('============================================================');
-  console.log('🎉 CHANNEL SYNC COMPLETE');
+  console.log('🎉 CHANNEL SYNC & TRANSLATION COMPLETE');
   console.log('============================================================\n');
 }
 

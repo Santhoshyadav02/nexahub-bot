@@ -15,7 +15,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
-const { cleanCatalogTitle, syncAllChannels } = require('./sync_channel_history');
+const { cleanCatalogTitle } = require('./sync_channel_history');
+const { translateToKorean } = require('../korean_caption_generator');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
 function getPersistentNavigationKeyboard() {
@@ -103,9 +104,14 @@ class VipForwarder {
     return `https://t.me/c/${cleanId}/${threadId}`;
   }
 
-  extractTitle(msg, defaultTag = 'VIP') {
+  async extractTitle(msg, defaultTag = 'VIP') {
     const raw = (msg.caption || msg.text || (msg.video && msg.video.file_name) || (msg.document && msg.document.file_name) || `${defaultTag} 신규 영상`).trim();
-    return cleanCatalogTitle(raw, defaultTag);
+    const clean = cleanCatalogTitle(raw, defaultTag);
+    try {
+      const translated = await translateToKorean(clean);
+      if (translated) return translated;
+    } catch (e) {}
+    return clean;
   }
 
   formatAllCard(channelConfig, title) {
@@ -219,7 +225,7 @@ class VipForwarder {
     }
     this.processedPosts.add(postKey);
 
-    const title = this.extractTitle(msg, channelConfig.tag);
+    const title = await this.extractTitle(msg, channelConfig.tag);
     const postLink = this.getChannelPostLink(msg.chat.id, msg.message_id, msg.chat.username);
     const vipChatId = this.config.vipGroup.chatId;
 
