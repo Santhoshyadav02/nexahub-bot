@@ -148,8 +148,11 @@ class CatalogManager {
   /**
    * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️], [🔙 뒤로가기] [🔄 새로고침]).
    */
-  buildPaginationKeyboard(channelConfigOrKey, pageData) {
-    const channelKey = (channelConfigOrKey && typeof channelConfigOrKey === 'object') ? channelConfigOrKey.key : channelConfigOrKey;
+  buildPaginationKeyboard(channelKeyOrConfig, pageData) {
+    const channelKey = (channelKeyOrConfig && typeof channelKeyOrConfig === 'object')
+      ? channelKeyOrConfig.key
+      : channelKeyOrConfig;
+
     const keyboard = [];
     const pageNavRow = [];
 
@@ -171,7 +174,7 @@ class CatalogManager {
       keyboard.push(pageNavRow);
     }
 
-    // Action buttons: [ 🔙 뒤로가기 ] [ 🔄 새로고침 ]
+    // Navigation action buttons
     keyboard.push([
       { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' },
       { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
