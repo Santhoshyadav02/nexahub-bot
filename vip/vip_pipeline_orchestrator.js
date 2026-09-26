@@ -392,7 +392,9 @@ class VipPipelineOrchestrator {
       const reversed = [...items].reverse();
 
       for (const item of reversed) {
-        if (!item.mp4_download_url) continue;
+        const url = item.mp4_download_url || item.stream_url || item.video_url || (Array.isArray(item.video_urls) ? item.video_urls[0] : null);
+        if (!url) continue;
+        item.mp4_download_url = url;
         if (!this.isDuplicate(item, channelKey)) {
           return item;
         }
@@ -422,7 +424,7 @@ class VipPipelineOrchestrator {
     const scriptPath = path.join(this.scrapersDir, def.downloaderScript);
     const args = [...runner.prefixArgs, scriptPath, '--json', tempJsonPath, '--limit', '1'];
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const proc = spawn(runner.cmd, args, {
         cwd: this.scrapersDir,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -434,7 +436,8 @@ class VipPipelineOrchestrator {
 
       proc.on('error', err => {
         if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
-        reject(new Error(`Failed to spawn ${runner.cmd}: ${err.message}`));
+        console.warn(`${LOG_PREFIX} Failed to spawn ${runner.cmd}: ${err.message}`);
+        resolve({ success: false, reason: `spawn_error: ${err.message}` });
       });
 
       proc.stdout.on('data', d => {
@@ -451,46 +454,43 @@ class VipPipelineOrchestrator {
       const timer = setTimeout(() => {
         proc.kill();
         if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
-        reject(new Error(`Download timeout for ${item.title}`));
+        console.warn(`${LOG_PREFIX} Download timeout for "${item.title}"`);
+        resolve({ success: false, reason: 'download_timeout' });
       }, 20 * 60 * 1000);
 
       proc.on('close', code => {
         clearTimeout(timer);
         if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
 
-        if (code === 0) {
-          if (stdout.includes('[!] [Skipped]') || stdout.includes('exceeds Telegram')) {
-            console.log(`⏩ ${LOG_PREFIX} [${def.tag}] Video "${item.title}" skipped: exceeds Telegram 1.95GB limit.`);
-            resolve({ skipped: true, reason: 'exceeds_telegram_1.95gb_limit' });
-            return;
-          }
+        if (stdout.includes('[!] [Skipped]') || stdout.includes('exceeds Telegram')) {
+          console.log(`⏩ ${LOG_PREFIX} [${def.tag}] Video "${item.title}" skipped: exceeds Telegram 1.95GB limit.`);
+          resolve({ skipped: true, reason: 'exceeds_telegram_1.95gb_limit' });
+          return;
+        }
 
-          const afterFiles = fs.readdirSync(targetDir);
-          const newFiles = afterFiles.filter(f => !beforeFiles.has(f) && f.endsWith('.mp4'));
+        const afterFiles = fs.readdirSync(targetDir);
+        const newFiles = afterFiles.filter(f => !beforeFiles.has(f) && f.endsWith('.mp4'));
 
-          let downloadedFile = null;
-          if (newFiles.length > 0) {
-            downloadedFile = path.join(targetDir, newFiles[0]);
-          } else {
-            // Find most recently modified .mp4 in targetDir
-            const mp4s = afterFiles.filter(f => f.endsWith('.mp4')).map(f => {
-              const full = path.join(targetDir, f);
-              return { path: full, mtime: fs.statSync(full).mtimeMs, size: fs.statSync(full).size };
-            }).sort((a, b) => b.mtime - a.mtime);
-
-            if (mp4s.length > 0 && mp4s[0].size > 10 * 1024) {
-              downloadedFile = mp4s[0].path;
-            }
-          }
-
-          if (downloadedFile && fs.existsSync(downloadedFile) && fs.statSync(downloadedFile).size > 10 * 1024) {
-            console.log(`✅ ${LOG_PREFIX} [${def.tag}] Download complete: ${path.basename(downloadedFile)} (${(fs.statSync(downloadedFile).size / (1024*1024)).toFixed(1)} MB)`);
-            resolve({ success: true, filePath: downloadedFile });
-          } else {
-            reject(new Error(`Downloaded file not found or empty: ${stdout}`));
-          }
+        let downloadedFile = null;
+        if (newFiles.length > 0) {
+          downloadedFile = path.join(targetDir, newFiles[0]);
         } else {
-          reject(new Error(`Downloader failed with code ${code}: ${stderr}`));
+          // Find most recently modified .mp4 in targetDir
+          const mp4s = afterFiles.filter(f => f.endsWith('.mp4')).map(f => {
+            const full = path.join(targetDir, f);
+            return { path: full, mtime: fs.statSync(full).mtimeMs, size: fs.statSync(full).size };
+          }).sort((a, b) => b.mtime - a.mtime);
+
+          if (mp4s.length > 0 && mp4s[0].size > 10 * 1024) {
+            downloadedFile = mp4s[0].path;
+          }
+        }
+
+        if (downloadedFile && fs.existsSync(downloadedFile) && fs.statSync(downloadedFile).size > 10 * 1024) {
+          console.log(`✅ ${LOG_PREFIX} [${def.tag}] Download complete: ${path.basename(downloadedFile)} (${(fs.statSync(downloadedFile).size / (1024*1024)).toFixed(1)} MB)`);
+          resolve({ success: true, filePath: downloadedFile });
+        } else {
+          resolve({ success: false, reason: 'file_not_downloaded_or_empty', stdout, stderr });
         }
       });
     });
@@ -541,7 +541,6 @@ class VipPipelineOrchestrator {
       return { success: true, result };
     } catch (err) {
       console.error(`❌ ${LOG_PREFIX} [${def.tag}] Upload failed: ${err.message}`);
-      // Preserve file for inspection or delete if corrupt
       throw err;
     }
   }
@@ -558,7 +557,7 @@ class VipPipelineOrchestrator {
   }
 
   /**
-   * Process 1 video for a specific channel
+   * Process 1 video for a specific channel with automatic candidate progression
    */
   async processChannel(channelKey) {
     const def = CHANNEL_DEFS[channelKey];
@@ -568,7 +567,8 @@ class VipPipelineOrchestrator {
       return { channelKey, status: 'QUOTA_REACHED', count: todayCount };
     }
 
-    for (let candidateAttempt = 0; candidateAttempt < 4; candidateAttempt++) {
+    // Try up to 5 eligible candidates for this channel per cycle
+    for (let candidateAttempt = 0; candidateAttempt < 5; candidateAttempt++) {
       let item = this.getNextEligibleVideo(channelKey);
       if (!item && candidateAttempt === 0) {
         console.log(`🔍 ${LOG_PREFIX} [${def.tag}] No pending fresh links in queue. Scraping new links...`);
@@ -582,35 +582,27 @@ class VipPipelineOrchestrator {
 
       let targetItem = item;
       try {
-        let downloadResult;
-        try {
-          downloadResult = await this.downloadVideo(targetItem, channelKey);
-        } catch (err) {
-          console.warn(`⚠️ ${LOG_PREFIX} [${def.tag}] Download failed (${err.message}). Refreshing scraper for fresh tokens and retrying...`);
-          await this.runScraper(channelKey, { pages: 1, refresh: true });
-          const freshItem = this.getNextEligibleVideo(channelKey);
-          if (freshItem) {
-            targetItem = freshItem;
-            downloadResult = await this.downloadVideo(targetItem, channelKey);
-          } else {
-            throw err;
-          }
-        }
+        const downloadResult = await this.downloadVideo(targetItem, channelKey);
 
         if (downloadResult && downloadResult.skipped) {
           this.recordSkipped(targetItem, channelKey, downloadResult.reason);
-          console.log(`⏩ ${LOG_PREFIX} [${def.tag}] Skipped candidate, fetching next eligible video...`);
+          console.log(`⏩ ${LOG_PREFIX} [${def.tag}] Candidate skipped (${downloadResult.reason}). Fetching next eligible video...`);
           continue;
         }
 
-        if (downloadResult && downloadResult.success && downloadResult.filePath) {
-          await this.uploadAndPublish(targetItem, channelKey, downloadResult.filePath);
-          return { channelKey, status: 'PUBLISHED', title: targetItem.title };
+        if (!downloadResult || !downloadResult.success || !downloadResult.filePath) {
+          const reason = (downloadResult && downloadResult.reason) || 'download_failed';
+          console.warn(`⚠️ ${LOG_PREFIX} [${def.tag}] Candidate "${targetItem.title}" download failed (${reason}). Marking skipped and trying next video...`);
+          this.recordSkipped(targetItem, channelKey, reason);
+          continue;
         }
-        return { channelKey, status: 'DOWNLOAD_FAILED' };
+
+        await this.uploadAndPublish(targetItem, channelKey, downloadResult.filePath);
+        return { channelKey, status: 'PUBLISHED', title: targetItem.title };
       } catch (err) {
-        console.error(`❌ ${LOG_PREFIX} [${def.tag}] Pipeline error: ${err.message}`);
-        return { channelKey, status: 'ERROR', error: err.message };
+        console.error(`❌ ${LOG_PREFIX} [${def.tag}] Pipeline error for "${targetItem.title}": ${err.message}`);
+        this.recordSkipped(targetItem, channelKey, `error: ${err.message}`);
+        continue;
       }
     }
     return { channelKey, status: 'QUEUE_EMPTY', count: todayCount };
