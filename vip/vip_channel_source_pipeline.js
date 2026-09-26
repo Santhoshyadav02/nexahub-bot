@@ -1,232 +1,262 @@
 /**
  * ============================================================
- * 🔄 VIP-🔞 TELEGRAM CHANNEL INGESTION PIPELINE (@zzkbraxk)
+ * 🔞 VIP CHANNEL SOURCE PIPELINE (@zzkbraxk -> VIP-🔞)
  * ============================================================
- * Dual-pipeline for VIP-🔞:
- * Ingests latest video posts from source channel https://t.me/zzkbraxk,
- * filters spam/ads, generates clean title & Korean captions, and forwards/posts
- * to the VIP-18 channel (-1003845130520).
- *
- * Persists processed message IDs in vip/state/zzkbraxk_ledger.json.
+ * Secondary pipeline for the "VIP-🔞" category:
+ *   1. Scans the public source channel: https://t.me/zzkbraxk (@zzkbraxk).
+ *   2. Extracts ONLY valid video messages (strictly skips text ads, photos, stickers).
+ *   3. Cleans source text into a clean title and formatted caption (removing source ads/links).
+ *   4. Posts natively to VIP-🔞 (-1003845130520) with NO "Forwarded from" header.
+ *   5. Automatically registers new posts with CatalogManager for VIP-Bot instant viewing.
+ *   6. Tracks processed message IDs in a persistent state file to prevent duplicates.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { TelegramClient } = require('telegram');
-const { StringSession } = require('telegram/sessions');
 const { Api } = require('telegram');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
-const LEDGER_PATH = path.resolve(__dirname, 'state', 'zzkbraxk_ledger.json');
-const SOURCE_CHANNEL = 'zzkbraxk';
-const DEST_CHANNEL_ID = '-1003845130520'; // VIP-18
+const { CatalogManager } = require('./catalog_manager');
+const MTProtoChannelReader = require('../mtproto_reader');
+
+const SOURCE_CHANNEL_USERNAME = 'zzkbraxk';
+const DEST_CHANNEL_KEY = '18';
+const DEST_CHAT_ID = '-1003845130520';
+
+const STATE_DIR = path.resolve(__dirname, 'state');
+const PROCESSED_FILE = path.join(STATE_DIR, 'zzkbraxk_processed.json');
+const LOG_PREFIX = '[ZZKBRAXK_PIPELINE]';
+
+function cleanVideoTitle(rawText, defaultTitle = 'VIP-🔞 신규 영상') {
+  if (!rawText || typeof rawText !== 'string') {
+    return defaultTitle;
+  }
+
+  // Remove URLs, tg links, mentions, and promotion hashtags
+  let text = rawText
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/t\.me\/\S+/gi, '')
+    .replace(/@[a-zA-Z0-9_]+/g, '')
+    .replace(/#[^\s#]+/g, '')
+    .trim();
+
+  // Split lines and pick the first non-empty descriptive line
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) {
+    return defaultTitle;
+  }
+
+  let title = lines[0];
+  // Strip common noisy prefixes/suffixes
+  title = title.replace(/^[\s\-_:=*•▶▷►]+/, '').replace(/[\s\-_:=*•]+$/, '').trim();
+
+  if (title.length > 90) {
+    title = title.substring(0, 87) + '...';
+  }
+
+  return title.length >= 2 ? title : defaultTitle;
+}
+
+function formatCleanCaption(title) {
+  return `🔞 <b>${escapeHTML(title)}</b>\n\n✨ <b>VIP-🔞 정보공유</b>`;
+}
+
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 class ZzkbraxkPipeline {
   constructor(options = {}) {
-    this.sourceChannel = options.sourceChannel || SOURCE_CHANNEL;
-    this.destChannelId = options.destChannelId || DEST_CHANNEL_ID;
-    this.ledgerPath = options.ledgerPath || LEDGER_PATH;
-    this.apiId = Number(process.env.TELEGRAM_API_ID);
-    this.apiHash = process.env.TELEGRAM_API_HASH;
-    this.sessionString = process.env.TELEGRAM_SESSION_STRING || '';
-    this.ledger = this._loadLedger();
-    this.client = null;
+    this.sourceUsername = options.sourceUsername || SOURCE_CHANNEL_USERNAME;
+    this.destChatId = options.destChatId || DEST_CHAT_ID;
+    this.destKey = options.destKey || DEST_CHANNEL_KEY;
+    this.reader = options.reader || new MTProtoChannelReader();
+    this.catalogManager = options.catalogManager || new CatalogManager(path.resolve(__dirname, 'channel_catalogs.json'));
+    this.processedFile = options.processedFile || PROCESSED_FILE;
+    this.processedIds = this._loadProcessedIds();
   }
 
-  _loadLedger() {
+  _loadProcessedIds() {
     try {
-      const dir = path.dirname(this.ledgerPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      if (!fs.existsSync(STATE_DIR)) {
+        fs.mkdirSync(STATE_DIR, { recursive: true });
       }
-      if (fs.existsSync(this.ledgerPath)) {
-        return JSON.parse(fs.readFileSync(this.ledgerPath, 'utf8'));
+      if (fs.existsSync(this.processedFile)) {
+        const data = JSON.parse(fs.readFileSync(this.processedFile, 'utf8'));
+        return new Set(Array.isArray(data) ? data : (data.processedIds || []));
       }
     } catch (e) {
-      console.warn('⚠️ [ZZKBRAXK_PIPELINE] Could not load ledger:', e.message);
+      console.warn(`${LOG_PREFIX} Could not load processed state, starting fresh: ${e.message}`);
     }
-    return { processedIds: [], lastCheck: null, totalForwarded: 0 };
+    return new Set();
   }
 
-  _saveLedger() {
+  _saveProcessedIds() {
     try {
-      const dir = path.dirname(this.ledgerPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      if (!fs.existsSync(STATE_DIR)) {
+        fs.mkdirSync(STATE_DIR, { recursive: true });
       }
-      fs.writeFileSync(this.ledgerPath, JSON.stringify(this.ledger, null, 2), 'utf8');
+      const data = {
+        updatedAt: new Date().toISOString(),
+        totalProcessed: this.processedIds.size,
+        processedIds: Array.from(this.processedIds)
+      };
+      fs.writeFileSync(this.processedFile, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
-      console.error('❌ [ZZKBRAXK_PIPELINE] Failed to save ledger:', e.message);
+      console.error(`${LOG_PREFIX} Failed to save processed state: ${e.message}`);
     }
   }
 
-  async getClient() {
-    if (this.client && this.client.connected) {
-      return this.client;
+  isVideoMessage(msg) {
+    if (!msg || !msg.media) return false;
+    // Check GramJS MessageMediaDocument
+    if (msg.media.className === 'MessageMediaDocument' && msg.media.document) {
+      const doc = msg.media.document;
+      const mime = (doc.mimeType || '').toLowerCase();
+      if (mime.startsWith('video/')) return true;
+
+      // Check document attributes for DocumentAttributeVideo
+      if (doc.attributes && Array.isArray(doc.attributes)) {
+        const isVideoAttr = doc.attributes.some(attr => attr.className === 'DocumentAttributeVideo');
+        if (isVideoAttr) return true;
+      }
     }
-    this.client = new TelegramClient(
-      new StringSession(this.sessionString),
-      this.apiId,
-      this.apiHash,
-      { connectionRetries: 5 }
-    );
-    await this.client.connect();
-    return this.client;
+    return false;
   }
 
-  isSpamOrAd(text) {
-    if (!text) return false;
-    const lower = text.toLowerCase();
-    // Filter membership promo texts, price lists, payment instructions
-    const adKeywords = [
-      '月付', '年付', '永久', '会员优惠', '低价', '微信', '加微信', '价格',
-      '88元', '188元', '228元', '中秋', '折扣', '群主'
-    ];
-    return adKeywords.some(kw => lower.includes(kw));
-  }
-
-  cleanTitle(text, msgId) {
-    if (!text || text.trim() === '') {
-      return `🔞 18+ 코스프레 / 섹시 비디오 #${msgId}`;
-    }
-
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    let title = lines[0] || `🔞 18+ 코스프레 / 섹시 비디오 #${msgId}`;
-
-    // Clean tags or promo handles
-    title = title
-      .replace(/https?:\/\/\S+/gi, '')
-      .replace(/@[a-zA-Z0-9_]+/gi, '')
-      .replace(/【|】|\[|\]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (title.length > 80) {
-      title = title.substring(0, 77) + '...';
-    }
-
-    return title || `🔞 18+ 프리미엄 영상 #${msgId}`;
-  }
-
-  /**
-   * Scans @zzkbraxk for new media posts and forwards them to VIP-18.
-   */
   async runSync(limit = 10) {
-    console.log(`\n=======================================================`);
-    console.log(`🔄 [ZZKBRAXK_PIPELINE] Checking @${this.sourceChannel} for New Posts`);
-    console.log(`=======================================================`);
+    console.log(`\n🔞 ${LOG_PREFIX} Starting sync from @${this.sourceUsername} -> VIP-🔞 (${this.destChatId})...`);
 
-    if (!this.apiId || !this.apiHash || !this.sessionString) {
-      console.error('❌ [ZZKBRAXK_PIPELINE] Missing Telegram MTProto API credentials!');
-      return { success: false, error: 'MISSING_CREDENTIALS' };
+    if (!this.reader.hasCredentials()) {
+      console.warn(`⚠️ ${LOG_PREFIX} MTProto credentials not configured. Skipping source sync.`);
+      return { synced: 0, skipped: 0 };
     }
-
-    const client = await this.getClient();
-    let sourceEntity, destEntity;
 
     try {
-      sourceEntity = await client.getEntity(this.sourceChannel);
-      destEntity = await client.getEntity(this.destChannelId);
+      await this.reader.connect();
     } catch (err) {
-      console.error('❌ [ZZKBRAXK_PIPELINE] Entity resolution failed:', err.message);
-      return { success: false, error: err.message };
+      console.error(`❌ ${LOG_PREFIX} Failed to connect MTProto reader: ${err.message}`);
+      return { error: err.message };
     }
 
-    const messages = await client.getMessages(sourceEntity, { limit });
-    console.log(`   Fetched ${messages.length} recent messages from @${this.sourceChannel}.`);
+    const client = this.reader.client;
+    if (!client) {
+      console.error(`❌ ${LOG_PREFIX} GramJS client unavailable.`);
+      return { error: 'GramJS client unavailable' };
+    }
 
-    let newPostsCount = 0;
-    // Process messages in chronological order (oldest to newest)
-    const reversedMsgs = messages.slice().reverse();
+    let sourceEntity;
+    let destEntity;
+    try {
+      sourceEntity = await this.reader.getCachedEntity(this.sourceUsername);
+      destEntity = await this.reader.getCachedEntity(this.destChatId);
+    } catch (e) {
+      console.error(`❌ ${LOG_PREFIX} Entity resolution failed: ${e.message}`);
+      return { error: e.message };
+    }
 
-    for (const msg of reversedMsgs) {
-      if (this.ledger.processedIds.includes(msg.id)) {
+    let messages = [];
+    try {
+      messages = await client.getMessages(sourceEntity, { limit: Math.max(limit, 10) });
+    } catch (e) {
+      console.error(`❌ ${LOG_PREFIX} Failed to fetch messages from @${this.sourceUsername}: ${e.message}`);
+      return { error: e.message };
+    }
+
+    if (!messages || messages.length === 0) {
+      console.log(`ℹ️ ${LOG_PREFIX} No messages found in @${this.sourceUsername}.`);
+      return { synced: 0, skipped: 0 };
+    }
+
+    // Sort ascending (oldest to newest) to post in chronological order
+    const sortedMessages = [...messages].reverse();
+    let syncedCount = 0;
+    let skippedCount = 0;
+
+    for (const msg of sortedMessages) {
+      const msgId = msg.id;
+
+      // Deduplication check
+      if (this.processedIds.has(msgId)) {
         continue;
       }
 
-      // Check if message has media (Video, Document, or Photo)
-      const hasMedia = Boolean(msg.media);
-      const text = (msg.message || '').trim();
-
-      // Skip ad texts without media or pure promo ads
-      if (this.isSpamOrAd(text)) {
-        console.log(`   ⏭️ Skipping ad post ID ${msg.id}`);
-        this.ledger.processedIds.push(msg.id);
-        this._saveLedger();
+      // Video media filter: Strictly ignore photos, text-only ads, stickers
+      if (!this.isVideoMessage(msg)) {
+        this.processedIds.add(msgId);
+        skippedCount++;
         continue;
       }
 
-      if (!hasMedia && !text) {
-        this.ledger.processedIds.push(msg.id);
-        this._saveLedger();
-        continue;
-      }
+      const rawText = msg.message || '';
+      const cleanTitle = cleanVideoTitle(rawText);
+      const caption = formatCleanCaption(cleanTitle);
 
-      console.log(`\n   📥 Found New Post [ID: ${msg.id}]`);
-      const title = this.cleanTitle(text, msg.id);
-      const sourcePostLink = `https://t.me/${this.sourceChannel}/${msg.id}`;
-      console.log(`      Title: ${title}`);
-      console.log(`      Source Link: ${sourcePostLink}`);
+      console.log(`\n📹 ${LOG_PREFIX} Posting native video from message #${msgId}`);
+      console.log(`   📌 Title: "${cleanTitle}"`);
 
       try {
-        // Forward message to destination channel VIP-18
-        if (hasMedia) {
-          // Forward the actual media post
-          await client.forwardMessages(destEntity, {
-            messages: [msg.id],
-            fromPeer: sourceEntity
-          });
-          console.log(`      ✅ Successfully forwarded video post [ID: ${msg.id}] to VIP-18!`);
-        } else {
-          // If text-only with video link, send formatted card
-          const caption =
-            `🔞 <b>[18+ / 신규 업데이트]</b>\n\n` +
-            `📌 <b>${title}</b>\n\n` +
-            `🔗 <a href="${sourcePostLink}">동영상 바로보기</a>\n\n` +
-            `👉 <i>위 링크를 탭하여 시청하세요.</i>`;
+        // Send file natively using media object (NO "Forwarded from" header)
+        const sent = await client.sendFile(destEntity, {
+          file: msg.media,
+          caption: caption,
+          parseMode: 'html',
+          supportsStreaming: true
+        });
 
-          await client.sendMessage(destEntity, {
-            message: caption,
-            parseMode: 'html',
-            linkPreview: true
+        const newMsgId = sent && sent.id;
+        console.log(`   ✅ Successfully posted to VIP-🔞! (New Message ID: ${newMsgId})`);
+
+        // Record in catalog for VIP-Bot instant hyperlink view
+        if (newMsgId) {
+          const cleanDestId = String(this.destChatId).replace(/^-100/, '').replace(/^-/, '');
+          const postLink = `https://t.me/c/${cleanDestId}/${newMsgId}`;
+          this.catalogManager.addVideo(this.destKey, {
+            messageId: newMsgId,
+            title: cleanTitle,
+            link: postLink
           });
-          console.log(`      ✅ Successfully posted update card [ID: ${msg.id}] to VIP-18!`);
         }
 
-        this.ledger.processedIds.push(msg.id);
-        if (this.ledger.processedIds.length > 500) {
-          this.ledger.processedIds = this.ledger.processedIds.slice(-500);
-        }
-        this.ledger.totalForwarded = (this.ledger.totalForwarded || 0) + 1;
-        this.ledger.lastCheck = new Date().toISOString();
-        this._saveLedger();
-        newPostsCount++;
+        this.processedIds.add(msgId);
+        this._saveProcessedIds();
+        syncedCount++;
 
-        // Rate pacing: 2.5s between forwards
-        await new Promise(r => setTimeout(r, 2500));
+        // Small delay between posts to prevent rate-limiting
+        await new Promise(r => setTimeout(r, 2000));
       } catch (postErr) {
-        console.error(`      ❌ Failed to forward post ID ${msg.id}:`, postErr.message);
+        console.error(`   ❌ Failed to send video #${msgId}: ${postErr.message}`);
+        this.reader.noteFloodWait(postErr);
+        break;
       }
     }
 
-    console.log(`\n🎉 [ZZKBRAXK_PIPELINE] Cycle Complete: ${newPostsCount} new post(s) forwarded.`);
-    console.log(`=======================================================\n`);
-    return { success: true, newPostsCount };
+    console.log(`\n🎉 ${LOG_PREFIX} Sync completed: ${syncedCount} videos posted, ${skippedCount} non-videos skipped.`);
+    this._saveProcessedIds();
+    return { synced: syncedCount, skipped: skippedCount };
   }
-}
-
-if (require.main === module) {
-  const pipeline = new ZzkbraxkPipeline();
-  pipeline.runSync(5).then(res => {
-    console.log('Result:', res);
-    process.exit(0);
-  }).catch(err => {
-    console.error('Fatal error:', err);
-    process.exit(1);
-  });
 }
 
 module.exports = {
-  ZzkbraxkPipeline
+  ZzkbraxkPipeline,
+  cleanVideoTitle,
+  formatCleanCaption
 };
+
+if (require.main === module) {
+  const pipeline = new ZzkbraxkPipeline();
+  pipeline.runSync(10)
+    .then(res => {
+      console.log('Result:', res);
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+}

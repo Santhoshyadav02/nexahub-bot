@@ -5,7 +5,7 @@
  * Runs continuously in the background on VPS:
  *   - Scrapes fresh dynamic stream tokens every 3 hours.
  *   - Performs round-robin downloading & uploading (2 parallel workers) to 6 channels.
- *   - Channel Source Ingestion: Ingests new posts from @zzkbraxk directly into VIP-18.
+ *   - Telegram Channel Source Feed: Ingests new native videos from @zzkbraxk -> VIP-🔞.
  *   - Enforces 5 uploads/day per channel quota.
  *   - Sweeps old/stale downloads every 1 hour.
  */
@@ -20,11 +20,11 @@ const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;              // 1 Hour
 
 async function startDaemon() {
   console.log(`\n=======================================================`);
-  console.log(`👑 VIP PIPELINE DAEMON INITIALIZING`);
+  console.log(`👑 VIP PIPELINE DAEMON INITIALIZING (DUAL PIPELINE)`);
   console.log(`=======================================================`);
   console.log(`• Scrape Link Refresh:  Every 3 Hours`);
   console.log(`• Download & Upload:    Every 15 Minutes (2 Parallel Workers)`);
-  console.log(`• Telegram Source Feed: Every 15 Minutes (@zzkbraxk -> VIP-18)`);
+  console.log(`• Telegram Source Feed: Every 15 Minutes (@zzkbraxk -> VIP-🔞)`);
   console.log(`• Quota Limit:          5 Videos / Channel / Day`);
   console.log(`• Auto Disk Cleanup:    Every 1 Hour (Stale files > 1h)`);
   console.log(`=======================================================\n`);
@@ -118,9 +118,11 @@ async function startDaemon() {
 
 if (require.main === module) {
   startDaemon().catch(err => {
-    console.error(`[VIP_DAEMON] Fatal daemon crash:`, err);
+    console.error(`💥 [VIP_DAEMON] Fatal startup error:`, err);
     process.exit(1);
   });
 }
 
-module.exports = { startDaemon };
+module.exports = {
+  startDaemon
+};
