@@ -1,8 +1,14 @@
 {
-  "source": {
-    "username": "DreamTraveleo",
-    "title": "DreamTraveleo"
-  },
+  "sources": [
+    {
+      "username": "DreamTraveleo",
+      "title": "DreamTraveleo"
+    },
+    {
+      "username": "zzkbraxk",
+      "title": "|coser|cos"
+    }
+  ],
   "destination": {
     "chatId": "-1004361683750",
     "name": "V.I.P 정보공유",
