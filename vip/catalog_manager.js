@@ -158,52 +158,33 @@ class CatalogManager {
   }
 
   /**
-   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️] + [🔄 새로고침] + [🔙 뒤로가기]).
+   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️]).
    */
-  buildPaginationKeyboard(channelOrKey, pageData) {
-    let key = '18';
-    let inviteLink = null;
-    if (typeof channelOrKey === 'object' && channelOrKey !== null) {
-      key = channelOrKey.key || channelOrKey.tag || '18';
-      inviteLink = channelOrKey.inviteLink || null;
-    } else if (typeof channelOrKey === 'string') {
-      key = channelOrKey;
-    }
-
-    const navRow = [];
+  buildPaginationKeyboard(channelKey, pageData) {
+    const row = [];
 
     if (pageData.hasPrev) {
-      navRow.push({
+      row.push({
         text: '⬅️ 이전',
-        callback_data: `cat_pg:${key}:${pageData.currentPage - 1}`
+        callback_data: `cat_pg:${channelKey}:${pageData.currentPage - 1}`
       });
     }
 
     if (pageData.hasNext) {
-      navRow.push({
+      row.push({
         text: '다음 ➡️',
-        callback_data: `cat_pg:${key}:${pageData.currentPage + 1}`
+        callback_data: `cat_pg:${channelKey}:${pageData.currentPage + 1}`
       });
     }
 
     const keyboard = [];
-    if (navRow.length > 0) {
-      keyboard.push(navRow);
+    if (row.length > 0) {
+      keyboard.push(row);
     }
 
-    const actionRow = [];
-    actionRow.push({
-      text: '🔄 새로고침',
-      callback_data: `cat_pg:${key}:${pageData.currentPage}`
-    });
-    if (inviteLink) {
-      actionRow.push({ text: '📢 채널 입장', url: inviteLink });
-    }
-    keyboard.push(actionRow);
-
-    // Always include Back to Menu button
+    // Refresh row
     keyboard.push([
-      { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' }
+      { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
     ]);
 
     return { inline_keyboard: keyboard };

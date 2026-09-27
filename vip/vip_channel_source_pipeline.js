@@ -234,11 +234,17 @@ class ZzkbraxkPipeline {
         if (newMsgId) {
           const cleanDestId = String(this.destChatId).replace(/^-100/, '').replace(/^-/, '');
           const postLink = `https://t.me/c/${cleanDestId}/${newMsgId}`;
+          let catalogTitle = extracted.title;
+          if (extracted.description && extracted.description !== extracted.title) {
+            catalogTitle = `${extracted.title} - ${extracted.description}`;
+          }
           this.catalogManager.addVideo(this.destKey, {
             messageId: newMsgId,
-            title: extracted.title,
-            link: postLink
+            title: catalogTitle,
+            link: postLink,
+            date: new Date().toISOString()
           });
+          console.log(`   📚 Added video #${newMsgId} ("${catalogTitle.substring(0, 40)}...") to VIP-18 Catalog at TOP!`);
         }
 
         this.processedIds.add(msgId);

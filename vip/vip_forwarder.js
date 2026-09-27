@@ -16,6 +16,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
 const { cleanCatalogTitle, syncAllChannels } = require('./sync_channel_history');
+const { translateToKorean } = require('../korean_caption_generator');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
 function getPersistentNavigationKeyboard() {
@@ -219,7 +220,12 @@ class VipForwarder {
     }
     this.processedPosts.add(postKey);
 
-    const title = this.extractTitle(msg, channelConfig.tag);
+    let title = this.extractTitle(msg, channelConfig.tag);
+    try {
+      const tr = await translateToKorean(title);
+      if (tr) title = tr;
+    } catch (e) {}
+
     const postLink = this.getChannelPostLink(msg.chat.id, msg.message_id, msg.chat.username);
     const vipChatId = this.config.vipGroup.chatId;
 
@@ -227,7 +233,8 @@ class VipForwarder {
     this.catalogManager.addVideo(channelConfig.key, {
       messageId: msg.message_id,
       title: title,
-      link: postLink
+      link: postLink,
+      date: new Date().toISOString()
     });
 
     console.log(`\n📢 [VIP_FORWARDER] New Update Detected from [${channelConfig.name}] (${channelConfig.tag})`);
