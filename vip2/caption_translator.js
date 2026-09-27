@@ -33,13 +33,7 @@ const HASHTAG_DICTIONARY = {
   '#调教': '#조교',
   '#包养': '#스폰서',
   '#露出': '#노출',
-  '#福利': '#스페셜',
-  '#cos': '#코스프레',
-  '#coser': '#코스어',
-  '#原神': '#원신코스',
-  '#琳妮特': '#린넷',
-  '#母狗': '#조교',
-  '#双通': '#하드코어'
+  '#福利': '#스페셜'
 };
 
 function translateHashtags(rawText) {
@@ -125,7 +119,8 @@ async function formatVip2Caption(rawMessage, inviteLink = 'https://t.me/+HKD-EF-
     caption += `📝 <b>${koreanBody}</b>\n\n`;
   }
 
-  caption += `👉 <b><a href="${inviteLink}">V.I.P 정보공유 채널 입장하기 ↗️</a></b>`;
+  caption += `👉 <b><a href="${inviteLink}">V.I.P 정보공유 채널 입장하기 ↗️</a></b>\n`;
+  caption += `💬 <b>전체 풀버전 영상은 아래 [댓글 / Leave a comment]에서 확인하세요! ⬇️</b>`;
 
   return {
     title,

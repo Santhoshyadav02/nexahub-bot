@@ -1,13 +1,14 @@
 /**
  * ============================================================
- * 🚀 VIP-2 FORWARDER PIPELINE & MULTI-CHANNEL DEDUPLICATION
+ * 🚀 VIP-2 FORWARDER PIPELINE (CHANNEL TEASER + DISCUSSION THREAD)
  * ============================================================
  * - Sources: @DreamTraveleo, @zzkbraxk
- * - Destination: V.I.P 정보공유 (-1004361683750)
- * - Multi-layer deduplication (Channel-specific ID + Media Signatures + Content Hashes)
- * - Adult & Cosplay Korean caption/hashtag translation
+ * - Destination Channel: V.I.P 정보공유 (-1004361683750)
+ * - Discussion Group: V.I.P 정보공유 chat (-1004442518512)
+ * - Channel receives: 1 Preview media teaser + Korean title/caption + Discussion button
+ * - Discussion Thread receives: Full album / all full video files replied to the thread
+ * - Multi-layer deduplication (Channel ID + Media Signatures + Content Hashes)
  * - 5-minute strict sync schedule
- * - Interactive VIP-2 Catalog updating
  */
 
 const fs = require('fs');
@@ -42,6 +43,7 @@ class Vip2ForwarderPipeline {
     this.sourceChannels = rawSources.split(',').map(s => s.trim().replace(/^@/, '')).filter(Boolean);
 
     this.destChatId = process.env.VIP2_DEST_CHAT_ID || '-1004361683750';
+    this.discussionChatId = process.env.VIP2_DISCUSSION_CHAT_ID || '-1004442518512';
     this.destInviteLink = process.env.VIP2_DEST_INVITE_LINK || 'https://t.me/+HKD-EF-iSK5iN2Rh';
     this.channelName = process.env.VIP2_CHANNEL_NAME || 'V.I.P 정보공유 (VIP-2)';
 
@@ -144,6 +146,27 @@ class Vip2ForwarderPipeline {
     await this.client.connect();
     console.log('✅ [VIP2] Telegram MTProto client connected.');
     return this.client;
+  }
+
+  /**
+   * Finds the mirrored message ID in the discussion group for a given channel post ID.
+   */
+  async _findDiscussionRootMsgId(channelPostId, maxWaitSec = 8) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitSec * 1000) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const msgs = await this.client.getMessages(this.discussionChatId, { limit: 12 });
+        for (const m of msgs) {
+          if (m.fwdFrom && Number(m.fwdFrom.channelPost) === Number(channelPostId)) {
+            return m.id;
+          }
+        }
+      } catch (e) {
+        // ignore and retry
+      }
+    }
+    return null;
   }
 
   /**
@@ -261,31 +284,53 @@ class Vip2ForwarderPipeline {
               this.destInviteLink
             );
 
-            console.log(`\n📤 [VIP2] [@${channelName}] Forwarding Post [${groupId}] - Title: "${title}"`);
+            console.log(`\n📤 [VIP2] [@${channelName}] Posting Teaser Preview to Channel - Title: "${title}"`);
 
-            let sentMsg = null;
-            if (groupMsgs.length === 1) {
-              const targetMsg = groupMsgs[0];
-              sentMsg = await this.client.sendFile(this.destChatId, {
-                file: targetMsg.media,
-                caption: formattedCaption,
-                parseMode: 'html',
-                forceDocument: false
-              });
-            } else {
-              const mediaFiles = groupMsgs.map(m => m.media);
-              sentMsg = await this.client.sendFile(this.destChatId, {
-                file: mediaFiles,
-                caption: formattedCaption,
-                parseMode: 'html',
-                forceDocument: false
-              });
-            }
+            // Step 1: Post 1 PREVIEW media item to Channel
+            const previewMsg = groupMsgs[0];
+            const sentChannelMsg = await this.client.sendFile(this.destChatId, {
+              file: previewMsg.media,
+              caption: formattedCaption,
+              parseMode: 'html',
+              forceDocument: false
+            });
 
-            if (sentMsg) {
-              const publishedMsgId = Array.isArray(sentMsg) ? sentMsg[0].id : sentMsg.id;
+            if (sentChannelMsg) {
+              const publishedMsgId = Array.isArray(sentChannelMsg) ? sentChannelMsg[0].id : sentChannelMsg.id;
               const cleanChatId = String(this.destChatId).replace(/^-100/, '').replace(/^-/, '');
               const postLink = `https://t.me/c/${cleanChatId}/${publishedMsgId}`;
+
+              console.log(`✅ [VIP2] Channel Teaser published: ${postLink}`);
+
+              // Step 2: Find Discussion thread root in discussion group
+              console.log(`⏳ [VIP2] Waiting for discussion mirror of post #${publishedMsgId}...`);
+              const discRootId = await this._findDiscussionRootMsgId(publishedMsgId);
+
+              // Step 3: Post all full videos / remaining media into Discussion Thread
+              if (discRootId) {
+                console.log(`💬 [VIP2] Replying in discussion thread (root #${discRootId})...`);
+                
+                if (groupMsgs.length > 1) {
+                  const remainingMedia = groupMsgs.slice(1).map(m => m.media);
+                  await this.client.sendFile(this.discussionChatId, {
+                    file: remainingMedia,
+                    replyTo: discRootId,
+                    caption: `🎬 <b>[풀버전 전체 영상 모음] ${title}</b>`,
+                    parseMode: 'html',
+                    forceDocument: false
+                  });
+                  console.log(`🎉 [VIP2] Posted ${remainingMedia.length} full video/media files into discussion thread!`);
+                } else {
+                  // Single media post - post full confirmation in thread
+                  await this.client.sendMessage(this.discussionChatId, {
+                    message: `🎬 <b>[풀버전 안내]</b> 해당 영상의 전체 고화질 파일이 준비되었습니다. 편안하게 시청하세요! 👑`,
+                    replyTo: discRootId,
+                    parseMode: 'html'
+                  });
+                }
+              } else {
+                console.warn(`⚠️ [VIP2] Could not find mirrored discussion message within timeout for post #${publishedMsgId}.`);
+              }
 
               // Catalog update
               this.catalogManager.addVideo({
@@ -310,10 +355,8 @@ class Vip2ForwarderPipeline {
               this._saveDeduplicationData();
               totalPublished++;
 
-              console.log(`✅ [VIP2] Successfully published: ${postLink}`);
-
-              // Safety rate-limit delay
-              await new Promise(r => setTimeout(r, 2500));
+              // Rate-limit delay
+              await new Promise(r => setTimeout(r, 3000));
             }
           } catch (postErr) {
             console.error(`❌ [VIP2] Error publishing post [${groupId}]:`, postErr.message);
@@ -321,7 +364,7 @@ class Vip2ForwarderPipeline {
         }
       }
 
-      console.log(`\n🎉 [VIP2] Multi-channel sync complete. Published: ${totalPublished}, Skipped duplicates: ${totalSkipped}. Next sync at: ${this.nextSyncTime.toLocaleTimeString()}`);
+      console.log(`\n🎉 [VIP2] Sync complete. Published: ${totalPublished}, Skipped: ${totalSkipped}. Next sync at: ${this.nextSyncTime.toLocaleTimeString()}`);
       this.isSyncing = false;
       return { count: totalPublished, skipped: totalSkipped, status: 'success' };
     } catch (err) {
