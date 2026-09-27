@@ -16,7 +16,6 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const { CatalogManager } = require('./catalog_manager');
 const { cleanCatalogTitle, syncAllChannels } = require('./sync_channel_history');
-const { translateToKorean } = require('../korean_caption_generator');
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 
 function getPersistentNavigationKeyboard() {
@@ -220,12 +219,7 @@ class VipForwarder {
     }
     this.processedPosts.add(postKey);
 
-    let title = this.extractTitle(msg, channelConfig.tag);
-    try {
-      const tr = await translateToKorean(title);
-      if (tr) title = tr;
-    } catch (e) {}
-
+    const title = this.extractTitle(msg, channelConfig.tag);
     const postLink = this.getChannelPostLink(msg.chat.id, msg.message_id, msg.chat.username);
     const vipChatId = this.config.vipGroup.chatId;
 
@@ -233,8 +227,7 @@ class VipForwarder {
     this.catalogManager.addVideo(channelConfig.key, {
       messageId: msg.message_id,
       title: title,
-      link: postLink,
-      date: new Date().toISOString()
+      link: postLink
     });
 
     console.log(`\n📢 [VIP_FORWARDER] New Update Detected from [${channelConfig.name}] (${channelConfig.tag})`);
@@ -701,6 +694,18 @@ class VipForwarder {
         console.error('❌ [VIP_FORWARDER] Error in handleCallbackQuery:', err.message);
       });
     });
+
+    // Initial channel history sync
+    syncAllChannels().catch(err => {
+      console.error('❌ [VIP_FORWARDER] Initial channel sync error:', err.message);
+    });
+
+    // Periodic live sync every 2 minutes
+    setInterval(() => {
+      syncAllChannels().catch(err => {
+        console.error('❌ [VIP_FORWARDER] Periodic channel sync error:', err.message);
+      });
+    }, 2 * 60 * 1000);
 
     console.log('🚀 [VIP_FORWARDER] VIP Channel Forwarder & Topic Hub is LIVE!');
   }
