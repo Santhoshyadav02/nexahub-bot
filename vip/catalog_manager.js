@@ -158,9 +158,19 @@ class CatalogManager {
   }
 
   /**
-   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️]).
+   * Builds pagination inline keyboard ([⬅️ 이전] [다음 ➡️] + [🔄 새로고침] + [🔙 뒤로가기]).
    */
-  buildPaginationKeyboard(channelKey, pageData) {
+  buildPaginationKeyboard(channelOrKey, pageData) {
+    let channelKey = '18';
+    let inviteLink = null;
+
+    if (typeof channelOrKey === 'object' && channelOrKey !== null) {
+      channelKey = channelOrKey.key || channelOrKey.tag || '18';
+      inviteLink = channelOrKey.inviteLink || null;
+    } else if (typeof channelOrKey === 'string') {
+      channelKey = channelOrKey;
+    }
+
     const row = [];
 
     if (pageData.hasPrev) {
@@ -182,9 +192,23 @@ class CatalogManager {
       keyboard.push(row);
     }
 
-    // Refresh row
+    // Refresh row (and optional channel invite link)
+    const actionRow = [];
+    actionRow.push({
+      text: '🔄 새로고침',
+      callback_data: `cat_pg:${channelKey}:${pageData.currentPage}`
+    });
+    if (inviteLink) {
+      actionRow.push({
+        text: '📢 채널 입장',
+        url: inviteLink
+      });
+    }
+    keyboard.push(actionRow);
+
+    // Back to Main Menu button row
     keyboard.push([
-      { text: '🔄 새로고침', callback_data: `cat_pg:${channelKey}:${pageData.currentPage}` }
+      { text: '🔙 뒤로가기', callback_data: 'vip_main_menu' }
     ]);
 
     return { inline_keyboard: keyboard };
