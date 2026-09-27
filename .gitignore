@@ -1,6 +1,7 @@
 node_modules/
 .env
 vip/.env
+vip2/.env
 vip/channel_catalogs.json
 trending.json
 breaking.json
