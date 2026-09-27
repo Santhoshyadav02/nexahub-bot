@@ -5,6 +5,7 @@ const path = require('path');
 const VPS_HOST = '154.19.187.160';
 const VPS_USER = 'root';
 const VPS_PASS = 'VNQi7iroRIY-';
+const TARGET_DIR = '/opt/nexahub-bot';
 
 async function runSSH() {
   const conn = new Client();
@@ -12,91 +13,76 @@ async function runSSH() {
   return new Promise((resolve, reject) => {
     conn.on('ready', () => {
       console.log('✅ SSH Connection established to VPS:', VPS_HOST);
+      console.log(`🎯 Target directory on VPS: ${TARGET_DIR}`);
 
-      // Find the repository directory on VPS
-      const checkCmd = 'find /root -maxdepth 3 -name "catalog_manager.js" 2>/dev/null';
-      conn.exec(checkCmd, (err, stream) => {
-        if (err) return reject(err);
-        let out = '';
-        stream.on('data', d => out += d);
-        stream.on('close', () => {
-          console.log('Found repo paths:\n', out);
+      const deployCmd = `
+        cd ${TARGET_DIR} &&
+        git fetch origin deploy/vps-hardening-full &&
+        git reset --hard origin/deploy/vps-hardening-full &&
+        mkdir -p vip2
+      `;
 
-          // Let's determine project root
-          const lines = out.trim().split('\n').filter(Boolean);
-          let targetDir = '/root/hiruboy';
-          if (lines.length > 0) {
-            targetDir = path.posix.dirname(path.posix.dirname(lines[0]));
+      conn.exec(deployCmd, (err2, stream2) => {
+        if (err2) return reject(err2);
+        stream2.on('data', d => process.stdout.write(d.toString()));
+        stream2.stderr.on('data', d => process.stderr.write(d.toString()));
+        stream2.on('close', async (code) => {
+          if (code !== 0) {
+            return reject(new Error(`Git pull failed with exit code ${code}`));
           }
-          console.log(`🎯 Target directory on VPS: ${targetDir}`);
+          console.log('✅ Git pull complete on VPS.');
 
-          // Deployment commands
-          const deployCmd = `
-            cd ${targetDir} &&
-            git fetch origin deploy/vps-hardening-full &&
-            git reset --hard origin/deploy/vps-hardening-full &&
-            mkdir -p vip2
-          `;
+          // Open SFTP session
+          const sftp = await new Promise((resSftp, rejSftp) => {
+            conn.sftp((errSftp, s) => errSftp ? rejSftp(errSftp) : resSftp(s));
+          });
 
-          conn.exec(deployCmd, (err2, stream2) => {
-            if (err2) return reject(err2);
-            stream2.on('data', d => process.stdout.write(d.toString()));
-            stream2.stderr.on('data', d => process.stderr.write(d.toString()));
-            stream2.on('close', async () => {
-              console.log('✅ Git pull complete on VPS.');
+          // Upload vip2/.env
+          const envContent = fs.readFileSync(path.resolve(__dirname, '.env'), 'utf8');
+          await new Promise((resW, rejW) => {
+            const wStream = sftp.createWriteStream(`${TARGET_DIR}/vip2/.env`);
+            wStream.write(envContent);
+            wStream.end();
+            wStream.on('close', resW);
+            wStream.on('error', rejW);
+          });
+          console.log('✅ vip2/.env uploaded to VPS.');
 
-              // Upload vip2/.env
-              const envContent = fs.readFileSync(path.resolve(__dirname, '.env'), 'utf8');
-              const sftp = await new Promise((resSftp, rejSftp) => {
-                conn.sftp((errSftp, s) => errSftp ? rejSftp(errSftp) : resSftp(s));
-              });
-
+          // Upload initial catalog and processed IDs if exist
+          for (const fname of ['channel_catalog.json', 'processed_ids.json', 'config.json']) {
+            const localF = path.resolve(__dirname, fname);
+            if (fs.existsSync(localF)) {
+              const content = fs.readFileSync(localF, 'utf8');
               await new Promise((resW, rejW) => {
-                const wStream = sftp.createWriteStream(`${targetDir}/vip2/.env`);
-                wStream.write(envContent);
+                const wStream = sftp.createWriteStream(`${TARGET_DIR}/vip2/${fname}`);
+                wStream.write(content);
                 wStream.end();
                 wStream.on('close', resW);
                 wStream.on('error', rejW);
               });
-              console.log('✅ vip2/.env uploaded to VPS.');
+            }
+          }
+          console.log('✅ vip2 state files uploaded to VPS.');
 
-              // Upload initial catalog and processed IDs if exist
-              for (const fname of ['channel_catalog.json', 'processed_ids.json', 'config.json']) {
-                const localF = path.resolve(__dirname, fname);
-                if (fs.existsSync(localF)) {
-                  const content = fs.readFileSync(localF, 'utf8');
-                  await new Promise((resW, rejW) => {
-                    const wStream = sftp.createWriteStream(`${targetDir}/vip2/${fname}`);
-                    wStream.write(content);
-                    wStream.end();
-                    wStream.on('close', resW);
-                    wStream.on('error', rejW);
-                  });
-                }
-              }
-              console.log('✅ vip2 state files uploaded to VPS.');
+          // PM2 start/restart
+          const pm2Cmd = `
+            cd ${TARGET_DIR} &&
+            pm2 delete vip2-bot 2>/dev/null || true &&
+            pm2 start vip2/index.js --name vip2-bot &&
+            pm2 save &&
+            pm2 status &&
+            sleep 4 &&
+            pm2 logs vip2-bot --lines 30 --nostream
+          `;
 
-              // PM2 start/restart
-              const pm2Cmd = `
-                cd ${targetDir} &&
-                pm2 delete vip2-bot 2>/dev/null || true &&
-                pm2 start vip2/index.js --name vip2-bot &&
-                pm2 save &&
-                pm2 status &&
-                sleep 4 &&
-                pm2 logs vip2-bot --lines 25 --nostream
-              `;
-
-              conn.exec(pm2Cmd, (err3, stream3) => {
-                if (err3) return reject(err3);
-                stream3.on('data', d => process.stdout.write(d.toString()));
-                stream3.stderr.on('data', d => process.stderr.write(d.toString()));
-                stream3.on('close', () => {
-                  console.log('\n🎉 VIP-2 VPS Deployment finished successfully!');
-                  conn.end();
-                  resolve();
-                });
-              });
+          conn.exec(pm2Cmd, (err3, stream3) => {
+            if (err3) return reject(err3);
+            stream3.on('data', d => process.stdout.write(d.toString()));
+            stream3.stderr.on('data', d => process.stderr.write(d.toString()));
+            stream3.on('close', () => {
+              console.log('\n🎉 VIP-2 VPS Deployment finished successfully!');
+              conn.end();
+              resolve();
             });
           });
         });
