@@ -19,12 +19,11 @@ const { StringSession } = require('telegram/sessions');
 const { formatVip2Caption } = require('./caption_translator');
 const { Vip2CatalogManager } = require('./catalog_manager');
 
-// Load environment variables for VIP-2
+// Load environment variables for VIP-2 (root fallback + local overrides)
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const envPath = path.resolve(__dirname, '.env');
 if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-} else {
-  dotenv.config();
+  dotenv.config({ path: envPath, override: true });
 }
 
 const PROCESSED_PATH = path.resolve(__dirname, 'processed_ids.json');
