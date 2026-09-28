@@ -10,6 +10,7 @@
  */
 
 const { Vip2ForwarderPipeline } = require('./forwarder_pipeline');
+const { Vip2ScraperManager } = require('./scraper_manager');
 const { Vip2Bot } = require('./bot');
 const config = require('./config.json');
 
@@ -20,7 +21,8 @@ async function main() {
   console.log('====================================================');
 
   const pipeline = new Vip2ForwarderPipeline();
-  const bot = new Vip2Bot(pipeline);
+  const scraperManager = new Vip2ScraperManager(pipeline);
+  const bot = new Vip2Bot(pipeline, scraperManager);
 
   try {
     // 1. Start bot polling
@@ -31,7 +33,7 @@ async function main() {
     pipeline.startPeriodicSync(syncInterval);
 
     // 3. Start automated BJ & AV scraper scheduler (downloads & uploads 5-7 videos/day)
-    bot.scraperManager.startPeriodicScraper(4);
+    scraperManager.startPeriodicScraper(4);
 
     console.log('🌟 [VIP2] Service is fully operational and listening.');
   } catch (err) {
@@ -43,7 +45,7 @@ async function main() {
   const shutdown = () => {
     console.log('\n🛑 [VIP2] Shutting down VIP-2 service...');
     bot.stop();
-    bot.scraperManager.stop();
+    scraperManager.stop();
     pipeline.stop();
     process.exit(0);
   };
