@@ -9,20 +9,11 @@
       "title": "|coser|cos"
     }
   ],
-  "destinations": [
-    {
-      "chatId": "-1004361683750",
-      "name": "V.I.P 정보공유 (Channel)",
-      "type": "channel",
-      "discussionChatId": "-1004442518512",
-      "inviteLink": "https://t.me/+HKD-EF-iSK5iN2Rh"
-    },
-    {
-      "chatId": "-1003983458986",
-      "name": ">> V.I.P 정보공유 << (Group)",
-      "type": "group"
-    }
-  ],
+  "destination": {
+    "chatId": "-1004361683750",
+    "name": "V.I.P 정보공유",
+    "inviteLink": "https://t.me/+HKD-EF-iSK5iN2Rh"
+  },
   "bot": {
     "username": "VIP_2211bot",
     "name": "V.I.P_bot"

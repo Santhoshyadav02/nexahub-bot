@@ -2,11 +2,8 @@
  * ============================================================
  * 🌟 VIP-2 SERVICE ENTRYPOINT
  * ============================================================
- * Starts:
- *   1. VIP-2 Telegram Bot (@VIP_2211bot)
- *   2. Multi-channel Forwarding Pipeline (@DreamTraveleo, @zzkbraxk)
- *   3. Automated BJ & AV Scraper & Video Downloader/Uploader
- *   4. Multi-destination distribution (Channel + Discussion + Group)
+ * Starts the VIP-2 bot (@VIP_2211bot) and the automated forwarding
+ * pipeline from @DreamTraveleo -> V.I.P 정보공유 (-1004361683750).
  */
 
 const { Vip2ForwarderPipeline } = require('./forwarder_pipeline');
@@ -16,24 +13,24 @@ const config = require('./config.json');
 
 async function main() {
   console.log('====================================================');
-  console.log('🚀 Starting VIP-2 Service (Channel Forwarder + BJ/AV Scrapers)');
+  console.log('🚀 Starting VIP-2 Service (DreamTraveleo + BJ/AV Scrapers -> V.I.P 정보공유)');
   console.log('🤖 Bot: @VIP_2211bot');
   console.log('====================================================');
 
   const pipeline = new Vip2ForwarderPipeline();
   const scraperManager = new Vip2ScraperManager(pipeline);
-  const bot = new Vip2Bot(pipeline, scraperManager);
+  const bot = new Vip2Bot(pipeline);
 
   try {
-    // 1. Start bot polling
+    // Start bot polling
     bot.start();
 
-    // 2. Start 5-minute Telegram source channel sync (@DreamTraveleo, @zzkbraxk)
-    const syncInterval = config.pipeline?.syncIntervalMinutes || 5;
-    pipeline.startPeriodicSync(syncInterval);
+    // Start background source sync (every 5 minutes)
+    const interval = config.pipeline?.syncIntervalMinutes || 5;
+    pipeline.startPeriodicSync(interval);
 
-    // 3. Start automated BJ & AV scraper scheduler (downloads & uploads 5-7 videos/day)
-    scraperManager.startPeriodicScraper(4);
+    // Start BJ & AV scraper manager (checks every 3 hours for 5-7 daily videos)
+    scraperManager.startScheduler(3);
 
     console.log('🌟 [VIP2] Service is fully operational and listening.');
   } catch (err) {
@@ -45,8 +42,8 @@ async function main() {
   const shutdown = () => {
     console.log('\n🛑 [VIP2] Shutting down VIP-2 service...');
     bot.stop();
-    scraperManager.stop();
     pipeline.stop();
+    scraperManager.stop();
     process.exit(0);
   };
 

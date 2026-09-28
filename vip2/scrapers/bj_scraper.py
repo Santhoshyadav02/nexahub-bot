@@ -138,9 +138,8 @@ def run_bj_scraper(
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            channel="chrome",
             headless=True,
-            args=["--disable-blink-features=AutomationControlled"],
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -148,28 +147,32 @@ def run_bj_scraper(
         page = context.new_page()
 
         if end_page is None:
-            url = f"{BASE_URL}{board}&page=1"
+            url = f"https://02.avsee.is/{board}"
             print(f"[*] Detecting total BJ board pages from {url}...")
-            page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            for _ in range(10):
-                if "Just a moment" not in page.title():
-                    break
-                page.wait_for_timeout(1000)
-            soup = BeautifulSoup(page.content(), "html.parser")
-            page_numbers = [1]
-            for a in soup.find_all("a", href=re.compile(r"page=(\d+)")):
-                m = re.search(r"page=(\d+)", a.get("href", ""))
-                if m:
-                    page_numbers.append(int(m.group(1)))
-            end_page = max(page_numbers)
-            print(f"[+] Total pages detected: {end_page}")
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                for _ in range(10):
+                    if "Just a moment" not in page.title():
+                        break
+                    page.wait_for_timeout(1000)
+                soup = BeautifulSoup(page.content(), "html.parser")
+                page_numbers = [1]
+                for a in soup.find_all("a", href=True):
+                    m = re.search(r"page=(\d+)", a.get("href", ""))
+                    if m:
+                        page_numbers.append(int(m.group(1)))
+                end_page = max(page_numbers)
+                print(f"[+] Total pages detected: {end_page}")
+            except Exception as e:
+                print(f"[!] Warning detecting total pages: {e}. Defaulting to 1.")
+                end_page = 1
 
         print(f"\n=======================================================")
         print(f"[*] Starting BJ Scraper (Pages {start_page} to {end_page})")
         print(f"=======================================================\n")
 
         for page_num in range(start_page, end_page + 1):
-            page_board_url = f"{BASE_URL}{board}&page={page_num}"
+            page_board_url = f"https://02.avsee.is/{board}?page={page_num}"
             print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
 
             page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
@@ -180,16 +183,13 @@ def run_bj_scraper(
 
             soup = BeautifulSoup(page.content(), "html.parser")
             post_links = []
-            for a in soup.find_all(
-                "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
-            ):
+            for a in soup.find_all("a", href=True):
                 href = a.get("href", "")
-                full_url = (
-                    href if href.startswith("http") else f"https://02.avsee.is{href}"
-                )
-                clean_url = full_url.split("&page=")[0]
-                if clean_url not in post_links:
-                    post_links.append(clean_url)
+                if re.search(r"/korea/\d+|bo_table=korea&wr_id=\d+", href):
+                    full_url = href if href.startswith("http") else f"https://02.avsee.is{href}"
+                    clean_url = full_url.split("&page=")[0].split("?page=")[0].split("#")[0]
+                    if clean_url not in post_links:
+                        post_links.append(clean_url)
 
             print(f"    -> Found {len(post_links)} posts on page {page_num}.")
 
