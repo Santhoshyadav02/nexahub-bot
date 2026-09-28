@@ -1,6 +1,5 @@
 import argparse
 import csv
-import html
 import json
 import os
 import re
@@ -11,21 +10,7 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://02.avsee.is/bbs/board.php?bo_table="
 
 
-def clean_jp_title(title):
-    """
-    Removes leading Japanese video codes (e.g. NSFS-049, IPX-854, SSIS-400)
-    and bracketed tags so only the Korean title sentence is saved.
-    """
-    if not title:
-        return ""
-    cleaned = re.sub(r"\[.*?\]", "", title)
-    cleaned = re.sub(r"^[A-Za-z0-9_\-]+(?:\s*[-:]\s*|\s+)", "", cleaned.strip())
-    cleaned = re.sub(r"^\s*[-:/]\s*", "", cleaned)
-    cleaned = cleaned.strip()
-    return cleaned if cleaned else title.strip()
-
-
-def save_checkpoint(output_file, saved_data, board="caption"):
+def save_checkpoint(output_file, saved_data, board="korea"):
     """Saves checkpoint data immediately to both JSON and CSV."""
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
@@ -51,7 +36,7 @@ def save_checkpoint(output_file, saved_data, board="caption"):
                     "mp4_download_url": v.get("mp4_download_url", ""),
                     "post_url": v.get("post_url", ""),
                     "page": v.get("page", ""),
-                    "category": "jp",
+                    "category": "bj",
                     "board": v.get("board", board),
                 }
             )
@@ -59,7 +44,7 @@ def save_checkpoint(output_file, saved_data, board="caption"):
 
 def extract_video_and_title(page, post_url):
     """
-    Visits a JP post page, extracts the video title,
+    Visits a BJ post page, extracts the video title,
     and intercepts the direct CDN token MP4 download URL.
     """
     cdn_video_urls = []
@@ -109,9 +94,6 @@ def extract_video_and_title(page, post_url):
         else:
             title = "Unknown Title"
 
-        title = html.unescape(title)
-        title = clean_jp_title(title)
-
         # Check DOM video tag as fallback
         for video in soup.find_all("video"):
             src = video.get("src", "")
@@ -136,11 +118,11 @@ def extract_video_and_title(page, post_url):
         page.remove_listener("request", handle_request)
 
 
-def run_jp_scraper(
-    board="caption",
+def run_bj_scraper(
+    board="korea",
     start_page=1,
     end_page=None,
-    output_file="jp_videos.json",
+    output_file="bj_videos.json",
     refresh=False,
 ):
     saved_data = {}
@@ -167,7 +149,7 @@ def run_jp_scraper(
 
         if end_page is None:
             url = f"{BASE_URL}{board}&page=1"
-            print(f"[*] Detecting total JP board pages from {url}...")
+            print(f"[*] Detecting total BJ board pages from {url}...")
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
             for _ in range(10):
                 if "Just a moment" not in page.title():
@@ -175,107 +157,86 @@ def run_jp_scraper(
                 page.wait_for_timeout(1000)
             soup = BeautifulSoup(page.content(), "html.parser")
             page_numbers = [1]
-            for a in soup.find_all("a", href=True):
-                href = a.get("href", "")
-                m = re.search(r"page=(\d+)", href)
+            for a in soup.find_all("a", href=re.compile(r"page=(\d+)")):
+                m = re.search(r"page=(\d+)", a.get("href", ""))
                 if m:
                     page_numbers.append(int(m.group(1)))
             end_page = max(page_numbers)
             print(f"[+] Total pages detected: {end_page}")
 
         print(f"\n=======================================================")
-        print(f"[*] Starting JP Scraper (Pages {start_page} to {end_page})")
-        print(f"[*] Board: {board}")
+        print(f"[*] Starting BJ Scraper (Pages {start_page} to {end_page})")
         print(f"=======================================================\n")
 
-        try:
-            for page_num in range(start_page, end_page + 1):
-                page_board_url = f"{BASE_URL}{board}&page={page_num}"
-                print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
+        for page_num in range(start_page, end_page + 1):
+            page_board_url = f"{BASE_URL}{board}&page={page_num}"
+            print(f"[*] [Page {page_num}/{end_page}] Loading: {page_board_url}")
 
-                page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
-                for _ in range(10):
-                    if "Just a moment" not in page.title():
-                        break
-                    page.wait_for_timeout(1000)
+            page.goto(page_board_url, wait_until="domcontentloaded", timeout=45000)
+            for _ in range(10):
+                if "Just a moment" not in page.title():
+                    break
+                page.wait_for_timeout(1000)
 
-                soup = BeautifulSoup(page.content(), "html.parser")
-                post_links = []
-                for a in soup.find_all(
-                    "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
-                ):
-                    href = a.get("href", "")
-                    full_url = (
-                        href
-                        if href.startswith("http")
-                        else f"https://02.avsee.is{href}"
-                    )
-                    clean_url = full_url.split("&page=")[0]
-                    if clean_url not in post_links:
-                        post_links.append(clean_url)
-
-                print(f"    -> Found {len(post_links)} posts on page {page_num}.")
-
-                for idx, post_url in enumerate(post_links, 1):
-                    if (
-                        not refresh
-                        and post_url in saved_data
-                        and saved_data[post_url].get("mp4_download_url")
-                    ):
-                        print(
-                            f"    [{idx}/{len(post_links)}] (Cached) {saved_data[post_url]['title']}"
-                        )
-                        continue
-
-                    print(f"    [{idx}/{len(post_links)}] Extracting: {post_url}")
-                    item = extract_video_and_title(page, post_url)
-                    item["page"] = page_num
-                    item["category"] = "jp"
-                    item["board"] = board
-                    saved_data[post_url] = item
-
-                    print(f"        Title:   {item['title']}")
-                    print(
-                        f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n"
-                    )
-
-                    # Immediate per-item checkpoint save
-                    save_checkpoint(output_file, saved_data, board=board)
-
-                print(
-                    f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
+            soup = BeautifulSoup(page.content(), "html.parser")
+            post_links = []
+            for a in soup.find_all(
+                "a", href=lambda h: h and f"bo_table={board}&wr_id=" in h
+            ):
+                href = a.get("href", "")
+                full_url = (
+                    href if href.startswith("http") else f"https://02.avsee.is{href}"
                 )
+                clean_url = full_url.split("&page=")[0]
+                if clean_url not in post_links:
+                    post_links.append(clean_url)
 
-        except KeyboardInterrupt:
+            print(f"    -> Found {len(post_links)} posts on page {page_num}.")
+
+            for idx, post_url in enumerate(post_links, 1):
+                if (
+                    not refresh
+                    and post_url in saved_data
+                    and saved_data[post_url].get("mp4_download_url")
+                ):
+                    print(
+                        f"    [{idx}/{len(post_links)}] (Cached) {saved_data[post_url]['title']}"
+                    )
+                    continue
+
+                print(f"    [{idx}/{len(post_links)}] Extracting: {post_url}")
+                item = extract_video_and_title(page, post_url)
+                item["page"] = page_num
+                item["category"] = "bj"
+                item["board"] = board
+                saved_data[post_url] = item
+
+                print(f"        Title:   {item['title']}")
+                print(f"        MP4 URL: {item['mp4_download_url'] or 'Not found'}\n")
+
+                # Immediate per-item checkpoint save
+                save_checkpoint(output_file, saved_data, board=board)
+
             print(
-                "\n[!] Scraping paused by user. Saving current checkpoint...",
-                flush=True,
+                f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
             )
-            save_checkpoint(output_file, saved_data, board=board)
-            print(
-                f"[+] Saved {len(saved_data)} items to '{output_file}'. You can resume anytime!"
-            )
-            browser.close()
-            return
 
         browser.close()
 
     print(
-        f"\n[+] JP Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"
+        f"\n[+] BJ Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"
     )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="JP (Caption) Video Scraper")
-    parser.add_argument(
-        "--board", default="caption", help="Board name (default: caption)"
-    )
+    parser = argparse.ArgumentParser(description="BJ Video Scraper")
+    parser.add_argument("--board", default="korea", help="Board name (default: korea)")
     parser.add_argument("--start", type=int, default=1, help="Start page")
     parser.add_argument("--end", type=int, default=None, help="End page")
     parser.add_argument(
         "--output",
-        default="jp_videos.json",
-        help="Output JSON filename (default: jp_videos.json)",
+        default="bj_videos.json",
+        help="Output JSON filename (default: bj_videos.json)",
     )
     parser.add_argument(
         "--refresh",
@@ -283,7 +244,7 @@ if __name__ == "__main__":
         help="Force refresh URLs even if already cached in JSON",
     )
     args = parser.parse_args()
-    run_jp_scraper(
+    run_bj_scraper(
         board=args.board,
         start_page=args.start,
         end_page=args.end,

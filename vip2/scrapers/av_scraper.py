@@ -20,7 +20,21 @@ def sanitize_filename(name):
     return sanitized[:100]
 
 
-def save_checkpoint(output_file, saved_data, board="javm"):
+def clean_av_title(title):
+    """
+    Removes leading video codes (e.g. NSFS-049, IPX-854, SSIS-400)
+    and bracketed tags so only the clean title is saved.
+    """
+    if not title:
+        return ""
+    cleaned = re.sub(r"\[.*?\]", "", title)
+    cleaned = re.sub(r"^[A-Za-z0-9_\-]+(?:\s*[-:]\s*|\s+)", "", cleaned.strip())
+    cleaned = re.sub(r"^\s*[-:/]\s*", "", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned if cleaned else title.strip()
+
+
+def save_checkpoint(output_file, saved_data, board="caption"):
     """Saves checkpoint data immediately to both JSON and CSV."""
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(list(saved_data.values()), f, ensure_ascii=False, indent=2)
@@ -46,36 +60,15 @@ def save_checkpoint(output_file, saved_data, board="javm"):
                     "mp4_download_url": v.get("mp4_download_url", ""),
                     "post_url": v.get("post_url", ""),
                     "page": v.get("page", ""),
-                    "category": "xchina",
+                    "category": "av",
                     "board": v.get("board", board),
                 }
             )
 
 
-def clean_korean_title(title):
-    """
-    Cleans title to keep only the Korean portion by removing bracket tags,
-    English codes (e.g. [REMOVE]T28-304U), and any English letters.
-    """
-    if not title:
-        return ""
-    # Remove bracketed tags like [REMOVE], [자막], [HD], etc.
-    cleaned = re.sub(r"\[.*?\]", "", title)
-    # Remove leading code prefixes like T28-304U, START-644VU, SNOS-377U, etc.
-    cleaned = re.sub(r"^[A-Za-z0-9_\-\s]+", "", cleaned)
-    # Remove any remaining English letters
-    cleaned = re.sub(r"[a-zA-Z]+", "", cleaned)
-    # Clean whitespace and leading/trailing separators
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    cleaned = re.sub(r"^\s*[/,-]\s*", "", cleaned)
-    cleaned = re.sub(r"\s*[/,-]\s*$", "", cleaned)
-    cleaned = cleaned.strip()
-    return cleaned if cleaned else title.strip()
-
-
 def extract_video_and_title(page, post_url):
     """
-    Visits a post page, extracts the video title,
+    Visits an AV post page, extracts the video title,
     and intercepts the direct CDN token MP4 download URL.
     """
     cdn_video_urls = []
@@ -91,7 +84,7 @@ def extract_video_and_title(page, post_url):
     try:
         page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
 
-        # Wait for Cloudflare clearance if any
+        # Wait for Cloudflare clearance
         for _ in range(10):
             if "Just a moment" not in page.title():
                 break
@@ -126,7 +119,7 @@ def extract_video_and_title(page, post_url):
             title = "Unknown Title"
 
         title = html.unescape(title)
-        title = clean_korean_title(title)
+        title = clean_av_title(title)
 
         # Check DOM video tag as fallback
         for video in soup.find_all("video"):
@@ -152,15 +145,15 @@ def extract_video_and_title(page, post_url):
         page.remove_listener("request", handle_request)
 
 
-def run_xchina_scraper(
-    board="javm",
+def run_av_scraper(
+    board="caption",
     start_page=1,
     end_page=None,
-    output_file="xchina_videos.json",
+    output_file="av_videos.json",
     refresh=False,
 ):
     saved_data = {}
-    if os.path.exists(output_file) and not refresh:
+    if os.path.exists(output_file):
         try:
             with open(output_file, "r", encoding="utf-8") as f:
                 for item in json.load(f):
@@ -183,24 +176,28 @@ def run_xchina_scraper(
 
         if end_page is None:
             url = f"{BASE_URL}{board}&page=1"
-            print(f"[*] Detecting total board pages from {url}...")
-            page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            for _ in range(10):
-                if "Just a moment" not in page.title():
-                    break
-                page.wait_for_timeout(1000)
-            soup = BeautifulSoup(page.content(), "html.parser")
-            page_numbers = [1]
-            for a in soup.find_all("a", href=True):
-                href = a.get("href", "")
-                m = re.search(r"page=(\d+)", href)
-                if m:
-                    page_numbers.append(int(m.group(1)))
-            end_page = max(page_numbers)
-            print(f"[+] Total pages detected: {end_page}")
+            print(f"[*] Detecting total AV board pages from {url}...")
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                for _ in range(10):
+                    if "Just a moment" not in page.title():
+                        break
+                    page.wait_for_timeout(1000)
+                soup = BeautifulSoup(page.content(), "html.parser")
+                page_numbers = [1]
+                for a in soup.find_all("a", href=True):
+                    href = a.get("href", "")
+                    m = re.search(r"page=(\d+)", href)
+                    if m:
+                        page_numbers.append(int(m.group(1)))
+                end_page = max(page_numbers)
+                print(f"[+] Total pages detected: {end_page}")
+            except Exception as e:
+                print(f"[!] Warning detecting total pages: {e}. Defaulting to 1.")
+                end_page = 1
 
         print(f"\n=======================================================")
-        print(f"[*] Starting XChina Scraper (Pages {start_page} to {end_page})")
+        print(f"[*] Starting AV Scraper (Pages {start_page} to {end_page})")
         print(f"[*] Board: {board}")
         print(f"=======================================================\n")
 
@@ -246,7 +243,7 @@ def run_xchina_scraper(
                     print(f"    [{idx}/{len(post_links)}] Extracting: {post_url}")
                     item = extract_video_and_title(page, post_url)
                     item["page"] = page_num
-                    item["category"] = "xchina"
+                    item["category"] = "av"
                     item["board"] = board
                     saved_data[post_url] = item
 
@@ -257,6 +254,7 @@ def run_xchina_scraper(
 
                     # Immediate per-item checkpoint save
                     save_checkpoint(output_file, saved_data, board=board)
+                    time.sleep(0.3)
 
                 print(
                     f"    [+] Checkpoint saved: {len(saved_data)} total items in '{output_file}'.\n"
@@ -277,21 +275,21 @@ def run_xchina_scraper(
         browser.close()
 
     print(
-        f"\n[+] XChina Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"
+        f"\n[+] AV Scraping Completed! Output saved to '{output_file}' and '{output_file.replace('.json', '.csv')}'"
     )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="XChina (javm) Video Scraper")
+    parser = argparse.ArgumentParser(description="AV (AVsee Caption) Video Scraper")
     parser.add_argument(
-        "--board", default="javm", help="Board name (default: javm)"
+        "--board", default="caption", help="Board name (default: caption)"
     )
     parser.add_argument("--start", type=int, default=1, help="Start page")
     parser.add_argument("--end", type=int, default=None, help="End page")
     parser.add_argument(
         "--output",
-        default="xchina_videos.json",
-        help="Output JSON filename (default: xchina_videos.json)",
+        default="av_videos.json",
+        help="Output JSON filename (default: av_videos.json)",
     )
     parser.add_argument(
         "--refresh",
@@ -299,7 +297,7 @@ if __name__ == "__main__":
         help="Force refresh URLs even if already cached in JSON",
     )
     args = parser.parse_args()
-    run_xchina_scraper(
+    run_av_scraper(
         board=args.board,
         start_page=args.start,
         end_page=args.end,

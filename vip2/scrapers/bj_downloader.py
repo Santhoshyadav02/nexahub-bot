@@ -13,7 +13,9 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def sanitize_filename(name):
-    """Sanitizes string for valid Windows filenames."""
+    """
+    Sanitizes string for valid Windows filenames.
+    """
     if not name or name.strip() == "":
         name = "untitled_video"
     sanitized = re.sub(r'[\\/*?:"<>|]', "", name).strip()
@@ -21,10 +23,10 @@ def sanitize_filename(name):
 
 
 def download_single_video(
-    item, output_dir=os.path.join("downloads", "18+"), timeout=180, max_retries=3
+    item, output_dir=os.path.join("downloads", "bj"), timeout=180, max_retries=3
 ):
     """
-    Downloads a single KRX (18+) MP4 video file with HTTP Range resume and a live visual percentage progress bar.
+    Downloads a single BJ MP4 video file with HTTP Range resume and a live visual percentage progress bar.
     """
     title = item.get("title", "untitled")
     url = item.get("mp4_download_url")
@@ -96,8 +98,8 @@ def download_single_video(
                     mode = "ab"
                 else:
                     total_size = int(response.headers.get("content-length", 0))
-                    mode = "wb"
                     downloaded_bytes = 0
+                    mode = "wb"
 
                 total_mb = total_size / (1024 * 1024) if total_size > 0 else 0
 
@@ -113,16 +115,17 @@ def download_single_video(
                         "error": "Exceeds 1.95GB Telegram limit",
                     }
 
-                if downloaded_bytes > 0:
+                if downloaded_bytes >= total_size and total_size > 0:
                     print(
-                        f"[+] Resuming: {filename} ({downloaded_bytes / (1024 * 1024):.1f} MB / {total_mb:.1f} MB)",
+                        f"[*] [Already Complete] {filename} ({total_mb:.1f} MB)\n",
                         flush=True,
                     )
-                else:
-                    print(
-                        f"[+] Downloading: {filename} ({total_mb:.1f} MB)",
-                        flush=True,
-                    )
+                    return {"status": "exists", "title": title, "filepath": filepath}
+
+                print(
+                    f"[+] Downloading: {filename} (Attempt {attempt}/{max_retries})",
+                    flush=True,
+                )
 
                 with (
                     open(filepath, mode) as f,
@@ -143,50 +146,41 @@ def download_single_video(
                             f.write(chunk)
                             pbar.update(len(chunk))
 
-                duration = time.time() - start_time
-                actual_mb = (
-                    os.path.getsize(filepath) / (1024 * 1024)
-                    if os.path.exists(filepath)
-                    else 0
-                )
-                speed = (actual_mb / duration) if duration > 0 else 0
-
-                print(
-                    f"[✓] Saved: {filename} ({actual_mb:.1f} MB in {duration:.1f}s at {speed:.2f} MB/s)\n",
-                    flush=True,
-                )
-                return {
-                    "status": "completed",
-                    "title": title,
-                    "filepath": filepath,
-                    "size_mb": actual_mb,
-                }
-
-        except (
-            requests.exceptions.RequestException,
-            requests.exceptions.Timeout,
-        ) as e:
+            # Success
+            total_mb = (
+                (os.path.getsize(filepath) / (1024 * 1024))
+                if os.path.exists(filepath)
+                else 0
+            )
+            duration = time.time() - start_time
+            speed = (total_mb / duration) if duration > 0 else 0
             print(
-                f"[!] [Network Error] {filename}: {e} (Attempt {attempt}/{max_retries})\n",
+                f"[✓] Saved: {filename} ({total_mb:.1f} MB in {duration:.1f}s at {speed:.2f} MB/s)\n",
                 flush=True,
             )
-            if attempt == max_retries:
-                return {"status": "failed", "title": title, "error": str(e)}
-            time.sleep(2)
+            return {
+                "status": "completed",
+                "title": title,
+                "filepath": filepath,
+                "size_mb": total_mb,
+            }
+
         except Exception as e:
-            print(f"[!] [Unexpected Error] {filename}: {e}\n", flush=True)
-            return {"status": "failed", "title": title, "error": str(e)}
+            print(
+                f"[!] Warning on {filename} (Attempt {attempt}/{max_retries}): {e}",
+                flush=True,
+            )
+            if attempt < max_retries:
+                time.sleep(2)
+                continue
+            return {"status": "error", "title": title, "error": str(e)}
 
-    return {"status": "failed", "title": title, "error": "Max retries exceeded"}
 
-
-def download_all_krx_videos(
-    json_file="krx_videos.json",
-    output_dir=os.path.join("downloads", "18+"),
-    limit=None,
+def download_all_bj_videos(
+    json_file="bj_videos.json", output_dir=os.path.join("downloads", "bj"), limit=None
 ):
     """
-    Downloads all KRX (18+) videos sequentially with live progress bars.
+    Downloads all BJ videos sequentially with live progress bars.
     """
     if not os.path.exists(json_file):
         print(f"[!] JSON file not found: {json_file}", flush=True)
@@ -196,23 +190,21 @@ def download_all_krx_videos(
         items = json.load(f)
 
     valid_items = [it for it in items if it.get("mp4_download_url")]
-    # Process newest items first
-    valid_items.reverse()
+
+    if limit:
+        valid_items = valid_items[:limit]
 
     os.makedirs(output_dir, exist_ok=True)
 
     print("\n=======================================================", flush=True)
-    print(f"[*] Starting KRX/18+ Video Downloader (Sequential Mode)", flush=True)
-    print(f"[*] Total Videos in Queue: {len(valid_items)} (Limit: {limit or 'ALL'})", flush=True)
+    print(f"[*] Starting BJ Video Downloader (Sequential Mode)", flush=True)
+    print(f"[*] Total Videos in Queue: {len(valid_items)}", flush=True)
     print(f"[*] Destination Folder:    {os.path.abspath(output_dir)}", flush=True)
     print("=======================================================\n", flush=True)
 
     results = {"completed": 0, "exists": 0, "failed": 0}
 
     for idx, item in enumerate(valid_items, 1):
-        if limit and (results["completed"] + results["exists"]) >= limit:
-            break
-
         print(f"[{idx}/{len(valid_items)}] {item.get('title', 'Video')}", flush=True)
         res = download_single_video(item, output_dir=output_dir)
         st = res.get("status", "failed")
@@ -224,7 +216,7 @@ def download_all_krx_videos(
             results["failed"] += 1
 
     print("=======================================================", flush=True)
-    print(f"[+] KRX Download Summary:", flush=True)
+    print(f"[+] BJ Download Summary:", flush=True)
     print(f"    - Newly Downloaded: {results['completed']}", flush=True)
     print(f"    - Already Existed:  {results['exists']}", flush=True)
     print(f"    - Failed:           {results['failed']}", flush=True)
@@ -234,16 +226,16 @@ def download_all_krx_videos(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="KRX (18+) video downloader with live progress percentage"
+        description="BJ MP4 video downloader with live progress percentage"
     )
     parser.add_argument(
         "--json",
-        default="krx_videos.json",
-        help="Path to JSON file (default: krx_videos.json)",
+        default="bj_videos.json",
+        help="Path to JSON file (default: bj_videos.json)",
     )
     parser.add_argument(
         "--output-dir",
-        default=os.path.join("downloads", "18+"),
+        default=os.path.join("downloads", "bj"),
         help="Directory to save downloaded videos",
     )
     parser.add_argument(
@@ -251,6 +243,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    download_all_krx_videos(
+    download_all_bj_videos(
         json_file=args.json, output_dir=args.output_dir, limit=args.limit
     )
