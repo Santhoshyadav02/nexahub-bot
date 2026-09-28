@@ -1,13 +1,13 @@
 /**
  * ============================================================
- * 🚀 VIP-2 FORWARDER PIPELINE (CHANNEL TEASER + DISCUSSION THREAD)
+ * 🚀 VIP-2 FORWARDER PIPELINE (MULTI-SOURCE + MULTI-DESTINATION)
  * ============================================================
  * - Sources: @DreamTraveleo, @zzkbraxk
- * - Destination Channel: V.I.P 정보공유 (-1004361683750)
- * - Discussion Group: V.I.P 정보공유 chat (-1004442518512)
- * - Channel receives: 1 Preview media teaser + Korean title/caption + Discussion button
- * - Discussion Thread receives: Full album / all full video files replied to the thread
- * - Multi-layer deduplication (Channel ID + Media Signatures + Content Hashes)
+ * - Primary Channel: V.I.P 정보공유 (-1004361683750)
+ *   - 1 Teaser Preview in Channel + Full Videos in Discussion Thread (-1004442518512)
+ * - Extra Groups / Channels: >> V.I.P 정보공유 << (-1003983458986)
+ *   - Full native media album/video + Korean translated captions
+ * - Multi-layer deduplication (Channel-specific ID + Media Signatures + Content Hashes)
  * - 5-minute strict sync schedule
  */
 
@@ -42,10 +42,15 @@ class Vip2ForwarderPipeline {
     const rawSources = process.env.VIP2_SOURCE_CHANNELS || 'DreamTraveleo,zzkbraxk';
     this.sourceChannels = rawSources.split(',').map(s => s.trim().replace(/^@/, '')).filter(Boolean);
 
+    // Primary destinations
     this.destChatId = process.env.VIP2_DEST_CHAT_ID || '-1004361683750';
     this.discussionChatId = process.env.VIP2_DISCUSSION_CHAT_ID || '-1004442518512';
     this.destInviteLink = process.env.VIP2_DEST_INVITE_LINK || 'https://t.me/+HKD-EF-iSK5iN2Rh';
     this.channelName = process.env.VIP2_CHANNEL_NAME || 'V.I.P 정보공유 (VIP-2)';
+
+    // Extra destination groups/channels to broadcast to
+    const rawExtra = process.env.VIP2_EXTRA_DEST_CHATS || '-1003983458986';
+    this.extraDestChats = rawExtra.split(',').map(s => s.trim()).filter(Boolean);
 
     this.client = null;
     this.catalogManager = new Vip2CatalogManager();
@@ -163,7 +168,7 @@ class Vip2ForwarderPipeline {
           }
         }
       } catch (e) {
-        // ignore and retry
+        // retry
       }
     }
     return null;
@@ -171,6 +176,7 @@ class Vip2ForwarderPipeline {
 
   /**
    * Performs sync across all configured source channels (@DreamTraveleo, @zzkbraxk)
+   * and broadcasts to primary channel + discussion thread + extra groups (>> V.I.P 정보공유 <<).
    */
   async syncRecent({ limit = 20 } = {}) {
     if (this.isSyncing) {
@@ -210,7 +216,6 @@ class Vip2ForwarderPipeline {
         for (const msg of chronMessages) {
           if (!msg.media) continue;
 
-          // Unique key with channel prefix
           const chKey = `${channelName}_${msg.id}`;
           if (this.processedIds.has(chKey) || this.processedIds.has(String(msg.id))) {
             continue;
@@ -284,7 +289,7 @@ class Vip2ForwarderPipeline {
               this.destInviteLink
             );
 
-            console.log(`\n📤 [VIP2] [@${channelName}] Posting Teaser Preview to Channel - Title: "${title}"`);
+            console.log(`\n📤 [VIP2] [@${channelName}] Publishing Teaser Preview to Channel - Title: "${title}"`);
 
             // Step 1: Post 1 PREVIEW media item to Channel
             const previewMsg = groupMsgs[0];
@@ -321,15 +326,38 @@ class Vip2ForwarderPipeline {
                   });
                   console.log(`🎉 [VIP2] Posted ${remainingMedia.length} full video/media files into discussion thread!`);
                 } else {
-                  // Single media post - post full confirmation in thread
                   await this.client.sendMessage(this.discussionChatId, {
                     message: `🎬 <b>[풀버전 안내]</b> 해당 영상의 전체 고화질 파일이 준비되었습니다. 편안하게 시청하세요! 👑`,
                     replyTo: discRootId,
                     parseMode: 'html'
                   });
                 }
-              } else {
-                console.warn(`⚠️ [VIP2] Could not find mirrored discussion message within timeout for post #${publishedMsgId}.`);
+              }
+
+              // Step 4: Broadcast to Extra Destination Groups (>> V.I.P 정보공유 << / -1003983458986)
+              for (const extraChat of this.extraDestChats) {
+                try {
+                  console.log(`📢 [VIP2] Broadcasting to Extra Group (${extraChat})...`);
+                  if (groupMsgs.length === 1) {
+                    await this.client.sendFile(extraChat, {
+                      file: groupMsgs[0].media,
+                      caption: formattedCaption,
+                      parseMode: 'html',
+                      forceDocument: false
+                    });
+                  } else {
+                    const allMedia = groupMsgs.map(m => m.media);
+                    await this.client.sendFile(extraChat, {
+                      file: allMedia,
+                      caption: formattedCaption,
+                      parseMode: 'html',
+                      forceDocument: false
+                    });
+                  }
+                  console.log(`✅ [VIP2] Broadcasted to Extra Group (${extraChat}) successfully!`);
+                } catch (extraErr) {
+                  console.error(`⚠️ [VIP2] Failed to broadcast to extra group ${extraChat}:`, extraErr.message);
+                }
               }
 
               // Catalog update
@@ -364,7 +392,7 @@ class Vip2ForwarderPipeline {
         }
       }
 
-      console.log(`\n🎉 [VIP2] Sync complete. Published: ${totalPublished}, Skipped: ${totalSkipped}. Next sync at: ${this.nextSyncTime.toLocaleTimeString()}`);
+      console.log(`\n🎉 [VIP2] Multi-channel sync complete. Published: ${totalPublished}, Skipped: ${totalSkipped}. Next sync at: ${this.nextSyncTime.toLocaleTimeString()}`);
       this.isSyncing = false;
       return { count: totalPublished, skipped: totalSkipped, status: 'success' };
     } catch (err) {
