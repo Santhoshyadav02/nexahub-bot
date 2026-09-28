@@ -2,8 +2,11 @@
  * ============================================================
  * 🌟 VIP-2 SERVICE ENTRYPOINT
  * ============================================================
- * Starts the VIP-2 bot (@VIP_2211bot) and the automated forwarding
- * pipeline from @DreamTraveleo -> V.I.P 정보공유 (-1004361683750).
+ * Starts:
+ *   1. VIP-2 Telegram Bot (@VIP_2211bot)
+ *   2. Multi-channel Forwarding Pipeline (@DreamTraveleo, @zzkbraxk)
+ *   3. Automated BJ & AV Scraper & Video Downloader/Uploader
+ *   4. Multi-destination distribution (Channel + Discussion + Group)
  */
 
 const { Vip2ForwarderPipeline } = require('./forwarder_pipeline');
@@ -12,7 +15,7 @@ const config = require('./config.json');
 
 async function main() {
   console.log('====================================================');
-  console.log('🚀 Starting VIP-2 Service (DreamTraveleo -> V.I.P 정보공유)');
+  console.log('🚀 Starting VIP-2 Service (Channel Forwarder + BJ/AV Scrapers)');
   console.log('🤖 Bot: @VIP_2211bot');
   console.log('====================================================');
 
@@ -20,12 +23,15 @@ async function main() {
   const bot = new Vip2Bot(pipeline);
 
   try {
-    // Start bot polling
+    // 1. Start bot polling
     bot.start();
 
-    // Start background sync
-    const interval = config.pipeline?.syncIntervalMinutes || 5;
-    pipeline.startPeriodicSync(interval);
+    // 2. Start 5-minute Telegram source channel sync (@DreamTraveleo, @zzkbraxk)
+    const syncInterval = config.pipeline?.syncIntervalMinutes || 5;
+    pipeline.startPeriodicSync(syncInterval);
+
+    // 3. Start automated BJ & AV scraper scheduler (downloads & uploads 5-7 videos/day)
+    bot.scraperManager.startPeriodicScraper(4);
 
     console.log('🌟 [VIP2] Service is fully operational and listening.');
   } catch (err) {
@@ -37,6 +43,7 @@ async function main() {
   const shutdown = () => {
     console.log('\n🛑 [VIP2] Shutting down VIP-2 service...');
     bot.stop();
+    bot.scraperManager.stop();
     pipeline.stop();
     process.exit(0);
   };
