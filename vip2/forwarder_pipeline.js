@@ -44,7 +44,6 @@ class Vip2ForwarderPipeline {
 
     this.destChatId = process.env.VIP2_DEST_CHAT_ID || '-1004361683750';
     this.discussionChatId = process.env.VIP2_DISCUSSION_CHAT_ID || '-1004442518512';
-    this.extraGroupChatId = process.env.VIP2_EXTRA_GROUP_CHAT_ID || '-1003983458986';
     this.destInviteLink = process.env.VIP2_DEST_INVITE_LINK || 'https://t.me/+HKD-EF-iSK5iN2Rh';
     this.channelName = process.env.VIP2_CHANNEL_NAME || 'V.I.P 정보공유 (VIP-2)';
 
@@ -331,23 +330,6 @@ class Vip2ForwarderPipeline {
                 }
               } else {
                 console.warn(`⚠️ [VIP2] Could not find mirrored discussion message within timeout for post #${publishedMsgId}.`);
-              }
-
-              // Step 4: Broadcast full media album to Extra Group (>> V.I.P 정보공유 <<)
-              if (this.extraGroupChatId) {
-                try {
-                  console.log(`📢 [VIP2] Broadcasting to Extra Group (${this.extraGroupChatId})...`);
-                  const allMedia = groupMsgs.map(m => m.media);
-                  await this.client.sendFile(this.extraGroupChatId, {
-                    file: allMedia.length === 1 ? allMedia[0] : allMedia,
-                    caption: formattedCaption,
-                    parseMode: 'html',
-                    forceDocument: false
-                  });
-                  console.log(`✅ [VIP2] Extra Group broadcast complete.`);
-                } catch (grpErr) {
-                  console.error(`⚠️ [VIP2] Error broadcasting to extra group:`, grpErr.message);
-                }
               }
 
               // Catalog update

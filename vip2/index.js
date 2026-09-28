@@ -7,30 +7,25 @@
  */
 
 const { Vip2ForwarderPipeline } = require('./forwarder_pipeline');
-const { Vip2ScraperManager } = require('./scraper_manager');
 const { Vip2Bot } = require('./bot');
 const config = require('./config.json');
 
 async function main() {
   console.log('====================================================');
-  console.log('🚀 Starting VIP-2 Service (DreamTraveleo + BJ/AV Scrapers -> V.I.P 정보공유)');
+  console.log('🚀 Starting VIP-2 Service (DreamTraveleo -> V.I.P 정보공유)');
   console.log('🤖 Bot: @VIP_2211bot');
   console.log('====================================================');
 
   const pipeline = new Vip2ForwarderPipeline();
-  const scraperManager = new Vip2ScraperManager(pipeline);
   const bot = new Vip2Bot(pipeline);
 
   try {
     // Start bot polling
     bot.start();
 
-    // Start background source sync (every 5 minutes)
+    // Start background sync
     const interval = config.pipeline?.syncIntervalMinutes || 5;
     pipeline.startPeriodicSync(interval);
-
-    // Start BJ & AV scraper manager (checks every 3 hours for 5-7 daily videos)
-    scraperManager.startScheduler(3);
 
     console.log('🌟 [VIP2] Service is fully operational and listening.');
   } catch (err) {
@@ -43,7 +38,6 @@ async function main() {
     console.log('\n🛑 [VIP2] Shutting down VIP-2 service...');
     bot.stop();
     pipeline.stop();
-    scraperManager.stop();
     process.exit(0);
   };
 

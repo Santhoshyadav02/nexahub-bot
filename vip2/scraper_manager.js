@@ -19,7 +19,6 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
-const { formatVip2Caption } = require('./caption_translator');
 
 const STATE_FILE = path.resolve(__dirname, 'scraper_state.json');
 const DOWNLOADS_DIR = path.resolve(__dirname, 'downloads');
@@ -41,7 +40,6 @@ class Vip2ScraperManager {
 
     this.pythonPath = process.env.PYTHON_PATH || (fs.existsSync('/opt/nexahub-bot/.venv/bin/python3') ? '/opt/nexahub-bot/.venv/bin/python3' : 'python3');
     this.client = null;
-    this.isRunning = false;
     this.isJobRunning = false;
     this.timer = null;
 
@@ -63,7 +61,6 @@ class Vip2ScraperManager {
         if (data.date === today) {
           state = data;
         } else {
-          // Reset daily counters on date change
           state.processed_urls = data.processed_urls ? data.processed_urls.slice(-2000) : [];
         }
       }
@@ -98,9 +95,6 @@ class Vip2ScraperManager {
     return this.client;
   }
 
-  /**
-   * Finds discussion thread root ID in discussion group
-   */
   async _findDiscussionRootMsgId(client, channelPostId, maxWaitSec = 8) {
     const startTime = Date.now();
     while (Date.now() - startTime < maxWaitSec * 1000) {
@@ -117,20 +111,17 @@ class Vip2ScraperManager {
     return null;
   }
 
-  /**
-   * Scrapes and extracts latest items for category ('bj' or 'av')
-   */
-  async scrapeBoardItems(category = 'bj') {
+  async scrapeBoardItems(category = 'bj', limit = 6) {
     const board = category === 'bj' ? 'korea' : 'caption';
     const scraperScript = path.resolve(__dirname, 'scrapers', category === 'bj' ? 'bj_scraper.py' : 'av_scraper.py');
     const tempJson = path.resolve(__dirname, 'scrapers', `${category}_temp.json`);
 
-    console.log(`\n🔍 [VIP2_SCRAPER] Scraping latest ${category.toUpperCase()} posts from https://02.avsee.is/${board}...`);
+    console.log(`\n🔍 [VIP2_SCRAPER] Scraping latest ${category.toUpperCase()} posts (limit ${limit}) from https://02.avsee.is/${board}...`);
 
     try {
-      const cmd = `"${this.pythonPath}" "${scraperScript}" --board ${board} --start 1 --end 1 --output "${tempJson}" --refresh`;
-      const { stdout, stderr } = await execPromise(cmd, { timeout: 120000, cwd: path.resolve(__dirname, 'scrapers') });
-      console.log(`📄 [VIP2_SCRAPER] Scraper output:`, stdout.slice(-200));
+      const cmd = `"${this.pythonPath}" "${scraperScript}" --board ${board} --limit ${limit} --output "${tempJson}"`;
+      const { stdout } = await execPromise(cmd, { timeout: 300000, cwd: path.resolve(__dirname, 'scrapers') });
+      console.log(`📄 [VIP2_SCRAPER] Scraper complete. Log:\n`, stdout.trim());
 
       if (fs.existsSync(tempJson)) {
         const items = JSON.parse(fs.readFileSync(tempJson, 'utf8'));
@@ -142,9 +133,6 @@ class Vip2ScraperManager {
     return [];
   }
 
-  /**
-   * Downloads a single MP4 file with streaming
-   */
   async downloadVideoFile(item, category = 'bj') {
     const outDir = path.resolve(DOWNLOADS_DIR, category);
     if (!fs.existsSync(outDir)) {
@@ -191,7 +179,7 @@ except Exception as e:
         console.log(`✅ [VIP2_SCRAPER] Downloaded ${sizeMb.toFixed(2)} MB -> ${filePath}`);
         return { success: true, filePath, sizeMb };
       } else {
-        console.error(`❌ [VIP2_SCRAPER] Download error response:`, stdout.trim());
+        console.error(`❌ [VIP2_SCRAPER] Download response:`, stdout.trim());
       }
     } catch (e) {
       console.error(`❌ [VIP2_SCRAPER] Download execution failed:`, e.message);
@@ -199,9 +187,6 @@ except Exception as e:
     return { success: false };
   }
 
-  /**
-   * Publishes downloaded video to Channel, Discussion Thread, and Extra Group
-   */
   async publishScrapedVideo(item, downloadResult, category = 'bj') {
     const client = await this._getClient();
     const filePath = downloadResult.filePath;
@@ -227,8 +212,7 @@ except Exception as e:
         file: filePath,
         caption: fullCaption,
         parseMode: 'html',
-        forceDocument: false,
-        attributes: []
+        forceDocument: false
       });
 
       if (sentChannelMsg) {
@@ -292,9 +276,6 @@ except Exception as e:
     return false;
   }
 
-  /**
-   * Runs 1 cycle of BJ and AV scraper processing up to daily quotas
-   */
   async runCycle() {
     if (this.isJobRunning) {
       console.log('⏳ [VIP2_SCRAPER] Scraper cycle already running, skipping.');
@@ -314,7 +295,7 @@ except Exception as e:
       if (this.state.bj_count < this.dailyQuotaPerCategory) {
         const remainingBj = this.dailyQuotaPerCategory - this.state.bj_count;
         console.log(`🎯 [VIP2_SCRAPER] Scraping up to ${remainingBj} new BJ video(s)...`);
-        const bjItems = await this.scrapeBoardItems('bj');
+        const bjItems = await this.scrapeBoardItems('bj', remainingBj + 2);
 
         for (const item of bjItems) {
           if (this.state.bj_count >= this.dailyQuotaPerCategory) break;
@@ -327,8 +308,7 @@ except Exception as e:
               this.state.bj_count++;
               this.state.processed_urls.push(item.post_url);
               this._saveState();
-              // Rate limit delay between video uploads
-              await new Promise(r => setTimeout(r, 8000));
+              await new Promise(r => setTimeout(r, 6000));
             }
           }
         }
@@ -340,7 +320,7 @@ except Exception as e:
       if (this.state.av_count < this.dailyQuotaPerCategory) {
         const remainingAv = this.dailyQuotaPerCategory - this.state.av_count;
         console.log(`🎯 [VIP2_SCRAPER] Scraping up to ${remainingAv} new AV video(s)...`);
-        const avItems = await this.scrapeBoardItems('av');
+        const avItems = await this.scrapeBoardItems('av', remainingAv + 2);
 
         for (const item of avItems) {
           if (this.state.av_count >= this.dailyQuotaPerCategory) break;
@@ -353,8 +333,7 @@ except Exception as e:
               this.state.av_count++;
               this.state.processed_urls.push(item.post_url);
               this._saveState();
-              // Rate limit delay between video uploads
-              await new Promise(r => setTimeout(r, 8000));
+              await new Promise(r => setTimeout(r, 6000));
             }
           }
         }
@@ -369,18 +348,14 @@ except Exception as e:
     }
   }
 
-  /**
-   * Starts periodic scraper scheduling (runs every 3 hours)
-   */
   startScheduler(intervalHours = 3) {
     if (this.timer) clearInterval(this.timer);
     const intervalMs = Math.max(1, intervalHours) * 60 * 60 * 1000;
     console.log(`⏰ [VIP2_SCRAPER] Periodic scraper runner scheduled every ${intervalHours} hours.`);
 
-    // Run first cycle after initial 30 seconds startup delay
     setTimeout(() => {
       this.runCycle();
-    }, 30000);
+    }, 20000);
 
     this.timer = setInterval(() => {
       this.runCycle();
