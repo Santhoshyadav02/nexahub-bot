@@ -84,19 +84,20 @@ def extract_video_and_title(page, post_url):
     try:
         page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
 
-        # Wait for Cloudflare clearance
-        for _ in range(10):
-            if "Just a moment" not in page.title():
+        # Wait for Cloudflare clearance and real page title
+        for _ in range(25):
+            t = page.title()
+            if t and "Just a moment" not in t and ("AVsee" in t or "KBJ" in t or "일본" in t or ">" in t):
                 break
             page.wait_for_timeout(1000)
 
-        # Wait for player initialization
-        try:
-            page.wait_for_selector("video, .jw-media, iframe", timeout=8000)
-        except Exception:
-            pass
+        # Wait for iframe / player and CDN token URL interception
+        for _ in range(12):
+            if cdn_video_urls:
+                break
+            page.wait_for_timeout(1000)
 
-        page.wait_for_timeout(2500)
+        page.wait_for_timeout(1500)
 
         soup = BeautifulSoup(page.content(), "html.parser")
 
