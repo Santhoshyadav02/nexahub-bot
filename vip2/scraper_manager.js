@@ -5,9 +5,9 @@
  * - Scrapes fresh BJ & AV videos from 02.avsee.is (Korean BJ & JAV Caption)
  * - Daily quota: 5-7 videos per category per day
  * - Multi-destination publishing:
- *    1. Channel (-1004361683750): Teaser / Preview post + Korean Title & Invite
+ *    1. Channel (-1004361683750): Teaser / Preview post + Korean Title & Interactive Discussion Buttons
  *    2. Discussion Group (-1004442518512): Full Video in discussion thread
- *    3. Extra Group (-1003983458986): Full Video + Korean Title & Hashtags
+ *    3. Extra Group (-1003983458986): Full Video + Korean Title & Interactive Discussion Buttons
  * - Immediate local file cleanup after upload
  * - Complete deduplication tracking
  */
@@ -17,7 +17,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
-const { TelegramClient } = require('telegram');
+const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 
 const STATE_FILE = path.resolve(__dirname, 'scraper_state.json');
@@ -34,6 +34,7 @@ class Vip2ScraperManager {
     this.discussionChatId = process.env.VIP2_DISCUSSION_CHAT_ID || '-1004442518512';
     this.extraGroupChatId = process.env.VIP2_EXTRA_GROUP_CHAT_ID || '-1003983458986';
     this.destInviteLink = process.env.VIP2_DEST_INVITE_LINK || 'https://t.me/+HKD-EF-iSK5iN2Rh';
+    this.discussionInviteLink = process.env.VIP2_DISCUSSION_INVITE_LINK || 'https://t.me/+i2suOv8XvPI4MTUx';
 
     // Daily quota: 5 to 7 videos per category per day
     this.dailyQuotaPerCategory = 6;
@@ -76,6 +77,29 @@ class Vip2ScraperManager {
     } catch (e) {
       console.error('❌ [VIP2_SCRAPER] Failed to save scraper state:', e.message);
     }
+  }
+
+  _getDiscussionKeyboard() {
+    return new Api.ReplyInlineMarkup({
+      rows: [
+        new Api.KeyboardButtonRow({
+          buttons: [
+            new Api.KeyboardButtonUrl({
+              text: '💬 풀버전 시청 및 토론 (Discussion) ↗️',
+              url: this.discussionInviteLink
+            })
+          ]
+        }),
+        new Api.KeyboardButtonRow({
+          buttons: [
+            new Api.KeyboardButtonUrl({
+              text: '👑 VIP 정보공유 채널 입장 ↗️',
+              url: this.destInviteLink
+            })
+          ]
+        })
+      ]
+    });
   }
 
   async _getClient() {
@@ -200,19 +224,23 @@ except Exception as e:
       `🎬 <b>제목:</b> ${rawTitle}\n` +
       `📦 <b>용량:</b> ${downloadResult.sizeMb.toFixed(1)} MB\n` +
       `🏷️ <b>분류:</b> ${categoryTag}\n` +
-      `👑 <b>VIP 전용 입장:</b> <a href="${this.destInviteLink}">VIP 정보공유 채널 입장</a>\n` +
+      `👑 <b>VIP 전용 채널:</b> <a href="${this.destInviteLink}">VIP 정보공유 채널 입장</a>\n` +
+      `💬 <b>토론방 바로가기:</b> <a href="${this.discussionInviteLink}">VIP 정보공유 토론방(Discussion)</a>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `💬 <i>전체 풀버전 영상은 댓글(Discussion) 및 VIP 그룹에서 바로 시청 가능합니다!</i>`;
+      `👇 <i>아래 버튼을 눌러 토론방(Discussion)에서 전체 풀버전을 바로 시청하세요!</i>`;
 
     console.log(`\n📤 [VIP2_SCRAPER] Publishing ${category.toUpperCase()} to Channel & Groups: "${rawTitle}"`);
 
+    const keyboard = this._getDiscussionKeyboard();
+
     try {
-      // Step 1: Upload to Channel
+      // Step 1: Upload to Channel with interactive Discussion button
       const sentChannelMsg = await client.sendFile(this.destChatId, {
         file: filePath,
         caption: fullCaption,
         parseMode: 'html',
-        forceDocument: false
+        forceDocument: false,
+        buttons: keyboard
       });
 
       if (sentChannelMsg) {
@@ -232,7 +260,7 @@ except Exception as e:
           });
         }
 
-        // Step 3: Broadcast to Extra Group
+        // Step 3: Broadcast to Extra Group with Discussion button
         if (this.extraGroupChatId) {
           console.log(`📢 [VIP2_SCRAPER] Broadcasting to Extra Group (${this.extraGroupChatId})...`);
           try {
@@ -240,7 +268,8 @@ except Exception as e:
               file: filePath,
               caption: fullCaption,
               parseMode: 'html',
-              forceDocument: false
+              forceDocument: false,
+              buttons: keyboard
             });
             console.log(`✅ [VIP2_SCRAPER] Extra Group broadcast complete.`);
           } catch (grpErr) {

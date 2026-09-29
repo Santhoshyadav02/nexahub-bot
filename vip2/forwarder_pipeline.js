@@ -44,7 +44,9 @@ class Vip2ForwarderPipeline {
 
     this.destChatId = process.env.VIP2_DEST_CHAT_ID || '-1004361683750';
     this.discussionChatId = process.env.VIP2_DISCUSSION_CHAT_ID || '-1004442518512';
+    this.extraGroupChatId = process.env.VIP2_EXTRA_GROUP_CHAT_ID || '-1003983458986';
     this.destInviteLink = process.env.VIP2_DEST_INVITE_LINK || 'https://t.me/+HKD-EF-iSK5iN2Rh';
+    this.discussionInviteLink = process.env.VIP2_DISCUSSION_INVITE_LINK || 'https://t.me/+i2suOv8XvPI4MTUx';
     this.channelName = process.env.VIP2_CHANNEL_NAME || 'V.I.P 정보공유 (VIP-2)';
 
     this.client = null;
@@ -122,10 +124,27 @@ class Vip2ForwarderPipeline {
     return null;
   }
 
-  _computeContentHash(text) {
-    if (!text || !text.trim()) return null;
-    const normalized = text.trim().replace(/\s+/g, ' ').toLowerCase();
-    return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 16);
+  _getDiscussionKeyboard() {
+    return new Api.ReplyInlineMarkup({
+      rows: [
+        new Api.KeyboardButtonRow({
+          buttons: [
+            new Api.KeyboardButtonUrl({
+              text: '💬 풀버전 시청 및 토론 (Discussion) ↗️',
+              url: this.discussionInviteLink
+            })
+          ]
+        }),
+        new Api.KeyboardButtonRow({
+          buttons: [
+            new Api.KeyboardButtonUrl({
+              text: '👑 VIP 정보공유 채널 입장 ↗️',
+              url: this.destInviteLink
+            })
+          ]
+        })
+      ]
+    });
   }
 
   async init() {
@@ -288,11 +307,13 @@ class Vip2ForwarderPipeline {
 
             // Step 1: Post 1 PREVIEW media item to Channel
             const previewMsg = groupMsgs[0];
+            const keyboard = this._getDiscussionKeyboard();
             const sentChannelMsg = await this.client.sendFile(this.destChatId, {
               file: previewMsg.media,
               caption: formattedCaption,
               parseMode: 'html',
-              forceDocument: false
+              forceDocument: false,
+              buttons: keyboard
             });
 
             if (sentChannelMsg) {
@@ -330,6 +351,24 @@ class Vip2ForwarderPipeline {
                 }
               } else {
                 console.warn(`⚠️ [VIP2] Could not find mirrored discussion message within timeout for post #${publishedMsgId}.`);
+              }
+
+              // Step 4: Broadcast full media album to Extra Group (>> V.I.P 정보공유 <<)
+              if (this.extraGroupChatId) {
+                try {
+                  console.log(`📢 [VIP2] Broadcasting to Extra Group (${this.extraGroupChatId})...`);
+                  const allMedia = groupMsgs.map(m => m.media);
+                  await this.client.sendFile(this.extraGroupChatId, {
+                    file: allMedia.length === 1 ? allMedia[0] : allMedia,
+                    caption: formattedCaption,
+                    parseMode: 'html',
+                    forceDocument: false,
+                    buttons: keyboard
+                  });
+                  console.log(`✅ [VIP2] Extra Group broadcast complete.`);
+                } catch (grpErr) {
+                  console.error(`⚠️ [VIP2] Error broadcasting to extra group:`, grpErr.message);
+                }
               }
 
               // Catalog update
